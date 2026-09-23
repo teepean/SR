@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <SDL.h>
 #include "platform.h"
 #include "msvcrt.h"
@@ -62,14 +63,20 @@ static char command_line[256];
 
 static void prepare_command_line(int argc, char *argv[])
 {
-    int i;
+    int i, hardware = 0;
 
-    // the software renderer presents through GDI (windowed) unless another renderer is selected
-    strcpy(command_line, "/gdi");
+    for (i = 1; i < argc; i++)
+    {
+        if ((strcasecmp(argv[i], "/glide") == 0) || (strcasecmp(argv[i], "-glide") == 0)) hardware = 1;
+    }
+
+    // the software renderer presents through GDI (windowed) unless another renderer is selected;
+    // with /glide, /gdi must not be given (it switches video playback to a DirectDraw path)
+    strcpy(command_line, hardware ? "" : "/gdi");
     for (i = 1; i < argc; i++)
     {
         if (strlen(command_line) + strlen(argv[i]) + 2 >= sizeof(command_line)) break;
-        strcat(command_line, " ");
+        if (command_line[0] != 0) strcat(command_line, " ");
         strcat(command_line, argv[i]);
     }
 }

@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <SDL.h>
 #include "display.h"
+#include "render.h"
 #include "platform.h"
 #include "winapi.h"
 
@@ -20,27 +21,13 @@ int display_width, display_height;
 uint32_t *display_pixels;
 
 static SDL_Window *window;
-static SDL_Renderer *renderer;
-static SDL_Texture *texture;
+static int renderer_ok;
 static int dirty;
 static uint32_t last_present;
 
 int display_exists(void)
 {
     return window != NULL;
-}
-
-static int create_texture(void)
-{
-    if (texture != NULL) SDL_DestroyTexture(texture);
-    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, display_width, display_height);
-    if (texture == NULL)
-    {
-        eprintf("Error: SDL_CreateTexture: %s\n", SDL_GetError());
-        return 0;
-    }
-    SDL_RenderSetLogicalSize(renderer, display_width, display_height);
-    return 1;
 }
 
 int display_create(const char *title, int width, int height)
@@ -70,23 +57,23 @@ int display_create(const char *title, int width, int height)
     scale = (getenv("I76_SCALE") != NULL) ? atoi(getenv("I76_SCALE")) : 2;
     if (scale < 1) scale = 1;
 
-    window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width * scale, height * scale, SDL_WINDOW_RESIZABLE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width * scale, height * scale, SDL_WINDOW_RESIZABLE | render_window_flags());
     if (window == NULL)
     {
         eprintf("Error: SDL_CreateWindow: %s\n", SDL_GetError());
         return 0;
     }
 
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (renderer == NULL) renderer = SDL_CreateRenderer(window, -1, 0);
-    if (renderer == NULL)
+    if (!render_init(window))
     {
-        eprintf("Error: SDL_CreateRenderer: %s\n", SDL_GetError());
+        eprintf("Error: can't initialize the renderer\n");
         return 0;
     }
-
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-    if (!create_texture()) return 0;
+    renderer_ok = 1;
 
     display_present(1);
     return 1;
@@ -100,17 +87,14 @@ void display_resize(int width, int height)
     display_width = width;
     display_height = height;
     display_pixels = (uint32_t *) calloc((size_t)width * height, sizeof(uint32_t));
-    if (renderer != NULL) create_texture();
     dirty = 1;
 }
 
 void display_destroy(void)
 {
-    if (texture != NULL) SDL_DestroyTexture(texture);
-    if (renderer != NULL) SDL_DestroyRenderer(renderer);
+    if (renderer_ok) render_shutdown();
     if (window != NULL) SDL_DestroyWindow(window);
-    texture = NULL;
-    renderer = NULL;
+    renderer_ok = 0;
     window = NULL;
 }
 
@@ -178,15 +162,37 @@ void display_set_title(const char *title)
     if ((window != NULL) && (title != NULL)) SDL_SetWindowTitle(window, title);
 }
 
+// debugging: I76_DUMP_FRAMES=<existing dir> saves the presented picture (GDI or Glide) every second
+static void dump_frame(void)
+{
+    static int index;
+    char name[1024];
+    uint32_t *pixels;
+    int w, h;
+    SDL_Surface *s;
+
+    pixels = render_read_last(&w, &h);
+    if (pixels == NULL) return;
+    s = SDL_CreateRGBSurfaceWithFormatFrom(pixels, w, h, 32, w * 4, SDL_PIXELFORMAT_XRGB8888);
+    if (s != NULL)
+    {
+        snprintf(name, sizeof(name), "%s/frame%04d.bmp", getenv("I76_DUMP_FRAMES"), index++);
+        SDL_SaveBMP(s, name);
+        SDL_FreeSurface(s);
+    }
+    free(pixels);
+}
+
 void display_idle(void)
 {
     static uint32_t last;
     uint32_t now = SDL_GetTicks();
-    if ((getenv("I76_DUMP_FRAMES") != NULL) && (now - last >= 1000))
+    if ((getenv("I76_DUMP_FRAMES") != NULL) && renderer_ok && (now - last >= 1000))
     {
         last = now;
         dirty = 1;
         display_present(1);
+        dump_frame();
     }
 }
 
@@ -201,67 +207,54 @@ void display_present(int force)
 {
     uint32_t now;
 
-    if (renderer == NULL) return;
+    if (!renderer_ok) return;
+    // while the Glide screen is open it owns the display (like a Voodoo's VGA pass-through)
+    if (render_glide_is_open()) { dirty = 0; return; }
     if (!dirty && !force) return;
 
     now = SDL_GetTicks();
     if (!force && (now - last_present < 8)) return;
 
-    // debugging: I76_DUMP_FRAMES=<dir> saves the framebuffer every second
-    {
-        static const char *dump_dir;
-        static int dump_checked, dump_index;
-        static uint32_t last_dump;
-
-        if (!dump_checked)
-        {
-            dump_checked = 1;
-            dump_dir = getenv("I76_DUMP_FRAMES");
-        }
-        static int dump_pending;
-        dump_pending = 1;
-        if ((dump_dir != NULL) && dump_pending && (now - last_dump >= 1000))
-        {
-            char name[1024];
-            SDL_Surface *s = SDL_CreateRGBSurfaceWithFormatFrom(display_pixels, display_width, display_height, 32, display_width * 4, SDL_PIXELFORMAT_XRGB8888);
-            last_dump = now;
-            if (s != NULL)
-            {
-                snprintf(name, sizeof(name), "%s/frame%04d.bmp", dump_dir, dump_index++);
-                SDL_SaveBMP(s, name);
-                SDL_FreeSurface(s);
-            }
-            dump_pending = 0;
-        }
-    }
-
-    SDL_UpdateTexture(texture, NULL, display_pixels, display_width * 4);
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
-    SDL_RenderPresent(renderer);
+    render_present_2d(display_pixels, display_width, display_height);
 
     last_present = now;
     dirty = 0;
 }
 
+// window size in points vs. drawable size in pixels (HiDPI)
+static void window_scale(float *sx, float *sy)
+{
+    int ww, wh, dw, dh;
+    SDL_GetWindowSize(window, &ww, &wh);
+    SDL_GL_GetDrawableSize(window, &dw, &dh);
+    *sx = (ww > 0) ? (float)dw / ww : 1.0f;
+    *sy = (wh > 0) ? (float)dh / wh : 1.0f;
+}
+
 void display_window_to_client(int wx, int wy, int *cx, int *cy)
 {
-    // with SDL_RenderSetLogicalSize, mouse events are already in logical coordinates
-    *cx = wx;
-    *cy = wy;
+    int vx, vy, vw, vh;
+    float sx, sy;
+
+    if (!renderer_ok || (vw = 0, render_viewport(display_width, display_height, &vx, &vy, &vw, &vh), vw <= 0) || (vh <= 0))
+    {
+        *cx = wx;
+        *cy = wy;
+        return;
+    }
+    window_scale(&sx, &sy);
+    *cx = (int)((wx * sx - vx) * display_width / vw);
+    *cy = (int)((wy * sy - vy) * display_height / vh);
 }
 
 void display_warp_mouse(int cx, int cy)
 {
-    int ww, wh;
+    int vx, vy, vw, vh;
     float sx, sy;
-    SDL_Rect vp;
 
-    if ((window == NULL) || (renderer == NULL)) return;
-
-    SDL_GetWindowSize(window, &ww, &wh);
-    SDL_RenderGetViewport(renderer, &vp);
-    SDL_RenderGetScale(renderer, &sx, &sy);
-    SDL_WarpMouseInWindow(window, (int)((vp.x + cx) * sx), (int)((vp.y + cy) * sy));
+    if (!renderer_ok) return;
+    render_viewport(display_width, display_height, &vx, &vy, &vw, &vh);
+    if ((display_width <= 0) || (display_height <= 0)) return;
+    window_scale(&sx, &sy);
+    SDL_WarpMouseInWindow(window, (int)((vx + (float)cx * vw / display_width) / sx), (int)((vy + (float)cy * vh / display_height) / sy));
 }
