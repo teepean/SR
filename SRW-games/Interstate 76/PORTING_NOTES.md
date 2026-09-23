@@ -400,3 +400,10 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   Smacker buffers...) corrupted glibc. Now all memory the runtime hands to the game comes from game_malloc/
   game_calloc/game_free = a private emulated Win32 heap (quarantine, overrun check, I76_HEAPGUARD) in both builds.
   User playtest: x64 build played missions 5-6 without problems.
+- x64 playtest: several missions OK, then a crash at the start of mission 13 (t13.ter) - a NULL dereference in
+  game logic, not memory corruption: the mission script interpreter sub_412CE0, opcode 0x5A, resolves an object
+  with sub_45F0F0 (may return NULL) and calls sub_467400(obj) without a check ([obj+0x70]). The user had skipped
+  missions with the getdown cheat (which disables mission triggers); forum users report crashes between missions
+  in the original too. Defensive game patch in instruction_replacements (x86 + x64): sub_467400 returns when
+  obj or obj->+0x70 is NULL. Reproduction attempt (bookmark "Scene 12. 14" -> mission 12 + getdown) didn't reach
+  the mission end within 8 minutes (car stuck); the bookmark load path itself works in x64.
