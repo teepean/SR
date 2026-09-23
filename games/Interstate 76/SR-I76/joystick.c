@@ -7,15 +7,22 @@
  *  d-pad = POV hat. Other joysticks (wheels, flight sticks): axes 0-5 = X Y Z R U V, up to 32 buttons,
  *  first hat = POV. The game lets the player bind axes and buttons in its controls screen.
  *
+ *  Backends: SDL (below, default) or on Linux optionally evdev (joystick_evdev.c, reads /dev/input/event*
+ *  directly). SR-I76.cfg: joystick_backend = sdl | evdev.
+ *  Note: if another program grabs the device (e.g. Wine's winedevice.exe with a controller), neither backend
+ *  gets any input beyond the initial state.
+ *
  */
 
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <SDL.h>
 #include "platform.h"
 #include "winapi.h"
 #include "config.h"
+#include "joystick_backend.h"
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -34,7 +41,10 @@
 
 #define JOY_POVCENTERED 0xFFFF
 
-#define MAX_DEVICES 4
+#define MAX_DEVICES JOY_MAX_DEVICES
+
+int joy_debug;
+static int use_evdev;
 
 #pragma pack(push, 1)
 typedef struct {
@@ -74,7 +84,17 @@ static int subsystem_ok;
 // started early and the devices are opened when the game first asks
 void joystick_startup(void)
 {
+    const char *backend;
+
+    joy_debug = winapi_debug;
     if (!config_get_int("joystick", 1)) return;
+#if defined(__linux__)
+    backend = config_get("joystick_backend");
+    use_evdev = (getenv("I76_VIRTUAL_JOYSTICK") == NULL) && (backend != NULL) && (strcasecmp(backend, "evdev") == 0);
+    if (use_evdev) return;
+#else
+    (void)backend;
+#endif
     // the game checks GetFocus itself; SDL's idea of focus can differ from the window manager's
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0)
@@ -191,38 +211,63 @@ static const char *device_name(const device *d)
     return (name != NULL) ? name : "Joystick";
 }
 
-uint32_t CCALL joyGetNumDevs_c(void)
+static int backend_count(void)
 {
+#if defined(__linux__)
+    if (use_evdev) return config_get_int("joystick", 1) ? evdev_joystick_count(SDL_GetTicks()) : 0;
+#endif
     check_devices();
     return num_devices;
+}
+
+uint32_t CCALL joyGetNumDevs_c(void)
+{
+    return backend_count();
 }
 
 uint32_t CCALL joyGetDevCapsA_c(uint32_t uJoyID, joycaps_a *pjc, uint32_t cbjc)
 {
     device *d;
 
-    check_devices();
+    int count, axes, buttons, hats;
+    const char *name;
+
+    count = backend_count();
     if (winapi_debug >= 2) eprintf("joyGetDevCapsA: %u\n", uJoyID);
     if ((pjc == NULL) || (cbjc < sizeof(joycaps_a))) return MMSYSERR_INVALPARAM;
-    if (uJoyID >= (uint32_t)num_devices) return JOYERR_PARMS;
-    d = &devices[uJoyID];
+    if (uJoyID >= (uint32_t)count) return JOYERR_PARMS;
+#if defined(__linux__)
+    if (use_evdev)
+    {
+        name = evdev_joystick_name(uJoyID);
+        evdev_joystick_caps(uJoyID, &axes, &buttons, &hats);
+    }
+    else
+#endif
+    {
+        d = &devices[uJoyID];
+        name = device_name(d);
+        axes = d->axes;
+        buttons = d->buttons;
+        hats = d->hats;
+    }
 
     memset(pjc, 0, sizeof(joycaps_a));
     pjc->wMid = 0x045E;
     pjc->wPid = (uint16_t)(0x0100 + uJoyID);
-    snprintf(pjc->szPname, sizeof(pjc->szPname), "%.31s", device_name(d));
+    snprintf(pjc->szPname, sizeof(pjc->szPname), "%.31s", name);
     pjc->wXmax = pjc->wYmax = pjc->wZmax = pjc->wRmax = pjc->wUmax = pjc->wVmax = 65535;
-    pjc->wNumButtons = d->buttons;
+    pjc->wNumButtons = buttons;
     pjc->wMaxButtons = 32;
     pjc->wPeriodMin = 10;
     pjc->wPeriodMax = 1000;
     pjc->wMaxAxes = 6;
-    pjc->wNumAxes = (d->axes < 2) ? 2 : d->axes;
-    if (d->axes >= 3) pjc->wCaps |= JOYCAPS_HASZ;
-    if (d->axes >= 4) pjc->wCaps |= JOYCAPS_HASR;
-    if (d->axes >= 5) pjc->wCaps |= JOYCAPS_HASU;
-    if (d->axes >= 6) pjc->wCaps |= JOYCAPS_HASV;
-    if (d->hats > 0) pjc->wCaps |= JOYCAPS_HASPOV | JOYCAPS_POV4DIR;
+    pjc->wNumAxes = (axes < 2) ? 2 : axes;
+    if (axes >= 3) pjc->wCaps |= JOYCAPS_HASZ;
+    if (axes >= 4) pjc->wCaps |= JOYCAPS_HASR;
+    if (axes >= 5) pjc->wCaps |= JOYCAPS_HASU;
+    if (axes >= 6) pjc->wCaps |= JOYCAPS_HASV;
+    if (hats > 0) pjc->wCaps |= JOYCAPS_HASPOV | JOYCAPS_POV4DIR;
     snprintf(pjc->szRegKey, sizeof(pjc->szRegKey), "DINPUT.DLL");
     return JOYERR_NOERROR;
 }
@@ -316,22 +361,33 @@ static void read_device(device *d, joyinfoex *ji)
 uint32_t CCALL joyGetPosEx_c(uint32_t uJoyID, joyinfoex *pji)
 {
     uint32_t size, flags;
+    int count = backend_count();
 
-    check_devices();
     if (pji == NULL) return MMSYSERR_INVALPARAM;
-    if (uJoyID >= (uint32_t)num_devices) return JOYERR_PARMS;
-    if (!SDL_JoystickGetAttached(devices[uJoyID].joystick)) return JOYERR_UNPLUGGED;
-
-    if (winapi_debug >= 2)
-    {
-        static uint32_t count, last;
-        uint32_t now = SDL_GetTicks();
-        count++;
-        if (now - last >= 5000) { eprintf("joyGetPosEx: %u calls, flags 0x%x\n", count, pji->dwFlags); last = now; count = 0; }
-    }
+    if (uJoyID >= (uint32_t)count) return JOYERR_PARMS;
     size = pji->dwSize;
     flags = pji->dwFlags;
-    read_device(&devices[uJoyID], pji);
+
+#if defined(__linux__)
+    if (use_evdev)
+    {
+        joy_state st;
+        if (!evdev_joystick_read(uJoyID, &st)) return JOYERR_UNPLUGGED;
+        pji->dwXpos = st.axis[0]; pji->dwYpos = st.axis[1]; pji->dwZpos = st.axis[2];
+        pji->dwRpos = st.axis[3]; pji->dwUpos = st.axis[4]; pji->dwVpos = st.axis[5];
+        pji->dwButtons = st.buttons;
+        pji->dwButtonNumber = (uint32_t)__builtin_popcount(st.buttons);
+        pji->dwPOV = st.pov;
+    }
+    else
+#endif
+    {
+        if (!SDL_JoystickGetAttached(devices[uJoyID].joystick)) return JOYERR_UNPLUGGED;
+        read_device(&devices[uJoyID], pji);
+    }
+    pji->dwSize = size;
+    pji->dwFlags = flags;
+
     if (winapi_debug >= 2)
     {
         static uint32_t last;
@@ -342,8 +398,6 @@ uint32_t CCALL joyGetPosEx_c(uint32_t uJoyID, joyinfoex *pji)
             eprintf("joystick %u: x %u y %u z %u r %u u %u buttons 0x%x pov %u\n", uJoyID, pji->dwXpos, pji->dwYpos, pji->dwZpos, pji->dwRpos, pji->dwUpos, pji->dwButtons, pji->dwPOV);
         }
     }
-    pji->dwSize = size;
-    pji->dwFlags = flags;
     return JOYERR_NOERROR;
 }
 

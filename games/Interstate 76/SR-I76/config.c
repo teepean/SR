@@ -39,7 +39,9 @@ static const char default_config[] =
     "# CD drive: 2 = audio CD (music from music/*.mp3), 1 = game CD, 0 = no CD drive\n"
     "cd = 2\n"
     "# joystick / gamepad (1 = on, 0 = off)\n"
-    "joystick = 1\n";
+    "joystick = 1\n"
+    "# joystick backend: sdl, or evdev (Linux: read /dev/input directly)\n"
+    "joystick_backend = sdl\n";
 
 static void trim(char *s)
 {

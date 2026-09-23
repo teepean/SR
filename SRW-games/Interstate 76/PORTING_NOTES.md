@@ -323,3 +323,7 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   Likely SDL replacing the device (evdev -> HIDAPI driver switch). joystick.c now reopens the devices when the
   eligible device count changes or a handle is detached (checked at most every 500 ms from joyGetNumDevs/
   joyGetDevCapsA/joyGetPosEx). Script command `jreattach` simulates it with the virtual controller.
+- Real controller still frozen: SDL (32- and 64-bit test programs too) only saw the initial state. Cause: another
+  program (Wine's winedevice.exe of an unrelated Wine app) had the evdev device open - Wine's winebus grabs
+  controllers. Diagnose with: for each /proc/*/fd, readlink to /dev/input/eventN. joystick_evdev.c (direct evdev
+  reading) was added as an optional backend (joystick_backend = evdev); SDL stays the default.
