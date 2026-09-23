@@ -71,3 +71,12 @@ Learned while porting Interstate '76 (see `SRW-games/Interstate 76/PORTING_NOTES
   keep FILE in MS layout with `_cnt = 0` so inline getc macros call `_filbuf`.
 - Win95 quirks matter: e.g. BitBlt returning the number of scan lines.
 - ptrace attach is blocked (yama=1): run the game under gdb and send SIGINT to inspect hangs.
+- 4-char tags stored as dwords ("OBJ\0" = 0x004A424F) can be valid image addresses: relocating them breaks
+  chunk parsers silently. Suspect data-section values whose 3 low bytes are uppercase letters.
+- Tables of `{ptr, ptr}` whose entries point into .bss can have printable bytes (0x536775 = "ug6"); don't let
+  ascii heuristics reject an aligned entry whose table neighbours at the same stride are accepted pointers.
+- Functions in MSVC code are 16-byte aligned: a 16-aligned .text target is a valid code start.
+- Games rely on HeapAlloc returning zeroed memory (fresh Win9x heaps); make the emulated HeapAlloc zero always.
+- Divergence hunting: instrument the ORIGINAL exe under Wine with code caves that call
+  OutputDebugStringA (via wsprintfA) and capture with `WINEDEBUG=-all,+debugstr`.
+- Don't `atexit(SDL_Quit)`; tear SDL down explicitly and `_exit` from ExitProcess.
