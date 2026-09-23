@@ -284,3 +284,8 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   clamped at 639/479 in a 1280x960 window; the shell polls GetCursorPos + GetAsyncKeyState, so clicks missed.
   Now uses display_window_to_client. Input scripts: `wmove X Y` (real SDL mouse warp, window pixels), `wdown`,
   `wup` test the real mapping path.
+- In-game menu (ESC during a mission; in training the first ESC skips the intro): drawn into a 296x425 DIB,
+  composited through the LFB, then the game swaps only when the menu changes. Some compositors only show a
+  frame after the next one arrives, so the window kept showing the pre-menu frame ("freeze"). The GL backend
+  now re-presents the Glide front buffer every ~33 ms when the game isn't swapping (render_glide_refresh).
+  I76_DUMP_FRAMES now dumps exactly what the window shows in Glide mode.

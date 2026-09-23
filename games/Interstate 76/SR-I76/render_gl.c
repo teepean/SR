@@ -383,6 +383,8 @@ static GLuint lfb_tex;
 // last presented picture for frame dumps
 static uint32_t *last_2d;
 static int last_2d_w, last_2d_h;
+static uint32_t *last_window;
+static int last_window_w, last_window_h;
 
 uint32_t render_window_flags(void)
 {
@@ -553,6 +555,14 @@ uint32_t *render_read_last(int *w, int *h)
     uint32_t *p;
     int y;
 
+    if (glide_open && (last_window != NULL))
+    {
+        p = (uint32_t *)malloc((size_t)last_window_w * last_window_h * 4);
+        memcpy(p, last_window, (size_t)last_window_w * last_window_h * 4);
+        *w = last_window_w;
+        *h = last_window_h;
+        return p;
+    }
     if (glide_open)
     {
         int fw = glide_w * glide_scale, fh = glide_h * glide_scale;
@@ -777,14 +787,14 @@ void render_glide_clear(uint32_t color, uint8_t alpha, uint16_t depth, int color
     if (bits) glClear(bits);
 }
 
-void render_glide_swap(void)
+static uint32_t last_glide_present;
+
+// presents the Glide front buffer in the window
+static void present_front(void)
 {
     int vx, vy, vw, vh, ww, wh;
-    if (!glide_open) return;
 
-    back_index ^= 1;
-
-    // present the new front buffer
+    last_glide_present = SDL_GetTicks();
     SDL_GL_GetDrawableSize(window, &ww, &wh);
     render_viewport(glide_w, glide_h, &vx, &vy, &vw, &vh);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -796,7 +806,38 @@ void render_glide_swap(void)
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[back_index ^ 1]);
     glBlitFramebuffer(0, 0, glide_w * glide_scale, glide_h * glide_scale, vx, wh - vy - vh, vx + vw, wh - vy, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    if (getenv("I76_DUMP_FRAMES") != NULL)
+    {
+        // debugging: keep what is actually shown in the window
+        int y;
+        uint32_t *tmp = (uint32_t *)malloc((size_t)ww * wh * 4);
+        glReadPixels(0, 0, ww, wh, GL_BGRA, GL_UNSIGNED_BYTE, tmp);
+        if ((last_window_w != ww) || (last_window_h != wh))
+        {
+            free(last_window);
+            last_window = (uint32_t *)malloc((size_t)ww * wh * 4);
+            last_window_w = ww;
+            last_window_h = wh;
+        }
+        for (y = 0; y < wh; y++) memcpy(last_window + (size_t)y * ww, tmp + (size_t)(wh - 1 - y) * ww, (size_t)ww * 4);
+        free(tmp);
+    }
     SDL_GL_SwapWindow(window);
+}
+
+void render_glide_swap(void)
+{
+    if (!glide_open) return;
+    back_index ^= 1;
+    present_front();
+}
+
+void render_glide_refresh(int force)
+{
+    // the game doesn't swap while it waits for input (e.g. the in-game menu); some compositors only show
+    // a frame once the next one arrives, so keep presenting the front buffer
+    if (!glide_open) return;
+    if (force || (SDL_GetTicks() - last_glide_present >= 33)) present_front();
 }
 
 void render_glide_read_565(int buffer, uint16_t *dst, int stride_pixels)

@@ -665,6 +665,7 @@ void CCALL grBufferClear_c(uint32_t color, uint32_t alpha, uint32_t depth)
 void CCALL grBufferSwap_c(int32_t interval)
 {
     if (!gl_open) return;
+    if (winapi_debug >= 3) eprintf("grBufferSwap %u\n", winapi_get_ticks());
     flush();
     render_glide_swap();
     display_idle();
@@ -679,6 +680,7 @@ uint32_t CCALL grLfbLock_c(int32_t type, int32_t buffer, int32_t write_mode, int
     int y;
 
     if (!gl_open || (info == NULL) || (buffer > 1)) return FXFALSE;
+    if (winapi_debug >= 3) eprintf("grLfbLock type %d buffer %d %u\n", type, buffer, winapi_get_ticks());
     flush();
 
     // the buffer gets the current contents (RGB565) for reads and for writes: on unlock only the pixels

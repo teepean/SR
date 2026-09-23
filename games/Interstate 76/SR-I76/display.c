@@ -209,7 +209,7 @@ void display_present(int force)
 
     if (!renderer_ok) return;
     // while the Glide screen is open it owns the display (like a Voodoo's VGA pass-through)
-    if (render_glide_is_open()) { dirty = 0; return; }
+    if (render_glide_is_open()) { dirty = 0; render_glide_refresh(force); return; }
     if (!dirty && !force) return;
 
     now = SDL_GetTicks();

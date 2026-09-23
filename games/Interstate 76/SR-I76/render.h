@@ -84,6 +84,8 @@ void render_glide_texture_destroy(int texture);
 void render_glide_draw(const render_glide_state *state, const render_glide_vertex *vertices, int count, int primitive); // 0 = triangles, 1 = lines, 2 = points
 void render_glide_clear(uint32_t color, uint8_t alpha, uint16_t depth, int color_mask, int depth_mask);
 void render_glide_swap(void);
+// re-presents the front buffer if the game hasn't swapped for a while (or always with force)
+void render_glide_refresh(int force);
 
 // linear frame buffer emulation: buffer 0 = front, 1 = back
 // reads the buffer at Glide resolution as RGB565
