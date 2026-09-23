@@ -104,6 +104,7 @@ static void init_joysticks(void)
     for (i = 0; (i < n) && (num_devices < MAX_DEVICES); i++)
     {
         device *d = &devices[num_devices];
+        if ((getenv("I76_VIRTUAL_JOYSTICK") != NULL) && !SDL_JoystickIsVirtual(i)) continue;
         if (SDL_IsGameController(i))
         {
             d->controller = SDL_GameControllerOpen(i);
@@ -148,6 +149,7 @@ uint32_t CCALL joyGetDevCapsA_c(uint32_t uJoyID, joycaps_a *pjc, uint32_t cbjc)
     device *d;
 
     init_joysticks();
+    if (winapi_debug >= 2) eprintf("joyGetDevCapsA: %u\n", uJoyID);
     if ((pjc == NULL) || (cbjc < sizeof(joycaps_a))) return MMSYSERR_INVALPARAM;
     if (uJoyID >= (uint32_t)num_devices) return JOYERR_PARMS;
     d = &devices[uJoyID];
@@ -267,6 +269,13 @@ uint32_t CCALL joyGetPosEx_c(uint32_t uJoyID, joyinfoex *pji)
     if (uJoyID >= (uint32_t)num_devices) return JOYERR_PARMS;
     if (!SDL_JoystickGetAttached(devices[uJoyID].joystick)) return JOYERR_UNPLUGGED;
 
+    if (winapi_debug >= 2)
+    {
+        static uint32_t count, last;
+        uint32_t now = SDL_GetTicks();
+        count++;
+        if (now - last >= 5000) { eprintf("joyGetPosEx: %u calls, flags 0x%x\n", count, pji->dwFlags); last = now; count = 0; }
+    }
     size = pji->dwSize;
     flags = pji->dwFlags;
     read_device(&devices[uJoyID], pji);
@@ -291,4 +300,14 @@ uint32_t CCALL joyGetPos_c(uint32_t uJoyID, joyinfo *pji)
     pji->wZpos = ji.dwZpos;
     pji->wButtons = ji.dwButtons & 0x0F;
     return JOYERR_NOERROR;
+}
+
+// input scripts: drive the virtual controller (I76_VIRTUAL_JOYSTICK=1)
+void joystick_script(const char *cmd, int a, int b)
+{
+    init_joysticks();
+    if ((num_devices == 0) || (devices[0].joystick == NULL)) return;
+    if (0 == strcmp(cmd, "jbutton")) SDL_JoystickSetVirtualButton(devices[0].joystick, a, (Uint8)b);
+    else if (0 == strcmp(cmd, "jaxis")) SDL_JoystickSetVirtualAxis(devices[0].joystick, a, (Sint16)b);
+    SDL_JoystickUpdate();
 }

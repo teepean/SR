@@ -315,3 +315,7 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   SDL3/sdl2-compat enumerates devices asynchronously: the subsystem is started at program start
   (joystick_startup) and devices are opened on first use. I76_VIRTUAL_JOYSTICK=1 attaches a virtual controller.
   Config: joystick = 0/1.
+- Joystick test tooling: I76_VIRTUAL_JOYSTICK=1 uses only an SDL virtual controller; script commands
+  `jaxis N value`, `jbutton N 0|1` drive it. Verified with gdb on sub_450870 (the game's joystick read): stick up
+  -> axis0 = -65532, stick right -> axis1 = +65532, buttons pass through. With a joystick present the game
+  binds "joystick1" to Accelerate/Brake/Steer Left/Steer Right by default (Control Configuration).
