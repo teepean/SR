@@ -1,4 +1,4 @@
-# Building Interstate '76 (SR-I76) for Linux x64
+# Building Interstate '76 (SR-I76) for Linux x64 and Windows x64
 
 The recompiled game consists of the generated assembler versions of the game's modules
 (i76.exe, i76shell.dll, ZGLIDE.DLL, STRLKUP.DLL) and the runtime in `games/Interstate 76/SR-I76`
@@ -36,9 +36,42 @@ scons device=pc64-linux
 sh "../release/linux/make_package.sh"
 ```
 
+## Windows x64 (cross-compiled on Linux with MinGW-w64)
+
+The generated assembler files are the same as for Linux x64 (step 2 above); nasm assembles them as win64
+objects. Needs x86_64-w64-mingw32-gcc/g++ and SDL2 + freetype for MinGW in one directory (`WIN_DEPS`):
+
+```sh
+# SDL2: official development package (https://github.com/libsdl-org/SDL/releases, SDL2-devel-2.x-mingw.tar.gz)
+tar xzf SDL2-devel-2.32.10-mingw.tar.gz
+mkdir -p deps/include deps/lib
+cp -r SDL2-2.32.10/x86_64-w64-mingw32/include/SDL2 deps/include/
+cp SDL2-2.32.10/x86_64-w64-mingw32/lib/libSDL2*.a deps/lib/
+
+# freetype: static library without optional dependencies
+tar xJf freetype-2.14.3.tar.xz && cd freetype-2.14.3
+./configure --host=x86_64-w64-mingw32 --prefix=$PWD/../ft --enable-static --disable-shared \
+    --without-zlib --without-png --without-bzip2 --without-brotli --without-harfbuzz
+make && make install && cd ..
+cp -r ft/include/freetype2 deps/include/ && cp ft/lib/libfreetype.a deps/lib/
+
+# build -> SR-I76.exe (needs SDL2.dll next to it)
+cd "games/Interstate 76/SR-I76"
+WIN_DEPS=/path/to/deps scons device=pc64-windows
+
+# release archive SR-I76-windows-x64-<version>.zip
+SDL2DLL=/path/to/SDL2-2.32.10/x86_64-w64-mingw32/bin/SDL2.dll sh "../release/windows/make_package.sh"
+```
+
+Testing with Wine: `I76_LOG=SR-I76.log I76_DEBUG=1 wine SR-I76.exe` in the game directory (a Windows GUI
+program has no stderr). The Windows build uses Direct3D 11 by default (`graphics_api = opengl` for OpenGL).
+
+## Notes
+
 `gen_imports.py` (in SR-I76) regenerates the import stubs (`x86/`, `x64/` imports-asm.asm, imports.inc,
-com-asm.asm, imports-stubs.c) from `imports.spec` and `com.spec`; the generated files are committed,
-run it after changing a spec file.
+com-asm.asm, imports-stubs.c, com-stubs.c) from `imports.spec` and `com.spec`; the generated files are
+committed. Run it after changing a spec file and after implementing an import (imports-stubs.c only
+contains stubs for functions without a `CCALL name_c(...) {` definition in the C files).
 
 ## Running without installing
 
@@ -62,4 +95,4 @@ input), `I76_DUMP_FRAMES=dir` (existing directory), `SDL_VIDEODRIVER=offscreen` 
 | `SRW-games/Interstate 76/tools` | IDA export scripts and tools used to create the SCI files |
 | `SRW-games/Interstate 76/PORTING_NOTES.md` | the porting log: problems, causes and fixes |
 | `games/Interstate 76/SR-I76` | runtime sources |
-| `games/Interstate 76/release/linux` | start script, example configuration, readme, packaging script |
+| `games/Interstate 76/release/linux`, `windows` | start script, example configuration, readme, packaging scripts |

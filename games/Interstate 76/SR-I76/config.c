@@ -25,7 +25,7 @@ static int num_entries, loaded;
 static const char default_config[] =
     "# Interstate '76 (SR-I76) settings. Environment variables I76_<KEY> override these.\n"
     "\n"
-    "# renderer: glide (hardware, OpenGL) or software\n"
+    "# renderer: glide (hardware 3D) or software\n"
     "renderer = glide\n"
     "# Windows: graphics API: d3d11 (default) or opengl (OpenGL 3.3 is always used on Linux)\n"
     "graphics_api = d3d11\n"
