@@ -456,3 +456,7 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
 - Result (Wine 10, NVIDIA GL through Wine's Windows driver): intro, main menu, save load, mission 12, getup,
   mission 13 in Glide/OpenGL mode. Next: sound (DirectSound/SDL under Wine), joystick, a Direct3D 11
   renderer, packaging.
+- Windows sound/music/joystick (Wine): SDL picks WASAPI; DirectSound buffers, Smacker audio and CD music (mp3)
+  mix (checked with the new I76_AUDIO_DUMP=<file>: raw 44100 Hz stereo S16 copy of the mixer output; the
+  official SDL2 Windows build has no disk audio driver and Wine ignored SDL_AUDIODRIVER=dummy). Virtual
+  joystick (I76_VIRTUAL_JOYSTICK=1) through SDL on Windows: joyGetPosEx values identical to the Linux build.

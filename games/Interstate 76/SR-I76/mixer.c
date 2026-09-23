@@ -24,6 +24,7 @@ static int initialized;
 static mixer_source *sources;
 static float *mixbuf;
 static int mixbuf_frames;
+static FILE *dump;      // I76_AUDIO_DUMP=<file>: raw copy of the output (44100 Hz stereo S16) for tests
 
 static void audio_callback(void *userdata, Uint8 *stream, int len)
 {
@@ -52,6 +53,7 @@ static void audio_callback(void *userdata, Uint8 *stream, int len)
         else if (v < -32768.0f) v = -32768.0f;
         out[i] = (int16_t)v;
     }
+    if (dump != NULL) fwrite(out, 4, frames, dump);
 }
 
 int mixer_init(void)
@@ -82,6 +84,9 @@ int mixer_init(void)
         eprintf("mixer: can't open audio device: %s\n", SDL_GetError());
         return 0;
     }
+
+    if (getenv("I76_DEBUG") != NULL) eprintf("mixer: %s, %d Hz, %d channels, %d samples\n", SDL_GetCurrentAudioDriver(), have.freq, have.channels, have.samples);
+    if (getenv("I76_AUDIO_DUMP") != NULL) dump = fopen(getenv("I76_AUDIO_DUMP"), "wb");
 
     mixbuf_frames = (have.samples > 4096) ? have.samples : 4096;
     mixbuf = (float *)malloc(mixbuf_frames * 2 * sizeof(float));
