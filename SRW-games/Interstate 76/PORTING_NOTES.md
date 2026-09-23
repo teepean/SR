@@ -391,3 +391,6 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   Note: the native stack is still high in the 32-bit build.
 - The heap check pattern must be zero (a non-zero pattern broke the same parser's terminator); guard mode keeps
   16 zero bytes before the guard page. I76_HEAPGUARD=1 training run: no overruns or use-after-free.
+- x64 milestone: SR-I76-x64 (`scons device=pc64-linux`) runs the full offscreen test: intro videos, menus,
+  training mission in Glide mode (20 FPS) and GDI mode, in-game menu, Exit Game with a clean exit; sound
+  (DirectSound buffers, CD music) works. No 32-bit libraries are needed.
