@@ -1,7 +1,7 @@
 /**
  *
  *  Small Win32 APIs: winmm (time, joystick, aux, mci), ole32, DirectX creation functions
- *  (DirectDraw is not implemented - the game uses GDI; DirectSound: dsound.c, CD audio: cdaudio.c).
+ *  (DirectDraw: ddraw.c, DirectSound: dsound.c, CD audio: cdaudio.c).
  *
  */
 
@@ -36,13 +36,6 @@ uint32_t CCALL mciGetErrorStringA_c(uint32_t fdwError, char *lpszErrorText, uint
 
 uint32_t CCALL CoInitialize_c(void *pvReserved) { return 0; }
 void CCALL CoUninitialize_c(void) {}
-
-uint32_t CCALL DirectDrawCreate_c(void *lpGUID, void **lplpDD, void *pUnkOuter)
-{
-    if (lplpDD != NULL) *lplpDD = NULL;
-    if (winapi_debug) eprintf("DirectDrawCreate: not implemented (GDI is used)\n");
-    return DDERR_NODIRECTDRAWHW;
-}
 
 uint32_t CCALL DirectDrawEnumerateA_c(void *lpCallback, void *lpContext)
 {

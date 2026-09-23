@@ -73,10 +73,114 @@ extern IDirectSound3DBuffer_SetMinDistance_c
 extern IDirectSound3DBuffer_SetMode_c
 extern IDirectSound3DBuffer_SetPosition_c
 extern IDirectSound3DBuffer_SetVelocity_c
+extern IDirectDraw_QueryInterface_c
+extern IDirectDraw_AddRef_c
+extern IDirectDraw_Release_c
+extern IDirectDraw_Compact_c
+extern IDirectDraw_CreateClipper_c
+extern IDirectDraw_CreatePalette_c
+extern IDirectDraw_CreateSurface_c
+extern IDirectDraw_DuplicateSurface_c
+extern IDirectDraw_EnumDisplayModes_c
+extern IDirectDraw_EnumSurfaces_c
+extern IDirectDraw_FlipToGDISurface_c
+extern IDirectDraw_GetCaps_c
+extern IDirectDraw_GetDisplayMode_c
+extern IDirectDraw_GetFourCCCodes_c
+extern IDirectDraw_GetGDISurface_c
+extern IDirectDraw_GetMonitorFrequency_c
+extern IDirectDraw_GetScanLine_c
+extern IDirectDraw_GetVerticalBlankStatus_c
+extern IDirectDraw_Initialize_c
+extern IDirectDraw_RestoreDisplayMode_c
+extern IDirectDraw_SetCooperativeLevel_c
+extern IDirectDraw_SetDisplayMode_c
+extern IDirectDraw_WaitForVerticalBlank_c
+extern IDirectDraw2_QueryInterface_c
+extern IDirectDraw2_AddRef_c
+extern IDirectDraw2_Release_c
+extern IDirectDraw2_Compact_c
+extern IDirectDraw2_CreateClipper_c
+extern IDirectDraw2_CreatePalette_c
+extern IDirectDraw2_CreateSurface_c
+extern IDirectDraw2_DuplicateSurface_c
+extern IDirectDraw2_EnumDisplayModes_c
+extern IDirectDraw2_EnumSurfaces_c
+extern IDirectDraw2_FlipToGDISurface_c
+extern IDirectDraw2_GetCaps_c
+extern IDirectDraw2_GetDisplayMode_c
+extern IDirectDraw2_GetFourCCCodes_c
+extern IDirectDraw2_GetGDISurface_c
+extern IDirectDraw2_GetMonitorFrequency_c
+extern IDirectDraw2_GetScanLine_c
+extern IDirectDraw2_GetVerticalBlankStatus_c
+extern IDirectDraw2_Initialize_c
+extern IDirectDraw2_RestoreDisplayMode_c
+extern IDirectDraw2_SetCooperativeLevel_c
+extern IDirectDraw2_SetDisplayMode_c
+extern IDirectDraw2_WaitForVerticalBlank_c
+extern IDirectDraw2_GetAvailableVidMem_c
+extern IDirectDrawSurface_QueryInterface_c
+extern IDirectDrawSurface_AddRef_c
+extern IDirectDrawSurface_Release_c
+extern IDirectDrawSurface_AddAttachedSurface_c
+extern IDirectDrawSurface_AddOverlayDirtyRect_c
+extern IDirectDrawSurface_Blt_c
+extern IDirectDrawSurface_BltBatch_c
+extern IDirectDrawSurface_BltFast_c
+extern IDirectDrawSurface_DeleteAttachedSurface_c
+extern IDirectDrawSurface_EnumAttachedSurfaces_c
+extern IDirectDrawSurface_EnumOverlayZOrders_c
+extern IDirectDrawSurface_Flip_c
+extern IDirectDrawSurface_GetAttachedSurface_c
+extern IDirectDrawSurface_GetBltStatus_c
+extern IDirectDrawSurface_GetCaps_c
+extern IDirectDrawSurface_GetClipper_c
+extern IDirectDrawSurface_GetColorKey_c
+extern IDirectDrawSurface_GetDC_c
+extern IDirectDrawSurface_GetFlipStatus_c
+extern IDirectDrawSurface_GetOverlayPosition_c
+extern IDirectDrawSurface_GetPalette_c
+extern IDirectDrawSurface_GetPixelFormat_c
+extern IDirectDrawSurface_GetSurfaceDesc_c
+extern IDirectDrawSurface_Initialize_c
+extern IDirectDrawSurface_IsLost_c
+extern IDirectDrawSurface_Lock_c
+extern IDirectDrawSurface_ReleaseDC_c
+extern IDirectDrawSurface_Restore_c
+extern IDirectDrawSurface_SetClipper_c
+extern IDirectDrawSurface_SetColorKey_c
+extern IDirectDrawSurface_SetOverlayPosition_c
+extern IDirectDrawSurface_SetPalette_c
+extern IDirectDrawSurface_Unlock_c
+extern IDirectDrawSurface_UpdateOverlay_c
+extern IDirectDrawSurface_UpdateOverlayDisplay_c
+extern IDirectDrawSurface_UpdateOverlayZOrder_c
+extern IDirectDrawPalette_QueryInterface_c
+extern IDirectDrawPalette_AddRef_c
+extern IDirectDrawPalette_Release_c
+extern IDirectDrawPalette_GetCaps_c
+extern IDirectDrawPalette_GetEntries_c
+extern IDirectDrawPalette_Initialize_c
+extern IDirectDrawPalette_SetEntries_c
+extern IDirectDrawClipper_QueryInterface_c
+extern IDirectDrawClipper_AddRef_c
+extern IDirectDrawClipper_Release_c
+extern IDirectDrawClipper_GetClipList_c
+extern IDirectDrawClipper_GetHWnd_c
+extern IDirectDrawClipper_Initialize_c
+extern IDirectDrawClipper_IsClipListChanged_c
+extern IDirectDrawClipper_SetClipList_c
+extern IDirectDrawClipper_SetHWnd_c
 global IDirectSoundVtbl_asm2c
 global IDirectSoundBufferVtbl_asm2c
 global IDirectSound3DListenerVtbl_asm2c
 global IDirectSound3DBufferVtbl_asm2c
+global IDirectDrawVtbl_asm2c
+global IDirectDraw2Vtbl_asm2c
+global IDirectDrawSurfaceVtbl_asm2c
+global IDirectDrawPaletteVtbl_asm2c
+global IDirectDrawClipperVtbl_asm2c
 
 %ifidn __OUTPUT_FORMAT__, elf32
 section .note.GNU-stack noalloc noexec nowrite progbits
@@ -369,6 +473,402 @@ align 16
 IDirectSound3DBuffer_SetVelocity_asm2c:
         Call_Asm_Stack5 IDirectSound3DBuffer_SetVelocity_c, 5
 
+align 16
+IDirectDraw_QueryInterface_asm2c:
+        Call_Asm_Stack3 IDirectDraw_QueryInterface_c, 3
+
+align 16
+IDirectDraw_AddRef_asm2c:
+        Call_Asm_Stack1 IDirectDraw_AddRef_c, 1
+
+align 16
+IDirectDraw_Release_asm2c:
+        Call_Asm_Stack1 IDirectDraw_Release_c, 1
+
+align 16
+IDirectDraw_Compact_asm2c:
+        Call_Asm_Stack1 IDirectDraw_Compact_c, 1
+
+align 16
+IDirectDraw_CreateClipper_asm2c:
+        Call_Asm_Stack4 IDirectDraw_CreateClipper_c, 4
+
+align 16
+IDirectDraw_CreatePalette_asm2c:
+        Call_Asm_Stack5 IDirectDraw_CreatePalette_c, 5
+
+align 16
+IDirectDraw_CreateSurface_asm2c:
+        Call_Asm_Stack4 IDirectDraw_CreateSurface_c, 4
+
+align 16
+IDirectDraw_DuplicateSurface_asm2c:
+        Call_Asm_Stack3 IDirectDraw_DuplicateSurface_c, 3
+
+align 16
+IDirectDraw_EnumDisplayModes_asm2c:
+        Call_Asm_Stack5 IDirectDraw_EnumDisplayModes_c, 5
+
+align 16
+IDirectDraw_EnumSurfaces_asm2c:
+        Call_Asm_Stack5 IDirectDraw_EnumSurfaces_c, 5
+
+align 16
+IDirectDraw_FlipToGDISurface_asm2c:
+        Call_Asm_Stack1 IDirectDraw_FlipToGDISurface_c, 1
+
+align 16
+IDirectDraw_GetCaps_asm2c:
+        Call_Asm_Stack3 IDirectDraw_GetCaps_c, 3
+
+align 16
+IDirectDraw_GetDisplayMode_asm2c:
+        Call_Asm_Stack2 IDirectDraw_GetDisplayMode_c, 2
+
+align 16
+IDirectDraw_GetFourCCCodes_asm2c:
+        Call_Asm_Stack3 IDirectDraw_GetFourCCCodes_c, 3
+
+align 16
+IDirectDraw_GetGDISurface_asm2c:
+        Call_Asm_Stack2 IDirectDraw_GetGDISurface_c, 2
+
+align 16
+IDirectDraw_GetMonitorFrequency_asm2c:
+        Call_Asm_Stack2 IDirectDraw_GetMonitorFrequency_c, 2
+
+align 16
+IDirectDraw_GetScanLine_asm2c:
+        Call_Asm_Stack2 IDirectDraw_GetScanLine_c, 2
+
+align 16
+IDirectDraw_GetVerticalBlankStatus_asm2c:
+        Call_Asm_Stack2 IDirectDraw_GetVerticalBlankStatus_c, 2
+
+align 16
+IDirectDraw_Initialize_asm2c:
+        Call_Asm_Stack2 IDirectDraw_Initialize_c, 2
+
+align 16
+IDirectDraw_RestoreDisplayMode_asm2c:
+        Call_Asm_Stack1 IDirectDraw_RestoreDisplayMode_c, 1
+
+align 16
+IDirectDraw_SetCooperativeLevel_asm2c:
+        Call_Asm_Stack3 IDirectDraw_SetCooperativeLevel_c, 3
+
+align 16
+IDirectDraw_SetDisplayMode_asm2c:
+        Call_Asm_Stack4 IDirectDraw_SetDisplayMode_c, 4
+
+align 16
+IDirectDraw_WaitForVerticalBlank_asm2c:
+        Call_Asm_Stack3 IDirectDraw_WaitForVerticalBlank_c, 3
+
+align 16
+IDirectDraw2_QueryInterface_asm2c:
+        Call_Asm_Stack3 IDirectDraw2_QueryInterface_c, 3
+
+align 16
+IDirectDraw2_AddRef_asm2c:
+        Call_Asm_Stack1 IDirectDraw2_AddRef_c, 1
+
+align 16
+IDirectDraw2_Release_asm2c:
+        Call_Asm_Stack1 IDirectDraw2_Release_c, 1
+
+align 16
+IDirectDraw2_Compact_asm2c:
+        Call_Asm_Stack1 IDirectDraw2_Compact_c, 1
+
+align 16
+IDirectDraw2_CreateClipper_asm2c:
+        Call_Asm_Stack4 IDirectDraw2_CreateClipper_c, 4
+
+align 16
+IDirectDraw2_CreatePalette_asm2c:
+        Call_Asm_Stack5 IDirectDraw2_CreatePalette_c, 5
+
+align 16
+IDirectDraw2_CreateSurface_asm2c:
+        Call_Asm_Stack4 IDirectDraw2_CreateSurface_c, 4
+
+align 16
+IDirectDraw2_DuplicateSurface_asm2c:
+        Call_Asm_Stack3 IDirectDraw2_DuplicateSurface_c, 3
+
+align 16
+IDirectDraw2_EnumDisplayModes_asm2c:
+        Call_Asm_Stack5 IDirectDraw2_EnumDisplayModes_c, 5
+
+align 16
+IDirectDraw2_EnumSurfaces_asm2c:
+        Call_Asm_Stack5 IDirectDraw2_EnumSurfaces_c, 5
+
+align 16
+IDirectDraw2_FlipToGDISurface_asm2c:
+        Call_Asm_Stack1 IDirectDraw2_FlipToGDISurface_c, 1
+
+align 16
+IDirectDraw2_GetCaps_asm2c:
+        Call_Asm_Stack3 IDirectDraw2_GetCaps_c, 3
+
+align 16
+IDirectDraw2_GetDisplayMode_asm2c:
+        Call_Asm_Stack2 IDirectDraw2_GetDisplayMode_c, 2
+
+align 16
+IDirectDraw2_GetFourCCCodes_asm2c:
+        Call_Asm_Stack3 IDirectDraw2_GetFourCCCodes_c, 3
+
+align 16
+IDirectDraw2_GetGDISurface_asm2c:
+        Call_Asm_Stack2 IDirectDraw2_GetGDISurface_c, 2
+
+align 16
+IDirectDraw2_GetMonitorFrequency_asm2c:
+        Call_Asm_Stack2 IDirectDraw2_GetMonitorFrequency_c, 2
+
+align 16
+IDirectDraw2_GetScanLine_asm2c:
+        Call_Asm_Stack2 IDirectDraw2_GetScanLine_c, 2
+
+align 16
+IDirectDraw2_GetVerticalBlankStatus_asm2c:
+        Call_Asm_Stack2 IDirectDraw2_GetVerticalBlankStatus_c, 2
+
+align 16
+IDirectDraw2_Initialize_asm2c:
+        Call_Asm_Stack2 IDirectDraw2_Initialize_c, 2
+
+align 16
+IDirectDraw2_RestoreDisplayMode_asm2c:
+        Call_Asm_Stack1 IDirectDraw2_RestoreDisplayMode_c, 1
+
+align 16
+IDirectDraw2_SetCooperativeLevel_asm2c:
+        Call_Asm_Stack3 IDirectDraw2_SetCooperativeLevel_c, 3
+
+align 16
+IDirectDraw2_SetDisplayMode_asm2c:
+        Call_Asm_Stack6 IDirectDraw2_SetDisplayMode_c, 6
+
+align 16
+IDirectDraw2_WaitForVerticalBlank_asm2c:
+        Call_Asm_Stack3 IDirectDraw2_WaitForVerticalBlank_c, 3
+
+align 16
+IDirectDraw2_GetAvailableVidMem_asm2c:
+        Call_Asm_Stack4 IDirectDraw2_GetAvailableVidMem_c, 4
+
+align 16
+IDirectDrawSurface_QueryInterface_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_QueryInterface_c, 3
+
+align 16
+IDirectDrawSurface_AddRef_asm2c:
+        Call_Asm_Stack1 IDirectDrawSurface_AddRef_c, 1
+
+align 16
+IDirectDrawSurface_Release_asm2c:
+        Call_Asm_Stack1 IDirectDrawSurface_Release_c, 1
+
+align 16
+IDirectDrawSurface_AddAttachedSurface_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_AddAttachedSurface_c, 2
+
+align 16
+IDirectDrawSurface_AddOverlayDirtyRect_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_AddOverlayDirtyRect_c, 2
+
+align 16
+IDirectDrawSurface_Blt_asm2c:
+        Call_Asm_Stack6 IDirectDrawSurface_Blt_c, 6
+
+align 16
+IDirectDrawSurface_BltBatch_asm2c:
+        Call_Asm_Stack4 IDirectDrawSurface_BltBatch_c, 4
+
+align 16
+IDirectDrawSurface_BltFast_asm2c:
+        Call_Asm_Stack6 IDirectDrawSurface_BltFast_c, 6
+
+align 16
+IDirectDrawSurface_DeleteAttachedSurface_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_DeleteAttachedSurface_c, 3
+
+align 16
+IDirectDrawSurface_EnumAttachedSurfaces_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_EnumAttachedSurfaces_c, 3
+
+align 16
+IDirectDrawSurface_EnumOverlayZOrders_asm2c:
+        Call_Asm_Stack4 IDirectDrawSurface_EnumOverlayZOrders_c, 4
+
+align 16
+IDirectDrawSurface_Flip_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_Flip_c, 3
+
+align 16
+IDirectDrawSurface_GetAttachedSurface_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_GetAttachedSurface_c, 3
+
+align 16
+IDirectDrawSurface_GetBltStatus_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_GetBltStatus_c, 2
+
+align 16
+IDirectDrawSurface_GetCaps_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_GetCaps_c, 2
+
+align 16
+IDirectDrawSurface_GetClipper_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_GetClipper_c, 2
+
+align 16
+IDirectDrawSurface_GetColorKey_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_GetColorKey_c, 3
+
+align 16
+IDirectDrawSurface_GetDC_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_GetDC_c, 2
+
+align 16
+IDirectDrawSurface_GetFlipStatus_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_GetFlipStatus_c, 2
+
+align 16
+IDirectDrawSurface_GetOverlayPosition_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_GetOverlayPosition_c, 3
+
+align 16
+IDirectDrawSurface_GetPalette_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_GetPalette_c, 2
+
+align 16
+IDirectDrawSurface_GetPixelFormat_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_GetPixelFormat_c, 2
+
+align 16
+IDirectDrawSurface_GetSurfaceDesc_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_GetSurfaceDesc_c, 2
+
+align 16
+IDirectDrawSurface_Initialize_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_Initialize_c, 3
+
+align 16
+IDirectDrawSurface_IsLost_asm2c:
+        Call_Asm_Stack1 IDirectDrawSurface_IsLost_c, 1
+
+align 16
+IDirectDrawSurface_Lock_asm2c:
+        Call_Asm_Stack5 IDirectDrawSurface_Lock_c, 5
+
+align 16
+IDirectDrawSurface_ReleaseDC_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_ReleaseDC_c, 2
+
+align 16
+IDirectDrawSurface_Restore_asm2c:
+        Call_Asm_Stack1 IDirectDrawSurface_Restore_c, 1
+
+align 16
+IDirectDrawSurface_SetClipper_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_SetClipper_c, 2
+
+align 16
+IDirectDrawSurface_SetColorKey_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_SetColorKey_c, 3
+
+align 16
+IDirectDrawSurface_SetOverlayPosition_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_SetOverlayPosition_c, 3
+
+align 16
+IDirectDrawSurface_SetPalette_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_SetPalette_c, 2
+
+align 16
+IDirectDrawSurface_Unlock_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_Unlock_c, 2
+
+align 16
+IDirectDrawSurface_UpdateOverlay_asm2c:
+        Call_Asm_Stack6 IDirectDrawSurface_UpdateOverlay_c, 6
+
+align 16
+IDirectDrawSurface_UpdateOverlayDisplay_asm2c:
+        Call_Asm_Stack2 IDirectDrawSurface_UpdateOverlayDisplay_c, 2
+
+align 16
+IDirectDrawSurface_UpdateOverlayZOrder_asm2c:
+        Call_Asm_Stack3 IDirectDrawSurface_UpdateOverlayZOrder_c, 3
+
+align 16
+IDirectDrawPalette_QueryInterface_asm2c:
+        Call_Asm_Stack3 IDirectDrawPalette_QueryInterface_c, 3
+
+align 16
+IDirectDrawPalette_AddRef_asm2c:
+        Call_Asm_Stack1 IDirectDrawPalette_AddRef_c, 1
+
+align 16
+IDirectDrawPalette_Release_asm2c:
+        Call_Asm_Stack1 IDirectDrawPalette_Release_c, 1
+
+align 16
+IDirectDrawPalette_GetCaps_asm2c:
+        Call_Asm_Stack2 IDirectDrawPalette_GetCaps_c, 2
+
+align 16
+IDirectDrawPalette_GetEntries_asm2c:
+        Call_Asm_Stack5 IDirectDrawPalette_GetEntries_c, 5
+
+align 16
+IDirectDrawPalette_Initialize_asm2c:
+        Call_Asm_Stack4 IDirectDrawPalette_Initialize_c, 4
+
+align 16
+IDirectDrawPalette_SetEntries_asm2c:
+        Call_Asm_Stack5 IDirectDrawPalette_SetEntries_c, 5
+
+align 16
+IDirectDrawClipper_QueryInterface_asm2c:
+        Call_Asm_Stack3 IDirectDrawClipper_QueryInterface_c, 3
+
+align 16
+IDirectDrawClipper_AddRef_asm2c:
+        Call_Asm_Stack1 IDirectDrawClipper_AddRef_c, 1
+
+align 16
+IDirectDrawClipper_Release_asm2c:
+        Call_Asm_Stack1 IDirectDrawClipper_Release_c, 1
+
+align 16
+IDirectDrawClipper_GetClipList_asm2c:
+        Call_Asm_Stack4 IDirectDrawClipper_GetClipList_c, 4
+
+align 16
+IDirectDrawClipper_GetHWnd_asm2c:
+        Call_Asm_Stack2 IDirectDrawClipper_GetHWnd_c, 2
+
+align 16
+IDirectDrawClipper_Initialize_asm2c:
+        Call_Asm_Stack3 IDirectDrawClipper_Initialize_c, 3
+
+align 16
+IDirectDrawClipper_IsClipListChanged_asm2c:
+        Call_Asm_Stack2 IDirectDrawClipper_IsClipListChanged_c, 2
+
+align 16
+IDirectDrawClipper_SetClipList_asm2c:
+        Call_Asm_Stack3 IDirectDrawClipper_SetClipList_c, 3
+
+align 16
+IDirectDrawClipper_SetHWnd_asm2c:
+        Call_Asm_Stack3 IDirectDrawClipper_SetHWnd_c, 3
+
 
 %ifidn __OUTPUT_FORMAT__, elf32
 section .rodata progbits alloc noexec nowrite align=4
@@ -454,4 +954,113 @@ IDirectSound3DBufferVtbl_asm2c:
         dd IDirectSound3DBuffer_SetMode_asm2c
         dd IDirectSound3DBuffer_SetPosition_asm2c
         dd IDirectSound3DBuffer_SetVelocity_asm2c
+
+IDirectDrawVtbl_asm2c:
+        dd IDirectDraw_QueryInterface_asm2c
+        dd IDirectDraw_AddRef_asm2c
+        dd IDirectDraw_Release_asm2c
+        dd IDirectDraw_Compact_asm2c
+        dd IDirectDraw_CreateClipper_asm2c
+        dd IDirectDraw_CreatePalette_asm2c
+        dd IDirectDraw_CreateSurface_asm2c
+        dd IDirectDraw_DuplicateSurface_asm2c
+        dd IDirectDraw_EnumDisplayModes_asm2c
+        dd IDirectDraw_EnumSurfaces_asm2c
+        dd IDirectDraw_FlipToGDISurface_asm2c
+        dd IDirectDraw_GetCaps_asm2c
+        dd IDirectDraw_GetDisplayMode_asm2c
+        dd IDirectDraw_GetFourCCCodes_asm2c
+        dd IDirectDraw_GetGDISurface_asm2c
+        dd IDirectDraw_GetMonitorFrequency_asm2c
+        dd IDirectDraw_GetScanLine_asm2c
+        dd IDirectDraw_GetVerticalBlankStatus_asm2c
+        dd IDirectDraw_Initialize_asm2c
+        dd IDirectDraw_RestoreDisplayMode_asm2c
+        dd IDirectDraw_SetCooperativeLevel_asm2c
+        dd IDirectDraw_SetDisplayMode_asm2c
+        dd IDirectDraw_WaitForVerticalBlank_asm2c
+
+IDirectDraw2Vtbl_asm2c:
+        dd IDirectDraw2_QueryInterface_asm2c
+        dd IDirectDraw2_AddRef_asm2c
+        dd IDirectDraw2_Release_asm2c
+        dd IDirectDraw2_Compact_asm2c
+        dd IDirectDraw2_CreateClipper_asm2c
+        dd IDirectDraw2_CreatePalette_asm2c
+        dd IDirectDraw2_CreateSurface_asm2c
+        dd IDirectDraw2_DuplicateSurface_asm2c
+        dd IDirectDraw2_EnumDisplayModes_asm2c
+        dd IDirectDraw2_EnumSurfaces_asm2c
+        dd IDirectDraw2_FlipToGDISurface_asm2c
+        dd IDirectDraw2_GetCaps_asm2c
+        dd IDirectDraw2_GetDisplayMode_asm2c
+        dd IDirectDraw2_GetFourCCCodes_asm2c
+        dd IDirectDraw2_GetGDISurface_asm2c
+        dd IDirectDraw2_GetMonitorFrequency_asm2c
+        dd IDirectDraw2_GetScanLine_asm2c
+        dd IDirectDraw2_GetVerticalBlankStatus_asm2c
+        dd IDirectDraw2_Initialize_asm2c
+        dd IDirectDraw2_RestoreDisplayMode_asm2c
+        dd IDirectDraw2_SetCooperativeLevel_asm2c
+        dd IDirectDraw2_SetDisplayMode_asm2c
+        dd IDirectDraw2_WaitForVerticalBlank_asm2c
+        dd IDirectDraw2_GetAvailableVidMem_asm2c
+
+IDirectDrawSurfaceVtbl_asm2c:
+        dd IDirectDrawSurface_QueryInterface_asm2c
+        dd IDirectDrawSurface_AddRef_asm2c
+        dd IDirectDrawSurface_Release_asm2c
+        dd IDirectDrawSurface_AddAttachedSurface_asm2c
+        dd IDirectDrawSurface_AddOverlayDirtyRect_asm2c
+        dd IDirectDrawSurface_Blt_asm2c
+        dd IDirectDrawSurface_BltBatch_asm2c
+        dd IDirectDrawSurface_BltFast_asm2c
+        dd IDirectDrawSurface_DeleteAttachedSurface_asm2c
+        dd IDirectDrawSurface_EnumAttachedSurfaces_asm2c
+        dd IDirectDrawSurface_EnumOverlayZOrders_asm2c
+        dd IDirectDrawSurface_Flip_asm2c
+        dd IDirectDrawSurface_GetAttachedSurface_asm2c
+        dd IDirectDrawSurface_GetBltStatus_asm2c
+        dd IDirectDrawSurface_GetCaps_asm2c
+        dd IDirectDrawSurface_GetClipper_asm2c
+        dd IDirectDrawSurface_GetColorKey_asm2c
+        dd IDirectDrawSurface_GetDC_asm2c
+        dd IDirectDrawSurface_GetFlipStatus_asm2c
+        dd IDirectDrawSurface_GetOverlayPosition_asm2c
+        dd IDirectDrawSurface_GetPalette_asm2c
+        dd IDirectDrawSurface_GetPixelFormat_asm2c
+        dd IDirectDrawSurface_GetSurfaceDesc_asm2c
+        dd IDirectDrawSurface_Initialize_asm2c
+        dd IDirectDrawSurface_IsLost_asm2c
+        dd IDirectDrawSurface_Lock_asm2c
+        dd IDirectDrawSurface_ReleaseDC_asm2c
+        dd IDirectDrawSurface_Restore_asm2c
+        dd IDirectDrawSurface_SetClipper_asm2c
+        dd IDirectDrawSurface_SetColorKey_asm2c
+        dd IDirectDrawSurface_SetOverlayPosition_asm2c
+        dd IDirectDrawSurface_SetPalette_asm2c
+        dd IDirectDrawSurface_Unlock_asm2c
+        dd IDirectDrawSurface_UpdateOverlay_asm2c
+        dd IDirectDrawSurface_UpdateOverlayDisplay_asm2c
+        dd IDirectDrawSurface_UpdateOverlayZOrder_asm2c
+
+IDirectDrawPaletteVtbl_asm2c:
+        dd IDirectDrawPalette_QueryInterface_asm2c
+        dd IDirectDrawPalette_AddRef_asm2c
+        dd IDirectDrawPalette_Release_asm2c
+        dd IDirectDrawPalette_GetCaps_asm2c
+        dd IDirectDrawPalette_GetEntries_asm2c
+        dd IDirectDrawPalette_Initialize_asm2c
+        dd IDirectDrawPalette_SetEntries_asm2c
+
+IDirectDrawClipperVtbl_asm2c:
+        dd IDirectDrawClipper_QueryInterface_asm2c
+        dd IDirectDrawClipper_AddRef_asm2c
+        dd IDirectDrawClipper_Release_asm2c
+        dd IDirectDrawClipper_GetClipList_asm2c
+        dd IDirectDrawClipper_GetHWnd_asm2c
+        dd IDirectDrawClipper_Initialize_asm2c
+        dd IDirectDrawClipper_IsClipListChanged_asm2c
+        dd IDirectDrawClipper_SetClipList_asm2c
+        dd IDirectDrawClipper_SetHWnd_asm2c
 

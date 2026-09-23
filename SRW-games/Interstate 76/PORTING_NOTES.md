@@ -272,3 +272,11 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   - GetState/SetState only in LostDevice/RestoreDevice (GrState = 312 bytes).
 - Glide mode switches between 2D screens (DirectDraw 8-bit, sub_434100(a1, 0) -> sub_431980(3, ...)) and Glide
   (sub_434100(a1, 1) -> FirstDevice): DirectDraw emulation is needed next.
+- ddraw.c: DirectDraw emulation (IDirectDraw v1 + IDirectDraw2 view, surfaces, palette, clipper). The game's
+  2D mode in Glide mode: EnumDisplayModes must offer 640x480x8 (the game's callback is called directly as
+  stdcall), SetCooperativeLevel(EXCLUSIVE|FULLSCREEN), SetDisplayMode(640,480,8), primary with one back buffer
+  (caps 0x2A18), palette on both; drawing = Lock back buffer (lPitch must be 640, lpSurface must stay stable -
+  Flip copies instead of swapping), present = primary->Blt(back); palette SetEntries must re-present.
+  i76shell.dll uses the same DD objects (passed via ShellMain) with the same pattern.
+- Result (offscreen test): /glide shows the shell via DirectDraw, videos, and the training mission rendered
+  by Glide at 1280x960 (I76_GLIDE_SCALE=2) with the LFB cockpit composited on top, 20 FPS.
