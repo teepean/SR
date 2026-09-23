@@ -289,3 +289,8 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   frame after the next one arrives, so the window kept showing the pre-menu frame ("freeze"). The GL backend
   now re-presents the Glide front buffer every ~33 ms when the game isn't swapping (render_glide_refresh).
   I76_DUMP_FRAMES now dumps exactly what the window shows in Glide mode.
+- Keyboard dead / in-game menu "freezing": during a mission the game only removes keyboard messages
+  (PeekMessage 0x100-0x108), so every SDL mouse motion added a WM_MOUSEMOVE until the 512-entry queue was full;
+  new key messages were dropped until something drained the backlog (the menu then crawled through it).
+  post_message now keeps at most one pending WM_MOUSEMOVE per window (latest position, not across clicks),
+  like Windows. Script command `mflood N` posts N mouse moves (queue stays at 1).

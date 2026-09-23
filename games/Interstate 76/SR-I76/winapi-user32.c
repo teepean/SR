@@ -50,6 +50,7 @@ typedef uint32_t (STDCALL *wndproc_t)(void *hwnd, uint32_t msg, uint32_t wparam,
 #define WM_SYSCHAR        0x0106
 #define WM_MOUSEMOVE      0x0200
 #define WM_LBUTTONDOWN    0x0201
+#define WM_MBUTTONDBLCLK  0x0209
 #define WM_LBUTTONUP      0x0202
 #define WM_RBUTTONDOWN    0x0204
 #define WM_RBUTTONUP      0x0205
@@ -127,7 +128,34 @@ static void post_message(void *hwnd, uint32_t msg, uint32_t wparam, uint32_t lpa
     win_msg *m;
     int mx, my;
 
-    if (queue_count >= QUEUE_SIZE) return;
+    // like Windows, keep at most one pending WM_MOUSEMOVE (the latest position): the game only removes
+    // keyboard messages during a mission, so every mouse motion event would pile up, fill the queue and
+    // make key presses get dropped (and the in-game menu then crawls through the backlog)
+    if (msg == WM_MOUSEMOVE)
+    {
+        int i;
+        for (i = queue_count - 1; i >= 0; i--)
+        {
+            win_msg *q = &queue[(queue_head + i) % QUEUE_SIZE];
+            if ((q->message >= WM_LBUTTONDOWN) && (q->message <= WM_MBUTTONDBLCLK)) break;  // keep order around clicks
+            if ((q->message == WM_MOUSEMOVE) && (q->hwnd == hwnd))
+            {
+                SDL_GetMouseState(&mx, &my);
+                q->wParam = wparam;
+                q->lParam = lparam;
+                q->time = winapi_get_ticks();
+                q->pt_x = mx;
+                q->pt_y = my;
+                return;
+            }
+        }
+    }
+
+    if (queue_count >= QUEUE_SIZE)
+    {
+        if (winapi_debug) eprintf("post_message: queue full, message 0x%x dropped\n", msg);
+        return;
+    }
     m = &queue[(queue_head + queue_count) % QUEUE_SIZE];
     queue_count++;
 
@@ -533,6 +561,13 @@ static void run_script(void)
         else if (0 == strcmp(e->cmd, "up")) script_mouse(e->a, e->b, e->c, 0);
         else if (0 == strcmp(e->cmd, "click")) { script_mouse(e->a, e->b, e->c, 1); script_mouse(e->a, e->b, e->c, 0); }
         else if (0 == strcmp(e->cmd, "quit")) { eprintf("input script: quit\n"); app_exit(0); }
+        else if (0 == strcmp(e->cmd, "mflood"))
+        {
+            // many mouse motion messages at once, like a high-rate mouse (tests message coalescing)
+            int i;
+            for (i = 0; i < e->a; i++) if (main_window != NULL) post_message(main_window, WM_MOUSEMOVE, 0, ((uint32_t)(240 + (i & 7)) << 16) | 320);
+            if (winapi_debug) eprintf("input script: queue has %d messages\n", queue_count);
+        }
         // real SDL mouse in window coordinates (tests the window -> client mapping)
         else if (0 == strcmp(e->cmd, "wmove")) { script_mouse_active = 0; display_warp_window(e->a, e->b); }
         else if ((0 == strcmp(e->cmd, "wdown")) || (0 == strcmp(e->cmd, "wup")))
