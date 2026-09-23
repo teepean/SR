@@ -428,3 +428,6 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   header was zeroed around the int12 cutscene / mission 12 load. With I76_HEAPGUARD=1 glibc still aborts
   (in the GL driver), so the stray write hits memory outside the game heap. The x64 build is not affected.
   An ASan build is not usable (ASan's allocator places game memory above 2 GB).
+- Milestone (user, 2026-09-23): the whole game played to the end in the x64 build (with the getup cheat for some
+  missions). Decision: further development targets the 64-bit build only; the 32-bit build is kept as it is
+  (its open heap corruption above is not being pursued).
