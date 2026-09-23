@@ -1,0 +1,1 @@
+loc_1000222D,6,mov ebp, i76shell_part_strncmp ; GOG shell bug (mission 13 crash): parts are looked up by display name, "14in Rally" first matches a truck wheel (wbtck_1b.wdf) - prefer the wheel file the car already has

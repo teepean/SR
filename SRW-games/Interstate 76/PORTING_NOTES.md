@@ -407,3 +407,24 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   in the original too. Defensive game patch in instruction_replacements (x86 + x64): sub_467400 returns when
   obj or obj->+0x70 is NULL. Reproduction attempt (bookmark "Scene 12. 14" -> mission 12 + getdown) didn't reach
   the mission end within 8 minutes (car stuck); the bookmark load path itself works in x64.
+- Mission 13 crash, real cause (the sub_467400 check above only moved the crash to sub_467470): a bug of the
+  GOG i76shell.dll (known: "mission 13 crash", fixed by the 1.06 patch's i76shell.dll). Between missions 12 and
+  13 the shell rebuilds the car's installed parts from the part *display names* in the car record
+  (sub_10002130: strncmp(name, catalogue[i], 15), first match). Wheels of all vehicle classes share names
+  ("14in Rally" = wauto_1b.wdf, wbtck_1b.wdf, ...), and the file table (sorted by sub_470CA0, a little-endian
+  dword compare, so "wbtc" < "waut") puts truck wheels first. The car gets wbtck_1b wheels, the garage's wheel
+  slot filter drops them as not fitting, sub_10035250 writes vehscn.vcf with "null" wheels, and the mission
+  13 car has no wheels (vehicle +936/+940/+952/+956 NULL) -> NULL dereference in sub_467470. Saves made after
+  mission 12 contain the wbtck wheels (save014 of the playtest).
+  Fix: instruction_replacements.sci of i76shell (x86 + x64): the lookup loop's `mov ebp, [strncmp]`
+  (0x1000222D) loads i76shell_part_strncmp (gamefixes.c) instead - for wheels it skips entries whose .wdf
+  isn't one of the car record's wheel files (+0x83A/+0x847/+0x854) when an entry with the same name and a
+  matching file exists. Shell variables exported with global_aliases.sci (i76shell_cars, i76shell_catalogue,
+  i76shell_catalogue_count, i76shell_car_index). Verified: bookmark "Scene 12. 14" -> getup -> mission 13
+  starts with 4 wheels (x64). Diagnosis tools: gdb breakpoints on the recompiled labels (loc_XXXXXXXX) and on
+  fopen_c, `catch syscall openat` (no strace here).
+- Open: the 32-bit build aborts ("free(): invalid size") at the out12 cutscene in the same test; the new
+  malloc-chunk check in heap_check_all (32-bit, I76_HEAPCHECK=1) reports a freed block whose glibc chunk
+  header was zeroed around the int12 cutscene / mission 12 load. With I76_HEAPGUARD=1 glibc still aborts
+  (in the GL driver), so the stray write hits memory outside the game heap. The x64 build is not affected.
+  An ASan build is not usable (ASan's allocator places game memory above 2 GB).

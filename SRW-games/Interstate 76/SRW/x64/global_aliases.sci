@@ -1,3 +1,9 @@
 loc_402B30,WinMain_
 loc_4C2000,i76_xc_a
 loc_4C2010,i76_xc_z
+loc_541030,i76_net_game
+loc_54A264,i76_player_vehicle
+loc_5A7E14,i76_mission_time
+loc_5244E0,i76_mission_end_time
+loc_5244E4,i76_mission_end_success
+loc_609438,i76_objective_state

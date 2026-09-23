@@ -1,2 +1,6 @@
 loc_10043000,i76shell_xc_a
 loc_10043008,i76shell_xc_z
+loc_100581A0,i76shell_cars
+loc_100C6288,i76shell_catalogue
+loc_10047710,i76shell_catalogue_count
+loc_100CC4FC,i76shell_car_index

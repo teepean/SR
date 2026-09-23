@@ -349,6 +349,7 @@ static void handle_key(SDL_KeyboardEvent *ev, int down)
         key_state[k->vk] |= 0x80;
         key_pressed[k->vk] = 1;
     }
+    if (down && !ev->repeat) cheats_key(k->vk, (key_state[0x11] & 0x80) != 0, (key_state[0x10] & 0x80) != 0);
     else
     {
         key_state[k->vk] &= ~0x80;
@@ -531,6 +532,7 @@ static void script_key(int vk, int down)
         key_state[vk & 0xff] |= 0x80;
         key_pressed[vk & 0xff] = 1;
     }
+    if (down) cheats_key(vk, (key_state[0x11] & 0x80) != 0, (key_state[0x10] & 0x80) != 0);
     else
     {
         key_state[vk & 0xff] &= ~0x80;

@@ -192,6 +192,9 @@ ms_FILE * CCALL fopen_c(const char *filename, const char *mode)
     hf = fopen(path, hmode);
 #if defined(__DEBUG__)
     eprintf("fopen: %s (%s) -> %s: %s\n", filename, mode, path, (hf != NULL) ? "ok" : "failed");
+#else
+    if (winapi_debug && ((strchr(mode, 'w') != NULL) || (strchr(mode, 'a') != NULL) || (hf == NULL)))
+        eprintf("fopen: %s (%s) -> %s: %s\n", filename, mode, path, (hf != NULL) ? "ok" : "failed");
 #endif
     if (hf == NULL) return NULL;
 

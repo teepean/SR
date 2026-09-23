@@ -366,3 +366,4 @@ ungetc                       c2     -     static         # zglide | int ungetc(i
 _filbuf                      c1     -     static         # zglide | int _filbuf(FILE *) - called by inline getc macro
 # runtime hooks called from instruction_replacements.sci
 i76_frame_tick               std0   -     runtime        # exe | GetTickCount replacement in the per-frame timer sub_49C920 (frame limiter)
+i76shell_part_strncmp        c3     -     runtime        # shell | strncmp replacement in the part lookup of sub_10002130 (gamefixes.c)

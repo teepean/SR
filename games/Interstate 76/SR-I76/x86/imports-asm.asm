@@ -350,6 +350,7 @@ extern printf_c
 extern ungetc_c
 extern _filbuf_c
 extern i76_frame_tick_c
+extern i76shell_part_strncmp_c
 
 global operator_new_asm2c
 global operator_delete_asm2c
@@ -699,6 +700,7 @@ global printf_asm2c
 global ungetc_asm2c
 global _filbuf_asm2c
 global i76_frame_tick_asm2c
+global i76shell_part_strncmp_asm2c
 
 %ifidn __OUTPUT_FORMAT__, elf32
 section .note.GNU-stack noalloc noexec nowrite progbits
@@ -2446,4 +2448,9 @@ align 16
 i76_frame_tick_asm2c:
 ; i76_frame_tick (std0, runtime)
         Call_Asm_Stack0 i76_frame_tick_c, 0
+
+align 16
+i76shell_part_strncmp_asm2c:
+; i76shell_part_strncmp (c3, runtime)
+        Call_Asm_Stack3 i76shell_part_strncmp_c
 

@@ -46,6 +46,9 @@ void heap_check_all(void);
 // c2asm.c: calls recompiled game code (cdecl or stdcall) with 32-bit arguments
 uint32_t call_game(uint32_t func, uint32_t nargs, const uint32_t *args);
 
+// cheats.c: port-specific cheat codes (Ctrl+Shift + code)
+void cheats_key(uint32_t vk, int ctrl, int shift);
+
 // joystick.c
 void joystick_startup(void);
 void joystick_script(const char *cmd, int a, int b);

@@ -743,12 +743,31 @@ static void arm_slack(heap_block *b)
     memset((uint8_t *)(b + 1) + b->size, HEAP_CANARY, HEAP_SLACK);
 }
 
+#if !defined(__x86_64__) && !defined(__SANITIZE_ADDRESS__)
+// 32-bit build: blocks come from glibc's malloc - checks the size field of the malloc chunk header
+// (damaged by writes before the block or after the previous one; glibc aborts when it's freed)
+static int check_host_chunk(heap_block *b, uint32_t size, const char *where)
+{
+    uint32_t chunk = ((const uint32_t *)b)[-1] & ~7u;
+    if ((chunk < sizeof(heap_block) + size + HEAP_SLACK + 4) || (chunk > sizeof(heap_block) + size + HEAP_SLACK + 4096 + 64 * 1024 * 1024))
+    {
+        eprintf("heap: malloc chunk header of block %p (size %u) damaged (%s): %08x %08x\n", (void *)(b + 1), size, where,
+                ((const uint32_t *)b)[-2], ((const uint32_t *)b)[-1]);
+        return 0;
+    }
+    return 1;
+}
+#endif
+
 // returns 0 if the block was damaged (and reports it once)
 static int check_block(heap_block *b, const char *where)
 {
     const uint8_t *slack = (const uint8_t *)(b + 1) + b->size;
     int i;
     if (use_heap_guard()) return 1;
+#if !defined(__x86_64__) && !defined(__SANITIZE_ADDRESS__)
+    if (!check_host_chunk(b, b->size, where)) return 0;
+#endif
     if (b->magic != HEAP_BLOCK_MAGIC)
     {
         eprintf("heap: block header at %p damaged (%s)\n", (void *)(b + 1), where);
@@ -827,6 +846,16 @@ void heap_check_all(void)
         if (h == NULL) continue;
         for (b = h->first; b != NULL; b = b->next) check_block(b, "periodic check");
     }
+#if !defined(__x86_64__) && !defined(__SANITIZE_ADDRESS__)
+    if (!use_heap_guard())
+    {
+        static int reported;
+        for (i = 0; i < QUARANTINE_COUNT; i++)
+        {
+            if ((quarantine[i] != NULL) && !reported && !check_host_chunk(quarantine[i], quarantine[i]->size, "periodic check, freed block")) reported = 1;
+        }
+    }
+#endif
 }
 
 void * CCALL GetProcessHeap_c(void) { return &process_heap; }
