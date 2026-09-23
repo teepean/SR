@@ -80,3 +80,13 @@ Learned while porting Interstate '76 (see `SRW-games/Interstate 76/PORTING_NOTES
 - Divergence hunting: instrument the ORIGINAL exe under Wine with code caves that call
   OutputDebugStringA (via wsprintfA) and capture with `WINEDEBUG=-all,+debugstr`.
 - Don't `atexit(SDL_Quit)`; tear SDL down explicitly and `_exit` from ExitProcess.
+- COM interfaces (DirectSound etc.): generate `<Iface>_<Method>_asm2c` stdcall stubs + a vtable data table from a
+  small spec (method name + dword arg count incl. `this`), plus weak C stubs returning E_NOTIMPL that log the
+  first call - runtime shows exactly which methods a game needs. Objects are C structs with `lpVtbl` first.
+- Calling runtime code from game code: add a fake import (e.g. conv std0, dll "runtime") so the name gets an
+  asm2c stub, then `instruction_replacements.sci` `loc_X,len,call name`. Used for a frame limiter replacing the
+  GetTickCount call in the per-frame timer (old games' logic often breaks at hundreds of FPS).
+- CD audio games: they usually check for a CD-ROM drive (GetDriveType == 5) before MCI; report one with a
+  non-game volume label so music starts without triggering "game CD present" code paths.
+- Test audio without speakers: SDL disk audio driver (`SDL_AUDIODRIVER=disk`, sdl2-compat: `SDL_AUDIO_DRIVER=disk
+  SDL_AUDIO_DISK_OUTPUT_FILE=...`) and analyse the raw S16 output (RMS/clipping per second).
