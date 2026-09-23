@@ -549,6 +549,27 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
             }
 
             break;
+        case UD_Icmpsw:
+        case UD_Icmpsd:
+        case UD_Iscasw:
+        case UD_Iscasd:
+            /* OS,SF,ZF,AF,PF,CF - modified */
+            {
+                const char *name;
+                switch (ud_obj.mnemonic)
+                {
+                    case UD_Icmpsw: name = "cmpsw"; break;
+                    case UD_Icmpsd: name = "cmpsd"; break;
+                    case UD_Iscasw: name = "scasw"; break;
+                    default: name = "scasd"; break;
+                }
+                if (ud_obj.pfx_rep) { OUTPUT_PARAMSTRING("rep a32 %s", name); }
+                else if (ud_obj.pfx_repe) { OUTPUT_PARAMSTRING("repe a32 %s", name); }
+                else if (ud_obj.pfx_repne) { OUTPUT_PARAMSTRING("repne a32 %s", name); }
+                else { OUTPUT_PARAMSTRING("a32 %s", name); }
+            }
+
+            break;
         case UD_Icmpsb:
             /* OS,SF,ZF,AF,PF,CF - modified */
             {
@@ -672,6 +693,7 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
         case UD_Ijnz:
         case UD_Ijs:
         case UD_Ijz:
+        case UD_Ijecxz:
             /* no flags affected */
             break;
         case UD_Ijmp:
@@ -1461,6 +1483,7 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
 
             break;
         case UD_Iseta:
+        case UD_Isetae:
         case UD_Isetb:
         case UD_Isetbe:
         //case UD_Isetnb:
@@ -1579,6 +1602,12 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
         case UD_Ifsqrt:
         case UD_Ifucompp:
         case UD_Ifyl2x:
+        case UD_Ifpatan:
+        case UD_Ifprem1:
+        case UD_Ifscale:
+        case UD_If2xm1:
+        case UD_Ifsincos:
+        case UD_Ifclex:
             /* no flags affected */
         case UD_Ifcom:
         case UD_Ifcomp:

@@ -347,3 +347,15 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   allocator for 64-bit builds - to reuse for the I76 64-bit port).
 - Playtest status (user): story missions 1-3 played through without problems (Glide, X11, sound, joystick,
   save game created and loaded).
+
+### 2026-09-23 — 64-bit port, step 1 (branch I76_64bit)
+- SRW x64 translator (SRW/SR_full_x64_instr.c): added fpatan, fprem1, fscale, f2xm1, fsincos, fclex (FPU
+  pass-through), setae (setcc group), jecxz (jump group; nasm encodes it with the a32 prefix in 64-bit mode),
+  cmpsw/cmpsd/scasw/scasd (like cmpsb, `a32` string ops). SRW64 is built out of tree with OUTPUT_TYPE OUT_X64
+  (/home/teemu/sorsa/i76work/srw64-build/SRW64.exe).
+- SCI: <module>/x64/ = copies of x86/, except instruction_replacements `CALL i76_frame_tick` (x64 macro).
+- gen_all.sh: ARCH=x64 uses SRW64 ($SRW64), x64 SCI files, nasm -felf64, DEST SR-I76/x64.
+- SR-I76/x64: Septerra's x64 includes (x64inc.inc, asm_call.inc, asm_pushx.inc, asm_unwind.inc, asm_fs_mem.*,
+  asm-calls.inc, misc.inc, asm-cpu.c, x64_stack.h).
+- Result: all four modules generate and assemble as ELF64 objects. Next: runtime (C++/PTR32, low memory,
+  trampolines, x64 asm2c glue) per X64_PORT_PLAN.md.
