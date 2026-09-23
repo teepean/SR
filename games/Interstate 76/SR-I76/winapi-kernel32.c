@@ -652,12 +652,112 @@ typedef struct heap_obj {
 
 static heap_obj process_heap = { HT_HEAP, NULL };
 
+/* Heap robustness and diagnostics
+ * - the slack after every block is filled with a check pattern; overruns (the game writing past a block) are
+ *   detected when the block is freed/reallocated, and for all blocks once per frame with I76_HEAPCHECK=1
+ * - freed blocks are quarantined before their memory is reused, so that writes to freed memory (the game
+ *   has double frees, so likely also use-after-free) hit quarantined data instead of live data or the host
+ *   allocator's metadata (on Windows such writes usually go unnoticed) */
+#define HEAP_CANARY 0x5A
+#define QUARANTINE_COUNT 4096
+#define QUARANTINE_BYTES (32 * 1024 * 1024)
+
+#define MAX_HEAPS 64
+static heap_obj *heaps[MAX_HEAPS];
+static int num_heaps;
+
+static heap_block *quarantine[QUARANTINE_COUNT];
+static int quarantine_pos;
+static uint32_t quarantine_bytes;
+
+static void arm_slack(heap_block *b)
+{
+    memset((uint8_t *)(b + 1) + b->size, HEAP_CANARY, HEAP_SLACK);
+}
+
+// returns 0 if the block was damaged (and reports it once)
+static int check_block(heap_block *b, const char *where)
+{
+    const uint8_t *slack = (const uint8_t *)(b + 1) + b->size;
+    int i;
+    if (b->magic != HEAP_BLOCK_MAGIC)
+    {
+        eprintf("heap: block header at %p damaged (%s)\n", (void *)(b + 1), where);
+        return 0;
+    }
+    for (i = 0; i < HEAP_SLACK; i++)
+    {
+        if (slack[i] != HEAP_CANARY)
+        {
+            eprintf("heap: overrun after block %p (size %u) at +%u (%s): %02x %02x %02x %02x\n", (void *)(b + 1), b->size,
+                    b->size + i, where, slack[i], (i + 1 < HEAP_SLACK) ? slack[i + 1] : 0, (i + 2 < HEAP_SLACK) ? slack[i + 2] : 0,
+                    (i + 3 < HEAP_SLACK) ? slack[i + 3] : 0);
+            arm_slack(b);   // report each overrun once
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void quarantine_free(heap_block *b)
+{
+    uint32_t size = b->size + sizeof(heap_block) + HEAP_SLACK;
+    heap_block *old;
+
+    // evict until there is room
+    while ((quarantine_bytes + size > QUARANTINE_BYTES) || (quarantine[quarantine_pos] != NULL))
+    {
+        old = quarantine[quarantine_pos];
+        if (old != NULL)
+        {
+            quarantine_bytes -= old->size + sizeof(heap_block) + HEAP_SLACK;
+            x86_free(old);
+            quarantine[quarantine_pos] = NULL;
+            if (quarantine_bytes + size <= QUARANTINE_BYTES) break;
+        }
+        quarantine_pos = (quarantine_pos + 1) % QUARANTINE_COUNT;
+        if (quarantine_bytes == 0) break;
+    }
+    if (size > QUARANTINE_BYTES)
+    {
+        x86_free(b);
+        return;
+    }
+    quarantine[quarantine_pos] = b;
+    quarantine_bytes += size;
+    quarantine_pos = (quarantine_pos + 1) % QUARANTINE_COUNT;
+}
+
+void heap_check_all(void)
+{
+    static int enabled = -1;
+    int i;
+    heap_block *b;
+
+    static uint32_t last;
+    uint32_t now;
+
+    if (enabled < 0) enabled = (getenv("I76_HEAPCHECK") != NULL);
+    if (!enabled) return;
+    now = winapi_get_ticks();
+    if (now - last < 100) return;
+    last = now;
+    for (i = -1; i < num_heaps; i++)
+    {
+        heap_obj *h = (i < 0) ? &process_heap : heaps[i];
+        if (h == NULL) continue;
+        for (b = h->first; b != NULL; b = b->next) check_block(b, "periodic check");
+    }
+}
+
 void * CCALL GetProcessHeap_c(void) { return &process_heap; }
 
 void * CCALL HeapCreate_c(uint32_t flOptions, uint32_t dwInitialSize, uint32_t dwMaximumSize)
 {
     heap_obj *h = (heap_obj *) x86_calloc(1, sizeof(heap_obj));
+    int i;
     h->type = HT_HEAP;
+    for (i = 0; i < MAX_HEAPS; i++) if (heaps[i] == NULL) { heaps[i] = h; if (i >= num_heaps) num_heaps = i + 1; break; }
     return h;
 }
 
@@ -669,12 +769,18 @@ uint32_t CCALL HeapDestroy_c(heap_obj *hHeap)
     for (b = hHeap->first; b != NULL; b = next)
     {
         next = b->next;
+        check_block(b, "HeapDestroy");
         live_remove(b);
         b->magic = 0;
-        x86_free(b);
+        quarantine_free(b);
     }
     hHeap->first = NULL;
-    if (hHeap != &process_heap) x86_free(hHeap);
+    if (hHeap != &process_heap)
+    {
+        int i;
+        for (i = 0; i < num_heaps; i++) if (heaps[i] == hHeap) heaps[i] = NULL;
+        x86_free(hHeap);
+    }
     return 1;
 }
 
@@ -688,9 +794,10 @@ void * CCALL HeapAlloc_c(heap_obj *hHeap, uint32_t dwFlags, uint32_t dwBytes)
     if (b == NULL) return NULL;
     // always zero: the game uses uninitialised fields of HeapAlloc'ed structs (e.g. texture
     // animation descriptors in sub_449xxx) which happen to be zero on a fresh Windows heap
-    memset(b + 1, 0, dwBytes + HEAP_SLACK);
+    memset(b + 1, 0, dwBytes);
 
     b->size = dwBytes;
+    arm_slack(b);
     b->magic = HEAP_BLOCK_MAGIC;
     live_insert(b);
     b->heap = hHeap;
@@ -718,10 +825,11 @@ uint32_t CCALL HeapFree_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem)
         if (winapi_debug) eprintf("HeapFree: invalid block %p\n", lpMem);
         return 0;
     }
+    check_block(b, "HeapFree");
     b->magic = 0;
     live_remove(b);
     unlink_block(b);
-    x86_free(b);
+    quarantine_free(b);
     return 1;
 }
 
@@ -733,39 +841,36 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     if (lpMem == NULL) return NULL;
     b = ((heap_block *)lpMem) - 1;
     if (!valid_block(b)) return NULL;
+    check_block(b, "HeapReAlloc");
     oldsize = b->size;
 
     if (dwFlags & HEAP_REALLOC_IN_PLACE_ONLY)
     {
         if (dwBytes > oldsize) return NULL;
         b->size = dwBytes;
+        arm_slack(b);
         return lpMem;
     }
 
-    unlink_block(b);
-    live_remove(b);
-    b->magic = 0;
-    nb = (heap_block *) x86_realloc(b, sizeof(heap_block) + dwBytes + HEAP_SLACK);
-    if (nb == NULL)
-    {
-        b->magic = HEAP_BLOCK_MAGIC;
-        live_insert(b);
-        // re-link the old block
-        b->prev = NULL;
-        b->next = b->heap->first;
-        if (b->next != NULL) b->next->prev = b;
-        b->heap->first = b;
-        return NULL;
-    }
+    // new block + copy; the old block goes to the quarantine (stale pointers to it stay harmless)
+    nb = (heap_block *) x86_malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
+    if (nb == NULL) return NULL;
+    memcpy(nb + 1, b + 1, (dwBytes < oldsize) ? dwBytes : oldsize);
     if (dwBytes > oldsize) memset((uint8_t *)(nb + 1) + oldsize, 0, dwBytes - oldsize);
-
     nb->size = dwBytes;
     nb->magic = HEAP_BLOCK_MAGIC;
+    nb->heap = b->heap;
+    arm_slack(nb);
     live_insert(nb);
     nb->prev = NULL;
     nb->next = nb->heap->first;
     if (nb->next != NULL) nb->next->prev = nb;
     nb->heap->first = nb;
+
+    b->magic = 0;
+    live_remove(b);
+    unlink_block(b);
+    quarantine_free(b);
     return nb + 1;
 }
 

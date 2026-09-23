@@ -375,3 +375,9 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   SmackBuf.Buffer. First x64 run: starts, loads the DLLs, opens Glide and DirectDraw (addresses 0x41xxxxxx).
 - GetKeyState: Windows returns 0xFF80|toggle for a pressed key; the game tests & 0x1000 for Ctrl/Shift/Alt, so
   modifiers (and the Ctrl+Shift cheat codes like "getdown") never worked with 0x8000.
+- Crash at the start of a later mission (again glibc "double free or corruption (!prev)" noticed inside the
+  NVIDIA driver's texture upload) even with the tracked CRT heap. Heap hardening: the 32-byte slack after
+  every block holds a check pattern (overruns reported on free/realloc, and for all blocks ~10x/s with
+  I76_HEAPCHECK=1); freed blocks (HeapFree, HeapReAlloc's old block, HeapDestroy) are quarantined (up to
+  4096 blocks / 32 MB) before the memory is reused, so use-after-free writes can't hit live data or glibc's
+  metadata; HeapReAlloc always allocates + copies. Training mission: no overruns detected.

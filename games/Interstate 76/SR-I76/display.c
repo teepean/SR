@@ -188,6 +188,7 @@ static void dump_frame(void)
 
 void display_idle(void)
 {
+    heap_check_all();
     static uint32_t last;
     uint32_t now = SDL_GetTicks();
     if ((getenv("I76_DUMP_FRAMES") != NULL) && renderer_ok && (now - last >= 1000))
