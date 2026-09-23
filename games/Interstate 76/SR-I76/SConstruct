@@ -39,7 +39,7 @@ elif device == 'pc64-windows':
                CPPPATH = [win_deps + '/include/SDL2', win_deps + '/include/freetype2', win_deps + '/include'],
                LIBPATH = [win_deps + '/lib'],
                LINKFLAGS = '-m64 -mwindows -static-libgcc -static-libstdc++ -Wl,--image-base,0x10000000,--disable-dynamicbase,--disable-reloc-section,--disable-high-entropy-va,--nxcompat',
-               LIBS = ['mingw32', 'SDL2main', 'SDL2', 'freetype', 'opengl32', 'ws2_32', 'winmm']
+               LIBS = ['mingw32', 'SDL2main', 'SDL2', 'freetype', 'd3d11', 'dxgi', 'dxguid', 'opengl32', 'ws2_32', 'winmm']
               )
     # no libwinpthread-1.dll next to the exe: link it statically
     env.Append(_LIBFLAGS = ' -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic')

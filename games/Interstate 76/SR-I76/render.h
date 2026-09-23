@@ -1,6 +1,6 @@
 /**
  *
- *  Rendering backend interface (OpenGL 3.3: render_gl.c; Direct3D 11: render_d3d11.c).
+ *  Rendering interface (render.c dispatches to OpenGL 3.3: render_gl.c or Direct3D 11: render_d3d11.c).
  *
  *  The backend owns the window's graphics context and presents either
  *   - the GDI framebuffer (display.c): render_present_2d, or
@@ -27,8 +27,13 @@ uint32_t render_window_flags(void);
 int render_init(struct SDL_Window *window);
 void render_shutdown(void);
 
+// size of the window's drawable area in pixels
+void render_drawable_size(int *w, int *h);
 // letterboxed viewport of a w x h picture in the window (window pixels)
 void render_viewport(int w, int h, int *vx, int *vy, int *vw, int *vh);
+// selected backend ("OpenGL", "Direct3D 11"); render_fallback switches to OpenGL (returns 0 if already used)
+const char *render_backend_name(void);
+int render_fallback(void);
 
 // presents a XRGB8888 picture scaled to the window
 void render_present_2d(const uint32_t *pixels, int w, int h);

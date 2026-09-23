@@ -27,6 +27,8 @@ static const char default_config[] =
     "\n"
     "# renderer: glide (hardware, OpenGL) or software\n"
     "renderer = glide\n"
+    "# Windows: graphics API: d3d11 (default) or opengl (OpenGL 3.3 is always used on Linux)\n"
+    "graphics_api = d3d11\n"
     "# Glide internal resolution = 640x480 * glide_scale (1-8)\n"
     "glide_scale = 2\n"
     "# initial window size = game resolution * window_scale\n"

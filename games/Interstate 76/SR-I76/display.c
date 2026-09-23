@@ -64,17 +64,24 @@ int display_create(const char *title, int width, int height)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width * scale, height * scale, SDL_WINDOW_RESIZABLE | render_window_flags() | (config_get_int("fullscreen", 0) ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
-    if (window == NULL)
+    for (;;)
     {
-        eprintf("Error: SDL_CreateWindow: %s\n", SDL_GetError());
-        return 0;
-    }
+        window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width * scale, height * scale, SDL_WINDOW_RESIZABLE | render_window_flags() | (config_get_int("fullscreen", 0) ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+        if (window == NULL)
+        {
+            eprintf("Error: SDL_CreateWindow: %s\n", SDL_GetError());
+            return 0;
+        }
+        if (render_init(window)) break;
 
-    if (!render_init(window))
-    {
-        eprintf("Error: can't initialize the renderer\n");
-        return 0;
+        // e.g. no Direct3D 11: try OpenGL (a new window, the flags differ)
+        SDL_DestroyWindow(window);
+        window = NULL;
+        if (!render_fallback())
+        {
+            eprintf("Error: can't initialize the renderer\n");
+            return 0;
+        }
     }
     renderer_ok = 1;
 
@@ -230,7 +237,7 @@ static void window_scale(float *sx, float *sy)
 {
     int ww, wh, dw, dh;
     SDL_GetWindowSize(window, &ww, &wh);
-    SDL_GL_GetDrawableSize(window, &dw, &dh);
+    render_drawable_size(&dw, &dh);
     *sx = (ww > 0) ? (float)dw / ww : 1.0f;
     *sy = (wh > 0) ? (float)dh / wh : 1.0f;
 }

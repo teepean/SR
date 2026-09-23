@@ -460,3 +460,18 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   mix (checked with the new I76_AUDIO_DUMP=<file>: raw 44100 Hz stereo S16 copy of the mixer output; the
   official SDL2 Windows build has no disk audio driver and Wine ignored SDL_AUDIODRIVER=dummy). Virtual
   joystick (I76_VIRTUAL_JOYSTICK=1) through SDL on Windows: joyGetPosEx values identical to the Linux build.
+
+### 2026-09-23 — Direct3D 11 renderer (Windows)
+- render.c dispatches the render.h interface to a backend (render_backend.h): render_gl.c (OpenGL 3.3, all
+  platforms) or render_d3d11.c (Windows). SR-I76.cfg graphics_api = d3d11 (Windows default) | opengl; if
+  Direct3D 11 can't be initialized (no d3dcompiler_47.dll, no device) display.c recreates the window for
+  OpenGL (render_fallback). render_viewport/render_drawable_size are shared (display.c's mouse mapping no
+  longer calls SDL_GL_*).
+- render_d3d11.c mirrors render_gl.c: HLSL port of the Glide pixel shader (noperspective color/depth, SV_Depth
+  for Z/W buffering, Texture2D.Load for the chroma key texel, fog table in 16 float4s), RGBA8 front/back
+  targets + D32_FLOAT depth, cached blend/depth/sampler states (GR_CMP_* + 1 = D3D11_COMPARISON_*; the alpha
+  blend factors use the *_ALPHA variants of DST/SRC_COLOR), vertex ring buffer (NO_OVERWRITE/DISCARD),
+  textures with generated mipmaps, dynamic BGRA textures for 2D and LFB writes, staging copies for LFB
+  reads and frame dumps. Shaders compiled at startup with D3DCompile (d3dcompiler_47.dll, loaded dynamically).
+- Verified under Wine (wined3d): menus and mission 12 -> 13 look the same as with OpenGL; fallback tested
+  with WINEDLLOVERRIDES="d3dcompiler_47=d".

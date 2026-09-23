@@ -16,7 +16,7 @@
 #include <SDL.h>
 #define GL_GLEXT_PROTOTYPES 0
 #include <GL/glcorearb.h>
-#include "render.h"
+#include "render_backend.h"
 #include "config.h"
 #include "winapi.h"
 
@@ -391,12 +391,14 @@ static int last_2d_w, last_2d_h;
 static uint32_t *last_window;
 static int last_window_w, last_window_h;
 
-uint32_t render_window_flags(void)
+static void gl_glide_close(void);
+
+static uint32_t gl_window_flags(void)
 {
     return SDL_WINDOW_OPENGL;
 }
 
-int render_init(SDL_Window *w)
+static int gl_init(SDL_Window *w)
 {
     static const float quad[12] = { 0,0, 1,0, 0,1, 1,0, 1,1, 0,1 };
     const char *vsync;
@@ -459,34 +461,16 @@ int render_init(SDL_Window *w)
     return 1;
 }
 
-void render_shutdown(void)
+static void gl_shutdown(void)
 {
     if (context != NULL) SDL_GL_DeleteContext(context);
     context = NULL;
     window = NULL;
 }
 
-void render_viewport(int w, int h, int *vx, int *vy, int *vw, int *vh)
+static void gl_drawable_size(int *w, int *h)
 {
-    int ww, wh;
-    SDL_GL_GetDrawableSize(window, &ww, &wh);
-    if ((w <= 0) || (h <= 0) || (ww <= 0) || (wh <= 0))
-    {
-        *vx = *vy = 0; *vw = ww; *vh = wh;
-        return;
-    }
-    if ((int64_t)ww * h > (int64_t)wh * w)
-    {
-        *vh = wh;
-        *vw = (int)((int64_t)wh * w / h);
-    }
-    else
-    {
-        *vw = ww;
-        *vh = (int)((int64_t)ww * h / w);
-    }
-    *vx = (ww - *vw) / 2;
-    *vy = (wh - *vh) / 2;
+    SDL_GL_GetDrawableSize(window, w, h);
 }
 
 static void upload_texture(GLuint tex, int *tw, int *th, int w, int h, GLenum format, const void *pixels, GLint filter)
@@ -521,7 +505,7 @@ static void draw_quad(GLuint tex, int keyed)
     glBindVertexArray(0);
 }
 
-void render_present_2d(const uint32_t *pixels, int w, int h)
+static void gl_present_2d(const uint32_t *pixels, int w, int h)
 {
     int vx, vy, vw, vh, ww, wh;
 
@@ -555,7 +539,7 @@ void render_present_2d(const uint32_t *pixels, int w, int h)
     memcpy(last_2d, pixels, (size_t)w * h * 4);
 }
 
-uint32_t *render_read_last(int *w, int *h)
+static uint32_t *gl_read_last(int *w, int *h)
 {
     uint32_t *p;
     int y;
@@ -594,13 +578,13 @@ uint32_t *render_read_last(int *w, int *h)
 /* ------------------------------------------------------------------ */
 /* Glide                                                               */
 
-int render_glide_open(int width, int height)
+static int gl_glide_open(int width, int height)
 {
     int i, fw, fh;
     const char *s;
 
     if (context == NULL) return 0;
-    if (glide_open) render_glide_close();
+    if (glide_open) gl_glide_close();
 
     s = config_get("glide_scale");
     glide_scale = (s != NULL) ? atoi(s) : 2;
@@ -649,7 +633,7 @@ int render_glide_open(int width, int height)
     return 1;
 }
 
-void render_glide_close(void)
+static void gl_glide_close(void)
 {
     if (!glide_open) return;
     glDeleteFramebuffers(2, fbo);
@@ -658,12 +642,12 @@ void render_glide_close(void)
     glide_open = 0;
 }
 
-int render_glide_is_open(void)
+static int gl_glide_is_open(void)
 {
     return glide_open;
 }
 
-int render_glide_texture_create(int w, int h, const uint32_t *rgba)
+static int gl_glide_texture_create(int w, int h, const uint32_t *rgba)
 {
     GLuint tex;
     glGenTextures(1, &tex);
@@ -674,7 +658,7 @@ int render_glide_texture_create(int w, int h, const uint32_t *rgba)
     return (int)tex;
 }
 
-void render_glide_texture_destroy(int texture)
+static void gl_glide_texture_destroy(int texture)
 {
     GLuint tex = (GLuint)texture;
     if (tex != 0) glDeleteTextures(1, &tex);
@@ -705,7 +689,7 @@ static void bind_back_buffer(void)
     glDisable(GL_CULL_FACE);
 }
 
-void render_glide_draw(const render_glide_state *st, const render_glide_vertex *vertices, int count, int primitive)
+static void gl_glide_draw(const render_glide_state *st, const render_glide_vertex *vertices, int count, int primitive)
 {
     if (!glide_open || (count <= 0)) return;
 
@@ -771,7 +755,7 @@ void render_glide_draw(const render_glide_state *st, const render_glide_vertex *
     glBindVertexArray(0);
 }
 
-void render_glide_clear(uint32_t color, uint8_t alpha, uint16_t depth, int color_mask, int depth_mask)
+static void gl_glide_clear(uint32_t color, uint8_t alpha, uint16_t depth, int color_mask, int depth_mask)
 {
     GLbitfield bits = 0;
     if (!glide_open) return;
@@ -830,14 +814,14 @@ static void present_front(void)
     SDL_GL_SwapWindow(window);
 }
 
-void render_glide_swap(void)
+static void gl_glide_swap(void)
 {
     if (!glide_open) return;
     back_index ^= 1;
     present_front();
 }
 
-void render_glide_refresh(int force)
+static void gl_glide_refresh(int force)
 {
     // the game doesn't swap while it waits for input (e.g. the in-game menu); some compositors only show
     // a frame once the next one arrives, so keep presenting the front buffer
@@ -845,7 +829,7 @@ void render_glide_refresh(int force)
     if (force || (SDL_GetTicks() - last_glide_present >= 33)) present_front();
 }
 
-void render_glide_read_565(int buffer, uint16_t *dst, int stride_pixels)
+static void gl_glide_read_565(int buffer, uint16_t *dst, int stride_pixels)
 {
     int fw, fh, x, y;
     uint8_t *tmp;
@@ -869,7 +853,7 @@ void render_glide_read_565(int buffer, uint16_t *dst, int stride_pixels)
     free(tmp);
 }
 
-void render_glide_write_argb(int buffer, const uint32_t *src)
+static void gl_glide_write_argb(int buffer, const uint32_t *src)
 {
     static int lfb_w, lfb_h;
     if (!glide_open) return;
@@ -883,6 +867,13 @@ void render_glide_write_argb(int buffer, const uint32_t *src)
     draw_quad(lfb_tex, 1);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
+const render_backend render_backend_gl = {
+    "OpenGL",
+    gl_window_flags, gl_init, gl_shutdown, gl_drawable_size, gl_present_2d, gl_read_last,
+    gl_glide_open, gl_glide_close, gl_glide_is_open, gl_glide_texture_create, gl_glide_texture_destroy,
+    gl_glide_draw, gl_glide_clear, gl_glide_swap, gl_glide_refresh, gl_glide_read_565, gl_glide_write_argb
+};
 
 #ifdef __cplusplus
 }
