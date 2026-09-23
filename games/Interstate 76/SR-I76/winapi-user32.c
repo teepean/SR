@@ -370,7 +370,9 @@ static void handle_key(SDL_KeyboardEvent *ev, int down)
 int16_t CCALL GetKeyState_c(int32_t nVirtKey)
 {
     uint8_t s = key_state[nVirtKey & 0xff];
-    return (int16_t)(((s & 0x80) ? 0x8000 : 0) | (s & 1));
+    // like Windows: a pressed key gives -128 / -127 (0xFF80 | toggle), i.e. more bits than 0x8000 are set -
+    // the game tests Ctrl/Shift/Alt with GetKeyState(vk) & 0x1000 (sub_44E920: cheat codes, modifier keys)
+    return (int16_t)(((s & 0x80) ? 0xFF80 : 0) | (s & 1));
 }
 
 int16_t CCALL GetAsyncKeyState_c(int32_t nVirtKey)
