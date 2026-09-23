@@ -22,6 +22,7 @@
 #include "platform.h"
 #include "vfs.h"
 #include "winapi.h"
+#include "display.h"
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -595,7 +596,9 @@ void * CCALL HeapAlloc_c(heap_obj *hHeap, uint32_t dwFlags, uint32_t dwBytes)
 
     b = (heap_block *) malloc(sizeof(heap_block) + (dwBytes ? dwBytes : 1));
     if (b == NULL) return NULL;
-    if (dwFlags & HEAP_ZERO_MEMORY) memset(b + 1, 0, dwBytes);
+    // always zero: the game uses uninitialised fields of HeapAlloc'ed structs (e.g. texture
+    // animation descriptors in sub_449xxx) which happen to be zero on a fresh Windows heap
+    memset(b + 1, 0, dwBytes);
 
     b->size = dwBytes;
     b->heap = hHeap;
@@ -650,7 +653,7 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
         b->heap->first = b;
         return NULL;
     }
-    if ((dwFlags & HEAP_ZERO_MEMORY) && (dwBytes > oldsize)) memset((uint8_t *)(nb + 1) + oldsize, 0, dwBytes - oldsize);
+    if (dwBytes > oldsize) memset((uint8_t *)(nb + 1) + oldsize, 0, dwBytes - oldsize);
 
     nb->size = dwBytes;
     nb->prev = NULL;
@@ -961,8 +964,7 @@ uint32_t CCALL TlsSetValue_c(uint32_t dwTlsIndex, uint32_t lpTlsValue) { if (dwT
 
 void CCALL ExitProcess_c(uint32_t uExitCode)
 {
-    fflush(NULL);
-    exit(uExitCode);
+    app_exit(uExitCode);
 }
 
 uint32_t CCALL TerminateProcess_c(void *hProcess, uint32_t uExitCode)

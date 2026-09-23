@@ -15,6 +15,8 @@ class BS:
         for va, raw, sz in self.secs:
             if va <= a < va + sz: return a - va + raw
     def is_block_start(self, t):
+        # MSVC aligns functions to 16 bytes (padding before them decodes as garbage)
+        if (t & 15) == 0: return True
         i = bisect.bisect_left(self.code, t)
         if i == 0: return True
         p = self.code[i - 1]

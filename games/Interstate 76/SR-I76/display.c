@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <SDL.h>
 #include "display.h"
 
@@ -109,6 +110,16 @@ void display_destroy(void)
     texture = NULL;
     renderer = NULL;
     window = NULL;
+}
+
+// tears SDL down explicitly and exits without running atexit handlers:
+// SDL_Quit from atexit (called from inside game code) crashed in the video driver
+void app_exit(int code)
+{
+    fflush(NULL);
+    display_destroy();
+    SDL_Quit();
+    _exit(code);
 }
 
 void display_set_title(const char *title)

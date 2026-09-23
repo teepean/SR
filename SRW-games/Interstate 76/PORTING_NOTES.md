@@ -198,3 +198,23 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
 - Current blocker: TRIP→TRAINING loads a01.msn, then WinMain calls the state function pointer at 0x4C2720,
   which is still NULL. Next: watch 0x4C2720 in the original exe under Wine (separate prefix
   /home/teemu/sorsa/i76work/wineprefix, input via xdotool) to find the divergence.
+
+### 2026-09-23 — training mission runs (software renderer)
+- The NULL state pointer came from missing vehicle objects: the mission chunk descriptor tables (OREV 0x500AE8,
+  LREV 0x500D80) contain the tag "OBJ\0" = 0x004A424F, which is a valid image address → wrongly relocated,
+  so the OBJ chunk was never matched and `sub_463120` (vehicle class init → `sub_405970(1)`) never ran.
+  Excluded in reloc_exclude.txt (also the `mov [esp+0x1c],"REV\0"` immediate); classify.py got a `text-tag`
+  rule (data-section value with 3 uppercase low bytes pointing into .text but not at a function).
+  Found by instrumenting the original exe under Wine (code caves → OutputDebugStringA, `+debugstr`).
+- `text-mid-block-noxref` rejected real handlers: blockstart.py now accepts any 16-byte aligned target.
+- Key-binding action table (0x4F2Cxx, `{name, flag ptr}`) pointers to 0x53677x were rejected by `bss-ascii`
+  (bytes printable). classify.py now "rescues" aligned ascii/bss-ascii/low16zero rejects that sit in a regular
+  table (accepted neighbours at the same stride, targets within 0x100). Septerra validation unchanged (FP 23/FN 10).
+- Hang in texture-animation update `sub_44B2D0`: descriptors allocated with HeapAlloc (sub_449xxx) leave fps
+  (+20) and flags (+24) uninitialised; on Windows the fresh heap is zero. HeapAlloc/HeapReAlloc now always zero.
+- Exit crash: `atexit(SDL_Quit)` crashed inside the video driver. `app_exit()` (display.c) destroys the window,
+  calls SDL_Quit and `_exit`; used by ExitProcess, WinMain return and the input script `quit`.
+- Result: TRIP → TRAINING starts a01.msn; intro camera and the cockpit (radar, weapons, damage panel, mirror)
+  render in software mode. Offscreen test: `SDL_VIDEODRIVER=offscreen I76_DUMP_FRAMES=<existing dir>
+  I76_INPUT_SCRIPT=script4.txt` (the dump dir must exist).
+- Next: driving input check, sound (DirectSound → SDL), then Glide/D3D11.

@@ -532,7 +532,7 @@ static void run_script(void)
         else if (0 == strcmp(e->cmd, "down")) script_mouse(e->a, e->b, e->c, 1);
         else if (0 == strcmp(e->cmd, "up")) script_mouse(e->a, e->b, e->c, 0);
         else if (0 == strcmp(e->cmd, "click")) { script_mouse(e->a, e->b, e->c, 1); script_mouse(e->a, e->b, e->c, 0); }
-        else if (0 == strcmp(e->cmd, "quit")) { eprintf("input script: quit\n"); fflush(NULL); exit(0); }
+        else if (0 == strcmp(e->cmd, "quit")) { eprintf("input script: quit\n"); app_exit(0); }
     }
 }
 

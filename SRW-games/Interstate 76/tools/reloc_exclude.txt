@@ -3,3 +3,6 @@
 0x4b2efd # same constant
 0x4f4f24 # UTF-16 alphabet table "a\0b\0c\0..."
 0x4f4f28 # UTF-16 alphabet table
+0x500af8 # chunk tag "OBJ\0" in OREV descriptor table (not a pointer)
+0x500d90 # chunk tag "OBJ\0" in LREV descriptor table
+0x4b4868 # mov [esp+0x1c], "REV\0" - file header tag (save game writer)

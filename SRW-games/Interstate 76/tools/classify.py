@@ -18,6 +18,7 @@ def classify(d, bss_start=None, bs=None, aligned_data=False):
         # (IDA's offset flag is not trusted: it marked the string "NEC" as an offset in i76.exe)
         if (v&0xffff)==0: why='low16zero'
         elif r[3]=='s': why='string'
+        elif ss!='.text' and st=='.text' and v not in funcs and all(0x41<=((v>>(8*k))&0xff)<=0x5a for k in range(3)): why='text-tag'
         elif aligned_data and ss!='.text' and a%4: why='unaligned-data'
         elif bss_start and v>=bss_start and v not in heads and all(0x20<=((v>>(8*k))&0xff)<0x7f for k in range(3)): why='bss-ascii'
         elif ss=='.text' and r[3]=='d' and r[5]=='-' and a%4: why='text-data-misaligned'
@@ -50,6 +51,18 @@ def classify(d, bss_start=None, bs=None, aligned_data=False):
         for a in g:
             if a!=keep: rej[a]=acc[a][0],'overlap'
     for a in rej: acc.pop(a,None)
+    # rescue: an aligned rejected candidate inside a regular table (accepted neighbors at the same
+    # stride on both sides or two on one side, pointing close to the same target) is a pointer too
+    rescue_reasons=('bss-ascii','ascii','low16zero')
+    for a in sorted(rej):
+        v,why=rej[a]
+        if why not in rescue_reasons or a%4: continue
+        for stride in (8,12,16,20,24,28,32):
+            def near(x):
+                return x in acc and abs(acc[x][0]-v) <= 0x100
+            if (near(a-stride) and near(a+stride)) or (near(a-stride) and near(a-2*stride)) or (near(a+stride) and near(a+2*stride)):
+                acc[a]=(v,'rescued'); break
+    for a in [x for x in acc if acc[x][1]=='rescued']: rej.pop(a,None)
     return data,acc,rej,seg,heads
 if __name__=='__main__':
     data,acc,rej,seg,heads=classify(sys.argv[1])

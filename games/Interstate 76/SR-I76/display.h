@@ -21,6 +21,7 @@ extern uint32_t *display_pixels;
 int display_create(const char *title, int width, int height);
 void display_resize(int width, int height);
 void display_destroy(void);
+void app_exit(int code);
 int display_exists(void);
 
 // marks the framebuffer as changed; it's presented by display_present (rate limited)

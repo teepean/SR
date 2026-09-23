@@ -13,6 +13,7 @@
 #include "msvcrt.h"
 #include "winapi.h"
 #include "winapi-gdi32.h"
+#include "display.h"
 
 void winapi_user32_init(void);
 
@@ -90,8 +91,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    atexit(SDL_Quit);
-
 
     winapi_debug = (getenv("I76_DEBUG") != NULL) ? atoi(getenv("I76_DEBUG")) : 0;
 
@@ -103,5 +102,6 @@ int main(int argc, char *argv[])
 
     run_static_constructors();
 
-    return WinMain_((void *)0x400000, NULL, command_line, 5); // 5 = SW_SHOW
+    app_exit(WinMain_((void *)0x400000, NULL, command_line, 5)); // 5 = SW_SHOW
+    return 0;
 }
