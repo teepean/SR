@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include "platform.h"
 
+EXTERN_C_BEGIN
+
 static void unimplemented(const char *name, int *reported)
 {
     if (!*reported)
@@ -363,3 +365,5 @@ WEAK uint32_t CCALL printf_c(uint32_t a0, uint32_t *ap) { static int reported; u
 WEAK uint32_t CCALL ungetc_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("ungetc", &reported); return 0; }
 WEAK uint32_t CCALL _filbuf_c(uint32_t a0) { static int reported; unimplemented("_filbuf", &reported); return 0; }
 WEAK uint32_t CCALL i76_frame_tick_c(void) { static int reported; unimplemented("i76_frame_tick", &reported); return 0; }
+
+EXTERN_C_END

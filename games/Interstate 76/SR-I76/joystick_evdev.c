@@ -25,6 +25,10 @@
 #include <linux/input.h>
 #include "joystick_backend.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 // struct input_event as the kernel writes it for 32-bit processes
@@ -290,5 +294,9 @@ int evdev_joystick_read(int index, joy_state *st)
     }
     return 1;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -359,3 +359,9 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   asm-calls.inc, misc.inc, asm-cpu.c, x64_stack.h).
 - Result: all four modules generate and assemble as ELF64 objects. Next: runtime (C++/PTR32, low memory,
   trampolines, x64 asm2c glue) per X64_PORT_PLAN.md.
+- x64 step 2: the runtime builds and links as x86-64 (`scons device=pc64-linux` -> SR-I76-x64; objects .o64,
+  C compiled as C++ like Septerra, EXTERN_C_BEGIN/END around every runtime file, extern "C" guards in all
+  headers; Septerra's Game-Memory.c copied; gen_imports.py writes x64/imports-asm.asm and x64/com-asm.asm with
+  explicit SysV stubs; x64/raw-asm.asm, x64/c2asm.asm (generic C -> game trampoline c_call_asm_n); scanf now
+  translates the format (MS %ld = 32 bits) and passes explicit host arguments). The 32-bit build is unchanged
+  in behaviour (mission test passes). Not yet runnable: trampolines not wired, memory not low, PTR32 fields.

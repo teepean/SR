@@ -33,6 +33,8 @@
 #include "vfs.h"
 #include "msvcrt.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 
@@ -359,13 +361,59 @@ int32_t CCALL printf_c(const char *format, uint32_t *ap)
     return vfctprintf_x86(out_file, stdout, format, ap);
 }
 
+/* scanf: the game's arguments are 32-bit pointers into game memory. The format is translated to the host
+   (MS 'l' on integers = 32 bits, host long is 64 bits on x86-64) and the host function is called with an
+   explicit argument list (a host va_list can't be built from the game's stack portably). */
+#define SCANF_MAX_ARGS 32
+
+static int scanf_prepare(const char *format, const uint32_t *ap, char *hostfmt, size_t hostfmt_size, void **args)
+{
+    const char *p = format;
+    char *o = hostfmt, *end = hostfmt + hostfmt_size - 1;
+    int n = 0;
+
+    while (*p && (o < end))
+    {
+        if (*p != '%') { *o++ = *p++; continue; }
+        *o++ = *p++;
+        if (*p == '%') { if (o < end) *o++ = *p++; continue; }
+        {
+            int suppress = 0;
+            if (*p == '*') { suppress = 1; if (o < end) *o++ = *p++; }
+            while ((*p >= '0') && (*p <= '9') && (o < end)) *o++ = *p++;
+            if (*p == 'h') { if (o < end) *o++ = *p++; }
+            else if ((*p == 'l') && (p[1] != 0) && (strchr("diouxXn", p[1]) != NULL)) p++;     // MS long = 32 bits
+            else if (*p == 'l') { if (o < end) *o++ = *p++; }                                // %lf = double
+            else if ((p[0] == 'I') && (p[1] == '6') && (p[2] == '4')) { p += 3; if (o + 1 < end) { *o++ = 'l'; *o++ = 'l'; } }
+            if (*p == '[')
+            {
+                if (o < end) *o++ = *p++;
+                if ((*p == '^') && (o < end)) *o++ = *p++;
+                if ((*p == ']') && (o < end)) *o++ = *p++;
+                while (*p && (*p != ']') && (o < end)) *o++ = *p++;
+            }
+            if (*p && (o < end)) *o++ = *p++;
+            if (!suppress && (n < SCANF_MAX_ARGS)) { args[n] = (void *)(uintptr_t) ap[n]; n++; }
+        }
+    }
+    *o = 0;
+    while (n < SCANF_MAX_ARGS) args[n++] = NULL;
+    return n;
+}
+
+#define SCANF_ARGS(a) a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[14], a[15], \
+                      a[16], a[17], a[18], a[19], a[20], a[21], a[22], a[23], a[24], a[25], a[26], a[27], a[28], a[29], a[30], a[31]
+
 int32_t CCALL fscanf_c(ms_FILE *f, const char *format, uint32_t *ap)
 {
     int res;
+    char hostfmt[512];
+    void *args[SCANF_MAX_ARGS];
 
     if ((f == NULL) || (format == NULL)) return -1;
     // text mode needs no translation here: CR is white space for scanf
-    res = vfscanf(HOSTFILE(f), format, (va_list) ap);
+    scanf_prepare(format, ap, hostfmt, sizeof(hostfmt), args);
+    res = fscanf(HOSTFILE(f), hostfmt, SCANF_ARGS(args));
     update_flags(f);
     return res;
 }
@@ -395,8 +443,12 @@ int32_t CCALL _vsnprintf_c(char *str, uint32_t size, const char *format, uint32_
 
 int32_t CCALL sscanf_c(const char *str, const char *format, uint32_t *ap)
 {
+    char hostfmt[512];
+    void *args[SCANF_MAX_ARGS];
+
     if ((str == NULL) || (format == NULL)) return -1;
-    return vsscanf(str, format, (va_list) ap);
+    scanf_prepare(format, ap, hostfmt, sizeof(hostfmt), args);
+    return sscanf(str, hostfmt, SCANF_ARGS(args));
 }
 
 
@@ -1050,3 +1102,5 @@ int32_t CCALL _putch_c(int32_t c)
     putchar(c);
     return c;
 }
+
+EXTERN_C_END

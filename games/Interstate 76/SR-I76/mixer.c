@@ -13,6 +13,10 @@
 #include "mixer.h"
 #include "config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 static SDL_AudioDeviceID device;
@@ -119,3 +123,7 @@ void mixer_unlock(void)
 {
     if (device != 0) SDL_UnlockAudioDevice(device);
 }
+
+#ifdef __cplusplus
+}
+#endif

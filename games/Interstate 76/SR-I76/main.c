@@ -16,8 +16,9 @@
 #include "winapi-gdi32.h"
 #include "config.h"
 
-void joystick_startup(void);
 #include "display.h"
+
+EXTERN_C_BEGIN
 
 void winapi_user32_init(void);
 
@@ -135,3 +136,5 @@ int main(int argc, char *argv[])
     app_exit(WinMain_((void *)0x400000, NULL, command_line, 5)); // 5 = SW_SHOW
     return 0;
 }
+
+EXTERN_C_END

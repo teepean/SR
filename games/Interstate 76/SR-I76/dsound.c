@@ -19,6 +19,8 @@
 #include "winapi.h"
 #include "mixer.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 #define DS_OK 0
@@ -855,7 +857,7 @@ uint32_t CCALL IDirectSound3DBuffer_GetAllParameters_c(ds_3dbuffer *lpThis, uint
     memcpy(p + 1, &b->position3d, 12);
     memcpy(p + 4, &b->velocity3d, 12);
     p[7] = 360; p[8] = 360;
-    p[9] = 0; p[10] = 0; memcpy(p + 11, &(float){1.0f}, 4);
+    { const float one = 1.0f; p[9] = 0; p[10] = 0; memcpy(p + 11, &one, 4); }
     p[12] = 0;
     memcpy(p + 13, &b->min_distance, 4);
     memcpy(p + 14, &b->max_distance, 4);
@@ -907,3 +909,5 @@ uint32_t CCALL IDirectSound3DBuffer_SetVelocity_c(ds_3dbuffer *lpThis, float x, 
     b->velocity3d.x = x; b->velocity3d.y = y; b->velocity3d.z = z;
     return DS_OK;
 }
+
+EXTERN_C_END

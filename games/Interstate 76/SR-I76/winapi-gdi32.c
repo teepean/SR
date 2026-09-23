@@ -24,6 +24,8 @@
 #include "winapi.h"
 #include "winapi-gdi32.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 
@@ -1117,3 +1119,5 @@ void winapi_gdi32_init(void)
         stock_pens[i].null = (i == 2);
     }
 }
+
+EXTERN_C_END

@@ -20,6 +20,8 @@
 #include "render.h"
 #include "display.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 #define FXTRUE 1
@@ -746,3 +748,5 @@ uint32_t CCALL grLfbUnlock_c(int32_t type, int32_t buffer)
     }
     return FXTRUE;
 }
+
+EXTERN_C_END

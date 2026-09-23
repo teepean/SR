@@ -35,6 +35,10 @@ uint32_t winapi_get_ticks(void);
 // processes pending SDL events (window messages, input)
 void winapi_process_events(void);
 
+// joystick.c
+void joystick_startup(void);
+void joystick_script(const char *cmd, int a, int b);
+
 #ifdef __cplusplus
 }
 #endif

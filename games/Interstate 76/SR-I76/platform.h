@@ -56,4 +56,17 @@
     #define CCALL
 #endif
 
+// the 64-bit build (SRW OUT_X64) compiles the runtime as C++ (PTR32 types, Game-Memory.c): functions and
+// variables used by the recompiled code must keep C linkage
+#ifdef __cplusplus
+    #define EXTERN_C_BEGIN extern "C" {
+    #define EXTERN_C_END }
+    #if !defined(_Static_assert)
+        #define _Static_assert static_assert
+    #endif
+#else
+    #define EXTERN_C_BEGIN
+    #define EXTERN_C_END
+#endif
+
 #endif /* _PLATFORM_H_INCLUDED_ */

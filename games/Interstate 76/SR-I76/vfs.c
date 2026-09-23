@@ -11,6 +11,10 @@
 #include <sys/stat.h>
 #include "vfs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // find entry "name" in directory "dir" case-insensitively; on success copy the real name into "name"
 static int find_entry(const char *dir, char *name)
 {
@@ -123,3 +127,7 @@ int vfs_resolve(const char *winpath, char *hostpath, size_t size)
 
     return exists;
 }
+
+#ifdef __cplusplus
+}
+#endif

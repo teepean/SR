@@ -16,6 +16,8 @@
 #include "winapi.h"
 #include "display.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 #define STDCALL __attribute__((__stdcall__))
 
@@ -735,3 +737,5 @@ uint32_t CCALL IDirectDrawClipper_Initialize_c(dd_clipper *lpThis, void *dd, uin
 uint32_t CCALL IDirectDrawClipper_IsClipListChanged_c(dd_clipper *lpThis, uint32_t *b) { if (b) *b = 0; return DD_OK; }
 uint32_t CCALL IDirectDrawClipper_SetClipList_c(dd_clipper *lpThis, void *l, uint32_t f) { return DD_OK; }
 uint32_t CCALL IDirectDrawClipper_SetHWnd_c(dd_clipper *lpThis, uint32_t f, void *h) { lpThis->hwnd = h; return DD_OK; }
+
+EXTERN_C_END

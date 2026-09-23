@@ -25,6 +25,8 @@
 #include "winapi.h"
 #include "display.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 
@@ -58,7 +60,7 @@ enum { HT_FILE = 1, HT_FIND, HT_MAPPING, HT_HEAP, HT_PROCESS, HT_THREAD };
 typedef struct {
     uint32_t type;
     int fd;
-} file_handle;
+} win_file;
 
 typedef struct {
     uint32_t type;
@@ -88,7 +90,7 @@ uint32_t CCALL CloseHandle_c(void *hObject)
     switch (handle_type(hObject))
     {
         case HT_FILE:
-            close(((file_handle *)hObject)->fd);
+            close(((win_file *)hObject)->fd);
             free(hObject);
             return 1;
         case HT_MAPPING:
@@ -120,7 +122,7 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
 {
     char path[1024];
     int flags, fd, exists;
-    file_handle *h;
+    win_file *h;
 
     if (lpFileName == NULL)
     {
@@ -154,7 +156,7 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
         return INVALID_HANDLE_VALUE;
     }
 
-    h = (file_handle *) malloc(sizeof(file_handle));
+    h = (win_file *) malloc(sizeof(win_file));
     h->type = HT_FILE;
     h->fd = fd;
 
@@ -173,7 +175,7 @@ uint32_t CCALL ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesTo
         return 0;
     }
 
-    res = read(((file_handle *)hFile)->fd, lpBuffer, nNumberOfBytesToRead);
+    res = read(((win_file *)hFile)->fd, lpBuffer, nNumberOfBytesToRead);
     if (res < 0)
     {
         last_error = ERROR_READ_FAULT;
@@ -194,7 +196,7 @@ uint32_t CCALL WriteFile_c(void *hFile, const void *lpBuffer, uint32_t nNumberOf
         return 0;
     }
 
-    res = write(((file_handle *)hFile)->fd, lpBuffer, nNumberOfBytesToWrite);
+    res = write(((win_file *)hFile)->fd, lpBuffer, nNumberOfBytesToWrite);
     if (res < 0)
     {
         last_error = ERROR_WRITE_FAULT;
@@ -218,7 +220,7 @@ uint32_t CCALL SetFilePointer_c(void *hFile, int32_t lDistanceToMove, int32_t *l
     dist = lDistanceToMove;
     if (lpDistanceToMoveHigh != NULL) dist = (int64_t)(((uint64_t)(uint32_t)*lpDistanceToMoveHigh << 32) | (uint32_t)lDistanceToMove);
 
-    res = lseek(((file_handle *)hFile)->fd, dist, (dwMoveMethod == 1) ? SEEK_CUR : ((dwMoveMethod == 2) ? SEEK_END : SEEK_SET));
+    res = lseek(((win_file *)hFile)->fd, dist, (dwMoveMethod == 1) ? SEEK_CUR : ((dwMoveMethod == 2) ? SEEK_END : SEEK_SET));
     if (res < 0)
     {
         last_error = ERROR_INVALID_PARAMETER;
@@ -233,8 +235,8 @@ uint32_t CCALL SetEndOfFile_c(void *hFile)
 {
     off_t pos;
     if (handle_type(hFile) != HT_FILE) return 0;
-    pos = lseek(((file_handle *)hFile)->fd, 0, SEEK_CUR);
-    return (ftruncate(((file_handle *)hFile)->fd, pos) == 0) ? 1 : 0;
+    pos = lseek(((win_file *)hFile)->fd, 0, SEEK_CUR);
+    return (ftruncate(((win_file *)hFile)->fd, pos) == 0) ? 1 : 0;
 }
 
 uint32_t CCALL FlushFileBuffers_c(void *hFile)
@@ -262,7 +264,7 @@ uint32_t CCALL GetFileTime_c(void *hFile, uint32_t *lpCreationTime, uint32_t *lp
     struct stat st;
 
     if (handle_type(hFile) != HT_FILE) return 0;
-    if (fstat(((file_handle *)hFile)->fd, &st) != 0) return 0;
+    if (fstat(((win_file *)hFile)->fd, &st) != 0) return 0;
     if (lpCreationTime != NULL) unix_to_filetime(st.st_mtime, lpCreationTime);
     if (lpLastAccessTime != NULL) unix_to_filetime(st.st_atime, lpLastAccessTime);
     if (lpLastWriteTime != NULL) unix_to_filetime(st.st_mtime, lpLastWriteTime);
@@ -473,7 +475,7 @@ void * CCALL CreateFileMappingA_c(void *hFile, void *lpAttributes, uint32_t flPr
 
     if (handle_type(hFile) == HT_FILE)
     {
-        m->fd = dup(((file_handle *)hFile)->fd);
+        m->fd = dup(((win_file *)hFile)->fd);
         if (fstat(m->fd, &st) != 0)
         {
             close(m->fd);
@@ -1250,3 +1252,5 @@ uint32_t CCALL FreeLibrary_c(void *hLibModule)
 {
     return 1;
 }
+
+EXTERN_C_END

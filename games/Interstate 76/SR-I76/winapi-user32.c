@@ -17,9 +17,10 @@
 #include "printf_x86.h"
 #include "display.h"
 
-void joystick_script(const char *cmd, int a, int b);
 #include "winapi.h"
 #include "winapi-gdi32.h"
+
+EXTERN_C_BEGIN
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -185,7 +186,7 @@ static uint32_t script_buttons;
 typedef struct { uint8_t vk, scan, ext; } key_map;
 static key_map sdl_keys[SDL_NUM_SCANCODES];
 
-static void set_key(SDL_Scancode sc, uint8_t vk, uint8_t scan, uint8_t ext)
+static void set_key(int sc, uint8_t vk, uint8_t scan, uint8_t ext)
 {
     sdl_keys[sc].vk = vk;
     sdl_keys[sc].scan = scan;
@@ -1169,3 +1170,5 @@ void winapi_user32_init(void)
 {
     init_keymap();
 }
+
+EXTERN_C_END

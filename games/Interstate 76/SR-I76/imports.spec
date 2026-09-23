@@ -3,7 +3,7 @@
 # conv: stdN = stdcall with N dword args, cN = cdecl, vN = cdecl varargs with N fixed args,
 #       f1f/f2f = FPU intrinsic (st0 / st1,st0 -> st0), data = data symbol, raw = hand-written asm,
 #       module = provided by another recompiled module (no stub)
-# flags: fret = returns double in st0
+# flags: fret = returns double in st0, u64 = returns a 64-bit value in edx:eax
 ??2@YAPAXI@Z                 c1     -     MSVCRT.dll     # exe,shell |
 ??3@YAXPAX@Z                 c1     -     MSVCRT.dll     # exe,shell |
 __CxxFrameHandler            raw    -     MSVCRT.dll     # exe,shell |
@@ -128,7 +128,7 @@ DirectDrawCreate             std3   -     DDRAW.dll      # exe | HRESULT (__stdc
 DirectDrawEnumerateA         std2   -     DDRAW.dll      # exe | HRESULT (__stdcall *)(LPDDENUMCALLBACKA lpCallback, LPVOID lpContext)
 DirectSoundCreate            std3   -     DSOUND.dll     # exe | HRESULT (__stdcall *)(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
 DispatchMessageA             std1   -     USER32.dll     # exe,shell | LRESULT (__stdcall *)(const MSG *lpMsg)
-msvcrt_div                   c2     -     MSVCRT.dll     # exe | div_t (__cdecl *)(int Numerator, int Denominator)
+msvcrt_div                   c2     u64   MSVCRT.dll     # exe | div_t (__cdecl *)(int Numerator, int Denominator)
 dp_enableDebugPrint          c1     -     anetdll.dll    # shell |
 dpAddPlayerToGroup           c3     -     anetdll.dll    # exe |
 dpClose                      c1     -     anetdll.dll    # shell |

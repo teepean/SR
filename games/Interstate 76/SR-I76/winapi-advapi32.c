@@ -16,6 +16,8 @@
 #include "platform.h"
 #include "winapi.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 #define REGISTRY_FILE "SR-I76.reg"
@@ -314,3 +316,5 @@ int32_t CCALL RegSetValueExA_c(uint32_t hKey, const char *lpValueName, uint32_t 
     if (winapi_debug) eprintf("RegSetValueExA: %s\\%s (%u bytes)\n", path, (lpValueName != NULL) ? lpValueName : "", cbData);
     return ERROR_SUCCESS;
 }
+
+EXTERN_C_END

@@ -1,6 +1,6 @@
 /**
  *
- *  Copyright (C) 2019-2026 Roman Pauer
+ *  Copyright (C) 2025-2026 Roman Pauer
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of
  *  this software and associated documentation files (the "Software"), to deal in
@@ -22,70 +22,38 @@
  *
  */
 
-#include <stdint.h>
+#if !defined(_GAME_MEMORY_H_INCLUDED_)
+#define _GAME_MEMORY_H_INCLUDED_
 
-#if (defined(__WIN32__) || defined(__WINDOWS__)) && !defined(_WIN32)
-#define _WIN32
+#ifdef __cplusplus
+
+int x86_init_malloc(void);
+void x86_deinit_malloc(void);
+
+void *x86_malloc(unsigned int size);
+void x86_free(void *ptr);
+void *x86_calloc(unsigned int nmemb, unsigned int size);
+void *x86_realloc(void *ptr, unsigned int size);
+
+void *map_memory_32bit(unsigned int size, int only_address_space);
+void unmap_memory_32bit(void *mem, unsigned int size);
+
+#ifdef PTROFS_64BIT
+
+int initialize_pointer_offset(void);
+
 #endif
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #else
+
 #include <stdlib.h>
 
-uint32_t current_SEH_frame;
+#define x86_malloc malloc
+#define x86_free free
+#define x86_calloc calloc
+#define x86_realloc realloc
+
 #endif
-#include "platform.h"
 
-EXTERN_C_BEGIN
+#endif /* _GAME_MEMORY_H_INCLUDED_ */
 
-#ifdef __cplusplus
-extern "C"
-#endif
-uint32_t CCALL X86_ReadFsDword(uint32_t addr)
-{
-#ifdef _WIN32
-    // addr == 0
-    uint32_t *address;
-
-    address = (uint32_t *) (addr + (uintptr_t)NtCurrentTeb());
-
-    return *address;
-#else
-    if (addr == 0)
-    {
-        return current_SEH_frame;
-    }
-    else
-    {
-        exit(1);
-    }
-#endif
-}
-
-#ifdef __cplusplus
-extern "C"
-#endif
-void CCALL X86_WriteFsDword(uint32_t addr, uint32_t value)
-{
-#ifdef _WIN32
-    // addr == 0
-    uint32_t *address;
-
-    address = (uint32_t *) (addr + (uintptr_t)NtCurrentTeb());
-
-    *address = value;
-#else
-    if (addr == 0)
-    {
-        current_SEH_frame = value;
-    }
-    else
-    {
-        exit(1);
-    }
-#endif
-}
-
-EXTERN_C_END

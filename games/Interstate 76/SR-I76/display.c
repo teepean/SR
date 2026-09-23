@@ -16,6 +16,8 @@
 #include "platform.h"
 #include "winapi.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 int display_width, display_height;
@@ -264,3 +266,5 @@ void display_warp_mouse(int cx, int cy)
     window_scale(&sx, &sy);
     SDL_WarpMouseInWindow(window, (int)((vx + (float)cx * vw / display_width) / sx), (int)((vy + (float)cy * vh / display_height) / sy));
 }
+
+EXTERN_C_END

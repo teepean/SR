@@ -24,6 +24,8 @@
 #include "config.h"
 #include "joystick_backend.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 #define JOYERR_NOERROR 0
@@ -437,3 +439,5 @@ void joystick_script(const char *cmd, int a, int b)
     else if (0 == strcmp(cmd, "jaxis")) SDL_JoystickSetVirtualAxis(devices[0].joystick, a, (Sint16)b);
     SDL_JoystickUpdate();
 }
+
+EXTERN_C_END

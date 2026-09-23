@@ -22,6 +22,8 @@
 #include "winapi-gdi32.h"
 #include "mixer.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 #pragma pack(push, 4)
@@ -494,3 +496,5 @@ uint32_t CCALL SmackBufferBlit_c(rad_smackbuf *b, void *hdc, int32_t hwndx, int3
     gdi_blit_rgb(hdc, hwndx + subx, hwndy + suby, subw, subh, rgb, subw);
     return 0;
 }
+
+EXTERN_C_END

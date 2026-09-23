@@ -5,3 +5,5 @@ x86/*/*.asm
 x64/*/*.asm
 x64/*/*.inc
 !x64/*/extern.inc
+*.o64
+SR-I76-x64
