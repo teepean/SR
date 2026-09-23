@@ -1,0 +1,82 @@
+# COM interfaces implemented by the runtime: "interface <Name>" followed by "<Method> <dword args incl. this>"
+# in vtable order. gen_imports.py generates <Name>_<Method>_asm2c stubs (stdcall), the vtable
+# <Name>Vtbl_asm2c and weak C stubs <Name>_<Method>_c that return E_NOTIMPL.
+
+interface IDirectSound
+QueryInterface 3
+AddRef 1
+Release 1
+CreateSoundBuffer 4
+GetCaps 2
+DuplicateSoundBuffer 3
+SetCooperativeLevel 3
+Compact 1
+GetSpeakerConfig 2
+SetSpeakerConfig 2
+Initialize 2
+
+interface IDirectSoundBuffer
+QueryInterface 3
+AddRef 1
+Release 1
+GetCaps 2
+GetCurrentPosition 3
+GetFormat 4
+GetVolume 2
+GetPan 2
+GetFrequency 2
+GetStatus 2
+Initialize 3
+Lock 8
+Play 4
+SetCurrentPosition 2
+SetFormat 2
+SetVolume 2
+SetPan 2
+SetFrequency 2
+Stop 1
+Unlock 5
+Restore 1
+
+interface IDirectSound3DListener
+QueryInterface 3
+AddRef 1
+Release 1
+GetAllParameters 2
+GetDistanceFactor 2
+GetDopplerFactor 2
+GetOrientation 3
+GetPosition 2
+GetRolloffFactor 2
+GetVelocity 2
+SetAllParameters 3
+SetDistanceFactor 3
+SetDopplerFactor 3
+SetOrientation 8
+SetPosition 5
+SetRolloffFactor 3
+SetVelocity 5
+CommitDeferredSettings 1
+
+interface IDirectSound3DBuffer
+QueryInterface 3
+AddRef 1
+Release 1
+GetAllParameters 2
+GetConeAngles 3
+GetConeOrientation 2
+GetConeOutsideVolume 2
+GetMaxDistance 2
+GetMinDistance 2
+GetMode 2
+GetPosition 2
+GetVelocity 2
+SetAllParameters 3
+SetConeAngles 4
+SetConeOrientation 5
+SetConeOutsideVolume 3
+SetMaxDistance 3
+SetMinDistance 3
+SetMode 3
+SetPosition 5
+SetVelocity 5

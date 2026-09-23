@@ -906,17 +906,25 @@ uint32_t CCALL GetModuleFileNameA_c(void *hModule, char *lpFilename, uint32_t nS
     return strlen(lpFilename);
 }
 
-// drives: C: = fixed disk; optionally (I76_CD=1) D: = emulated game CD (volume "I76_CD2").
-// Both map to the game directory. The GOG version runs without a CD (the ZFS archive is in the
-// game directory), and with a CD present the shell takes other code paths (e.g. TRAINING starts
-// the game directly), so the CD is not emulated by default.
+// drives: C: = fixed disk; D: = CD-ROM drive. Both map to the game directory.
+// I76_CD selects what the CD drive contains:
+//   unset/2 = an audio CD (label "AUDIO_CD"): the game needs a CD-ROM drive to start the CD music
+//             (played from music/*.mp3 by cdaudio.c, like GOG's win32.dll)
+//   1       = the game CD (volume "I76_CD2"); with it the shell takes other code paths
+//             (e.g. TRAINING starts the game directly)
+//   0       = no CD drive (no music)
 #define CD_LABEL "I76_CD2"
+
+static int cd_mode(void)
+{
+    static int mode = -1;
+    if (mode == -1) mode = (getenv("I76_CD") != NULL) ? atoi(getenv("I76_CD")) : 2;
+    return mode;
+}
 
 static int cd_drive(void)
 {
-    static int drive = -1;
-    if (drive == -1) drive = (getenv("I76_CD") != NULL && atoi(getenv("I76_CD")) != 0) ? 'd' : 0;
-    return drive;
+    return (cd_mode() != 0) ? 'd' : 0;
 }
 #define CD_DRIVE cd_drive()
 
@@ -955,7 +963,7 @@ uint32_t CCALL GetVolumeInformationA_c(const char *lpRootPathName, char *lpVolum
     }
     if ((lpVolumeNameBuffer != NULL) && (nVolumeNameSize > 0))
     {
-        strncpy(lpVolumeNameBuffer, cd ? CD_LABEL : "", nVolumeNameSize - 1);
+        strncpy(lpVolumeNameBuffer, cd ? ((cd_mode() == 1) ? CD_LABEL : "AUDIO_CD") : "", nVolumeNameSize - 1);
         lpVolumeNameBuffer[nVolumeNameSize - 1] = 0;
     }
     if (lpVolumeSerialNumber != NULL) *lpVolumeSerialNumber = cd ? 0x07601998 : 0x12345678;

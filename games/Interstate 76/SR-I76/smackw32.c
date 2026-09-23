@@ -19,6 +19,7 @@
 #include "vfs.h"
 #include "winapi.h"
 #include "winapi-gdi32.h"
+#include "mixer.h"
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -69,6 +70,7 @@ typedef struct {
     uint32_t next_frame_time;
     uint32_t ms_per_frame_x100;
     uint8_t prev_palette[768];
+    struct smk_audio *audio;    // NULL = no sound
 } rad_smack;
 
 // SmackBuf: only the fields used by the game are at their original offsets
@@ -126,10 +128,120 @@ static void update_palette(rad_smack *s)
     }
 }
 
+/* audio: the decoded PCM of audio track 0 goes into a ring buffer that a mixer source plays */
+
+typedef struct smk_audio {
+    mixer_source source;
+    uint32_t rate, channels, bits, block;
+    uint8_t *ring;
+    uint32_t size, rd, wr, fill;    // bytes
+    double frac;
+    int on;
+} smk_audio;
+
+static void smk_audio_mix(mixer_source *source, float *out, int frames)
+{
+    smk_audio *a = (smk_audio *)source;
+    double step = (double)a->rate / MIXER_RATE;
+    int i;
+
+    if (!a->on) return;
+    for (i = 0; i < frames; i++)
+    {
+        float l, r;
+        const uint8_t *p;
+
+        if (a->fill < a->block) break;
+        p = a->ring + a->rd;
+        if (a->bits == 16)
+        {
+            l = ((const int16_t *)p)[0] * (1.0f / 32768.0f);
+            r = (a->channels == 2) ? ((const int16_t *)p)[1] * (1.0f / 32768.0f) : l;
+        }
+        else
+        {
+            l = (p[0] - 128) * (1.0f / 128.0f);
+            r = (a->channels == 2) ? (p[1] - 128) * (1.0f / 128.0f) : l;
+        }
+        out[2 * i] += l;
+        out[2 * i + 1] += r;
+
+        a->frac += step;
+        while ((a->frac >= 1.0) && (a->fill >= a->block))
+        {
+            a->frac -= 1.0;
+            a->rd = (a->rd + a->block) % a->size;
+            a->fill -= a->block;
+        }
+    }
+}
+
+static void smk_audio_open(rad_smack *s)
+{
+    uint32_t info = s->decoder->AudioRate[0];
+    smk_audio *a;
+
+    if ((s->decoder->AudioSize[0] == 0) || !(info & 0x40000000)) return;
+    if (getenv("I76_NOSOUND") != NULL) return;
+    if (!mixer_init()) return;
+
+    a = (smk_audio *)calloc(1, sizeof(smk_audio));
+    a->rate = info & 0xFFFFFF;
+    a->channels = (info & 0x10000000) ? 2 : 1;
+    a->bits = (info & 0x20000000) ? 16 : 8;
+    a->block = a->channels * a->bits / 8;
+    a->size = a->rate * a->block * 8;           // 8 seconds
+    a->size -= a->size % a->block;
+    a->ring = (uint8_t *)malloc(a->size);
+    a->on = 1;
+    if ((a->rate == 0) || (a->ring == NULL))
+    {
+        free(a->ring);
+        free(a);
+        return;
+    }
+    a->source.mix = smk_audio_mix;
+    s->audio = a;
+    mixer_add_source(&a->source);
+}
+
+static void smk_audio_close(rad_smack *s)
+{
+    if (s->audio == NULL) return;
+    mixer_remove_source(&s->audio->source);
+    free(s->audio->ring);
+    free(s->audio);
+    s->audio = NULL;
+}
+
+static void smk_audio_push(rad_smack *s)
+{
+    smk_audio *a = s->audio;
+    const uint8_t *src = s->frame->Audio;
+    uint32_t len = s->frame->AudioLength;
+
+    if ((a == NULL) || (src == NULL) || (len == 0)) return;
+    mixer_lock();
+    if (len > a->size - a->fill) len = a->size - a->fill;   // overflow: drop the rest
+    len -= len % a->block;
+    while (len > 0)
+    {
+        uint32_t n = a->size - a->wr;
+        if (n > len) n = len;
+        memcpy(a->ring + a->wr, src, n);
+        a->wr = (a->wr + n) % a->size;
+        a->fill += n;
+        src += n;
+        len -= n;
+    }
+    mixer_unlock();
+}
+
 static void decode_current(rad_smack *s)
 {
-    SmackDecodeFrame(s->decoder, s->frame, s->frame, -1);
+    SmackDecodeFrame(s->decoder, s->frame, s->frame, (s->audio != NULL) ? 0 : -1);
     update_palette(s);
+    smk_audio_push(s);
 }
 
 rad_smack * CCALL SmackOpen_c(const char *name, uint32_t flags, uint32_t extrabuf)
@@ -167,9 +279,11 @@ rad_smack * CCALL SmackOpen_c(const char *name, uint32_t flags, uint32_t extrabu
         free(s);
         return NULL;
     }
-    s->frame = SmackAllocateFrame(s->decoder, NULL, 0, 0, 0, 0, 0, 0);
+    smk_audio_open(s);
+    s->frame = SmackAllocateFrame(s->decoder, NULL, 0, 0, (s->audio != NULL) ? 1 : 0, 0, 0, 0);
     if (s->frame == NULL)
     {
+        smk_audio_close(s);
         SmackClose(s->decoder);
         fclose(f);
         free(s);
@@ -199,6 +313,7 @@ rad_smack * CCALL SmackOpen_c(const char *name, uint32_t flags, uint32_t extrabu
 void CCALL SmackClose_c(rad_smack *s)
 {
     if (s == NULL) return;
+    smk_audio_close(s);
     SmackDeallocateFrame(s->frame);
     SmackClose(s->decoder);
     fclose(s->file);
@@ -280,7 +395,16 @@ uint32_t CCALL SmackWait_c(rad_smack *s)
     return 0;
 }
 
-uint32_t CCALL SmackSoundOnOff_c(rad_smack *s, uint32_t on) { return 1; }
+uint32_t CCALL SmackSoundOnOff_c(rad_smack *s, uint32_t on)
+{
+    if ((s != NULL) && (s->audio != NULL))
+    {
+        mixer_lock();
+        s->audio->on = on ? 1 : 0;
+        mixer_unlock();
+    }
+    return 1;
+}
 uint32_t CCALL SmackSoundUseDirectSound_c(void *dd) { return 0; }
 void CCALL SmackColorRemap_c(rad_smack *s, const void *remappal, uint32_t numcolors, uint32_t paltype) {}
 

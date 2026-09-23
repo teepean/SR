@@ -1,7 +1,7 @@
 /**
  *
  *  Small Win32 APIs: winmm (time, joystick, aux, mci), ole32, DirectX creation functions
- *  (DirectDraw/DirectSound are not implemented yet - the game uses GDI and runs without sound).
+ *  (DirectDraw is not implemented - the game uses GDI; DirectSound: dsound.c, CD audio: cdaudio.c).
  *
  */
 
@@ -25,16 +25,6 @@ uint32_t CCALL joyGetDevCapsA_c(uint32_t uJoyID, void *pjc, uint32_t cbjc) { ret
 uint32_t CCALL joyGetPosEx_c(uint32_t uJoyID, void *pji) { return JOYERR_UNPLUGGED; }
 uint32_t CCALL joyGetPos_c(uint32_t uJoyID, void *pji) { return JOYERR_UNPLUGGED; }
 
-uint32_t CCALL auxGetNumDevs_c(void) { return 0; }
-uint32_t CCALL auxGetDevCapsA_c(uint32_t uDeviceID, void *pac, uint32_t cbac) { return MMSYSERR_NODRIVER; }
-uint32_t CCALL auxSetVolume_c(uint32_t uDeviceID, uint32_t dwVolume) { return MMSYSERR_NODRIVER; }
-
-uint32_t CCALL mciSendCommandA_c(uint32_t IDDevice, uint32_t uMsg, uint32_t fdwCommand, void *dwParam)
-{
-    if (winapi_debug) eprintf("mciSendCommandA: msg 0x%x flags 0x%x (not supported)\n", uMsg, fdwCommand);
-    return MCIERR_DEVICE_NOT_INSTALLED;
-}
-
 uint32_t CCALL mciGetErrorStringA_c(uint32_t fdwError, char *lpszErrorText, uint32_t cchErrorText)
 {
     if ((lpszErrorText != NULL) && (cchErrorText > 0))
@@ -46,13 +36,6 @@ uint32_t CCALL mciGetErrorStringA_c(uint32_t fdwError, char *lpszErrorText, uint
 
 uint32_t CCALL CoInitialize_c(void *pvReserved) { return 0; }
 void CCALL CoUninitialize_c(void) {}
-
-uint32_t CCALL DirectSoundCreate_c(void *lpGuid, void **ppDS, void *pUnkOuter)
-{
-    if (ppDS != NULL) *ppDS = NULL;
-    if (winapi_debug) eprintf("DirectSoundCreate: sound is not implemented yet\n");
-    return DSERR_NODRIVER;
-}
 
 uint32_t CCALL DirectDrawCreate_c(void *lpGUID, void **lplpDD, void *pUnkOuter)
 {

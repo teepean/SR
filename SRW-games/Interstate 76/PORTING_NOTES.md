@@ -222,3 +222,20 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   crashes on exit under Wine's debug heap too). Heap blocks now carry a magic; HeapFree/HeapReAlloc/HeapSize
   fail on invalid blocks like Windows instead of aborting.
 - User test: driving in the training mission works; only audio is missing.
+
+### 2026-09-23 — sound
+- mixer.c: SDL2 audio (44.1 kHz stereo S16), sources mix floats in the audio thread. `I76_NOSOUND` disables it.
+- COM glue generated from com.spec by gen_imports.py: `<Iface>_<Method>_asm2c` stdcall stubs, `<Iface>Vtbl_asm2c`
+  tables (x86/com-asm.asm) and weak E_NOTIMPL C stubs (com-stubs.c) that log unimplemented methods.
+- dsound.c: IDirectSound/Buffer/3DListener/3DBuffer. The game creates the primary buffer with DSBCAPS_CTRL3D,
+  QIs it for the listener, and uses 11025 Hz mono 8-bit secondary buffers: 0xb2 (3D) and 0xe2 (pan) - volume,
+  frequency (engine pitch), looping. 3D model: min/(min + rolloff*(d-min)) attenuation + left/right attenuation
+  from the listener's right axis (top x front, left-handed). `I76_DEBUG=3` lists playing buffers every second,
+  `I76_DUMP_SOUND=<dir>` saves buffer contents on Play.
+- cdaudio.c: MCI "cdaudio" device + aux volume playing music/<track>.mp3 (minimp3, CC0) like GOG's win32.dll.
+  The game only starts CD music when a CD-ROM drive exists (sub_470ED0 counts them), so D: is now a CD-ROM
+  by default with the label "AUDIO_CD" (not "I76_CD2", which changes the shell's behaviour). `I76_CD=1` = game CD,
+  `I76_CD=0` = no CD drive.
+- smackw32.c: Smacker audio track 0 decoded (Albion's decoder) into a ring buffer played by a mixer source.
+- Test without speakers: `SDL_AUDIODRIVER=disk SDL_DISKAUDIOFILE=out.raw` (sdl2-compat also needs
+  `SDL_AUDIO_DRIVER=disk SDL_AUDIO_DISK_OUTPUT_FILE=out.raw`).
