@@ -479,6 +479,26 @@ uint32_t CCALL SetDIBColorTable_c(gdi_dc *hdc, uint32_t iStart, uint32_t cEntrie
 }
 
 
+void gdi_blit_rgb(void *hdc, int x, int y, int w, int h, const uint32_t *pixels, int pitch)
+{
+    gdi_bitmap src, *dst;
+
+    if (obj_type(hdc) != GDI_DC) return;
+    dst = dc_bitmap((gdi_dc *) hdc);
+    if (dst == NULL) return;
+
+    memset(&src, 0, sizeof(src));
+    src.type = GDI_BITMAP;
+    src.width = w;
+    src.height = h;
+    src.bpp = 32;
+    src.pitch = pitch * 4;
+    src.bits = (uint8_t *) pixels;
+    blit(dst, x, y, w, h, &src, 0, 0, w, h);
+    dc_changed((gdi_dc *) hdc);
+}
+
+
 /* ------------------------------------------------------------------ */
 /* device contexts                                                     */
 

@@ -20,6 +20,9 @@ uint32_t CCALL DestroyWindow_c(void *hWnd);
 
 void winapi_gdi32_init(void);
 
+// draws XRGB pixels (pitch in pixels) to a device context
+void gdi_blit_rgb(void *hdc, int x, int y, int w, int h, const uint32_t *pixels, int pitch);
+
 #ifdef __cplusplus
 }
 #endif

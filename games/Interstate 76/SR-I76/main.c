@@ -81,6 +81,9 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // terminate immediately on SIGTERM/SIGINT (SDL would turn them into a quit event)
+    SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
+
     if (SDL_Init(SDL_INIT_NOPARACHUTE))
     {
         eprintf("Error: SDL_Init: %s\n", SDL_GetError());
@@ -88,6 +91,7 @@ int main(int argc, char *argv[])
     }
 
     atexit(SDL_Quit);
+
 
     winapi_debug = (getenv("I76_DEBUG") != NULL) ? atoi(getenv("I76_DEBUG")) : 0;
 
