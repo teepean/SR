@@ -29,6 +29,10 @@
 #include <string.h>
 #include "smack.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if defined(_MSC_VER)
 
 #undef BIG_ENDIAN_BYTE_ORDER
@@ -44,6 +48,7 @@
 #else
 
 #include <endian.h>
+
 #if (__BYTE_ORDER == __BIG_ENDIAN)
 #define BIG_ENDIAN_BYTE_ORDER
 #else
@@ -1750,3 +1755,7 @@ void SmackClose(SmackStruct *Smack)
 /* free SmackStruct */
 	free(Smack);
 }
+
+#ifdef __cplusplus
+}
+#endif

@@ -32,6 +32,10 @@
 #include "printf_x86.h"
 #include "vfs.h"
 #include "msvcrt.h"
+#include "Game-Memory.h"
+#include "winapi.h"
+
+EXTERN_C_BEGIN
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -51,7 +55,7 @@
 #define MS_ALPHA   0x100
 
 static uint16_t ms_ctype_table[257];     // index 0 = EOF (-1)
-uint16_t *msvcrt__pctype = ms_ctype_table + 1;
+PTR32(uint16_t) msvcrt__pctype = ms_ctype_table + 1;    // data import: a 32-bit pointer variable
 uint8_t msvcrt__mbctype[257];           // single-byte code page: no lead bytes
 int32_t msvcrt___mb_cur_max = 1;
 ms_FILE msvcrt__iob[3];
@@ -66,8 +70,21 @@ ms_FILE msvcrt__iob[3];
 #define MS_IOERR   0x0020
 #define MS_IORW    0x0080
 
-// host FILE pointer is kept in _tmpfname, text mode flag in _charbuf
-#define HOSTFILE(f) ((FILE *)(f)->_tmpfname)
+// the game sees ms_FILE only; the host FILE pointer follows it in the (low memory) allocation, or is in
+// iob_host for the standard streams. The text mode flag is kept in _charbuf.
+typedef struct {
+    ms_FILE pub;
+    FILE *host;
+} ms_FILE_ext;
+
+static FILE *iob_host[3];
+
+static FILE *hostfile(ms_FILE *f)
+{
+    if ((f >= msvcrt__iob) && (f < msvcrt__iob + 3)) return iob_host[f - msvcrt__iob];
+    return ((ms_FILE_ext *)f)->host;
+}
+#define HOSTFILE(f) hostfile(f)
 #define TEXTMODE(f) ((f)->_charbuf)
 
 static int is_std_file(ms_FILE *f)
@@ -99,13 +116,13 @@ void msvcrt_init(void)
     memset(msvcrt__mbctype, 0, sizeof(msvcrt__mbctype));
 
     memset(msvcrt__iob, 0, sizeof(msvcrt__iob));
-    msvcrt__iob[0]._tmpfname = (char *) stdin;
+    iob_host[0] = stdin;
     msvcrt__iob[0]._flag = MS_IOREAD;
     msvcrt__iob[0]._file = 0;
-    msvcrt__iob[1]._tmpfname = (char *) stdout;
+    iob_host[1] = stdout;
     msvcrt__iob[1]._flag = MS_IOWRT;
     msvcrt__iob[1]._file = 1;
-    msvcrt__iob[2]._tmpfname = (char *) stderr;
+    iob_host[2] = stderr;
     msvcrt__iob[2]._flag = MS_IOWRT;
     msvcrt__iob[2]._file = 2;
 }
@@ -178,14 +195,14 @@ ms_FILE * CCALL fopen_c(const char *filename, const char *mode)
 #endif
     if (hf == NULL) return NULL;
 
-    f = (ms_FILE *) calloc(1, sizeof(ms_FILE));
+    f = (ms_FILE *) x86_calloc(1, sizeof(ms_FILE_ext));
     if (f == NULL)
     {
         fclose(hf);
         return NULL;
     }
 
-    f->_tmpfname = (char *) hf;
+    ((ms_FILE_ext *)f)->host = hf;
     f->_charbuf = text;
     f->_flag = (strchr(hmode, '+') != NULL) ? MS_IORW : ((hmode[0] == 'r') ? MS_IOREAD : MS_IOWRT);
     f->_file = fileno(hf);
@@ -200,7 +217,7 @@ int32_t CCALL fclose_c(ms_FILE *f)
     if (is_std_file(f)) return 0;
 
     res = fclose(HOSTFILE(f));
-    free(f);
+    x86_free(f);
     return res;
 }
 
@@ -359,13 +376,59 @@ int32_t CCALL printf_c(const char *format, uint32_t *ap)
     return vfctprintf_x86(out_file, stdout, format, ap);
 }
 
+/* scanf: the game's arguments are 32-bit pointers into game memory. The format is translated to the host
+   (MS 'l' on integers = 32 bits, host long is 64 bits on x86-64) and the host function is called with an
+   explicit argument list (a host va_list can't be built from the game's stack portably). */
+#define SCANF_MAX_ARGS 32
+
+static int scanf_prepare(const char *format, const uint32_t *ap, char *hostfmt, size_t hostfmt_size, void **args)
+{
+    const char *p = format;
+    char *o = hostfmt, *end = hostfmt + hostfmt_size - 1;
+    int n = 0;
+
+    while (*p && (o < end))
+    {
+        if (*p != '%') { *o++ = *p++; continue; }
+        *o++ = *p++;
+        if (*p == '%') { if (o < end) *o++ = *p++; continue; }
+        {
+            int suppress = 0;
+            if (*p == '*') { suppress = 1; if (o < end) *o++ = *p++; }
+            while ((*p >= '0') && (*p <= '9') && (o < end)) *o++ = *p++;
+            if (*p == 'h') { if (o < end) *o++ = *p++; }
+            else if ((*p == 'l') && (p[1] != 0) && (strchr("diouxXn", p[1]) != NULL)) p++;     // MS long = 32 bits
+            else if (*p == 'l') { if (o < end) *o++ = *p++; }                                // %lf = double
+            else if ((p[0] == 'I') && (p[1] == '6') && (p[2] == '4')) { p += 3; if (o + 1 < end) { *o++ = 'l'; *o++ = 'l'; } }
+            if (*p == '[')
+            {
+                if (o < end) *o++ = *p++;
+                if ((*p == '^') && (o < end)) *o++ = *p++;
+                if ((*p == ']') && (o < end)) *o++ = *p++;
+                while (*p && (*p != ']') && (o < end)) *o++ = *p++;
+            }
+            if (*p && (o < end)) *o++ = *p++;
+            if (!suppress && (n < SCANF_MAX_ARGS)) { args[n] = (void *)(uintptr_t) ap[n]; n++; }
+        }
+    }
+    *o = 0;
+    while (n < SCANF_MAX_ARGS) args[n++] = NULL;
+    return n;
+}
+
+#define SCANF_ARGS(a) a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10], a[11], a[12], a[13], a[14], a[15], \
+                      a[16], a[17], a[18], a[19], a[20], a[21], a[22], a[23], a[24], a[25], a[26], a[27], a[28], a[29], a[30], a[31]
+
 int32_t CCALL fscanf_c(ms_FILE *f, const char *format, uint32_t *ap)
 {
     int res;
+    char hostfmt[512];
+    void *args[SCANF_MAX_ARGS];
 
     if ((f == NULL) || (format == NULL)) return -1;
     // text mode needs no translation here: CR is white space for scanf
-    res = vfscanf(HOSTFILE(f), format, (va_list) ap);
+    scanf_prepare(format, ap, hostfmt, sizeof(hostfmt), args);
+    res = fscanf(HOSTFILE(f), hostfmt, SCANF_ARGS(args));
     update_flags(f);
     return res;
 }
@@ -395,8 +458,12 @@ int32_t CCALL _vsnprintf_c(char *str, uint32_t size, const char *format, uint32_
 
 int32_t CCALL sscanf_c(const char *str, const char *format, uint32_t *ap)
 {
+    char hostfmt[512];
+    void *args[SCANF_MAX_ARGS];
+
     if ((str == NULL) || (format == NULL)) return -1;
-    return vsscanf(str, format, (va_list) ap);
+    scanf_prepare(format, ap, hostfmt, sizeof(hostfmt), args);
+    return sscanf(str, hostfmt, SCANF_ARGS(args));
 }
 
 
@@ -551,7 +618,14 @@ void CCALL operator_delete_c(void *ptr)
 /* so the resulting order - and whether bsearch finds an element -     */
 /* depends on the algorithm (glibc's merge sort gives other results).  */
 
-typedef int (CCALL *compare_func)(const void *, const void *);
+// comparators are game code (cdecl): 32-bit function addresses called through call_game
+typedef uint32_t compare_func;
+
+static int call_compare(compare_func f, const void *a, const void *b)
+{
+    uint32_t args[2] = { (uint32_t)(uintptr_t) a, (uint32_t)(uintptr_t) b };
+    return (int32_t) call_game(f, 2, args);
+}
 
 static void ms_swap(char *a, char *b, uint32_t width)
 {
@@ -576,7 +650,7 @@ static void ms_shortsort(char *lo, char *hi, uint32_t width, compare_func comp)
         max = lo;
         for (p = lo + width; p <= hi; p += width)
         {
-            if (comp(p, max) > 0) max = p;
+            if (call_compare(comp, p, max) > 0) max = p;
         }
         ms_swap(max, hi, width);
         hi -= width;
@@ -616,12 +690,12 @@ recurse:
             do
             {
                 loguy += width;
-            } while ((loguy <= hi) && (comp(loguy, lo) <= 0));
+            } while ((loguy <= hi) && (call_compare(comp, loguy, lo) <= 0));
 
             do
             {
                 higuy -= width;
-            } while ((higuy > lo) && (comp(higuy, lo) >= 0));
+            } while ((higuy > lo) && (call_compare(comp, higuy, lo) >= 0));
 
             if (higuy < loguy) break;
 
@@ -682,7 +756,7 @@ void * CCALL bsearch_c(const void *key, const void *base, uint32_t num, uint32_t
         if ((half = num / 2) != 0)
         {
             mid = lo + ((num & 1) ? half : (half - 1)) * width;
-            if (!(result = compare(key, mid)))
+            if (!(result = call_compare(compare, key, mid)))
             {
                 return mid;
             }
@@ -699,7 +773,7 @@ void * CCALL bsearch_c(const void *key, const void *base, uint32_t num, uint32_t
         }
         else if (num)
         {
-            return compare(key, lo) ? NULL : lo;
+            return call_compare(compare, key, lo) ? NULL : lo;
         }
         else
         {
@@ -923,7 +997,7 @@ int32_t CCALL _findfirst_c(const char *filespec, ms_finddata_t *data)
 
     if ((filespec == NULL) || (data == NULL)) return -1;
 
-    h = (find_handle *) calloc(1, sizeof(find_handle));
+    h = (find_handle *) x86_calloc(1, sizeof(find_handle));
     if (h == NULL) return -1;
 
     // resolve the directory part, keep the pattern part as given
@@ -947,7 +1021,7 @@ int32_t CCALL _findfirst_c(const char *filespec, ms_finddata_t *data)
     if ((h->dir == NULL) || (find_next_entry(h, data) != 0))
     {
         if (h->dir != NULL) closedir(h->dir);
-        free(h);
+        x86_free(h);
         errno = ENOENT;
         return -1;
     }
@@ -968,7 +1042,7 @@ int32_t CCALL _findclose_c(int32_t handle)
     if ((handle == -1) || (handle == 0)) return -1;
     h = (find_handle *)(uintptr_t) handle;
     if (h->dir != NULL) closedir(h->dir);
-    free(h);
+    x86_free(h);
     return 0;
 }
 
@@ -1023,7 +1097,9 @@ void CCALL _splitpath_c(const char *path, char *drive, char *dir, char *fname, c
 /* ------------------------------------------------------------------ */
 /* process                                                             */
 
-int32_t * CCALL _errno_c(void) { return &errno; }
+// errno is thread-local (high memory in the 64-bit build): the game gets a low copy
+static int32_t ms_errno;
+int32_t * CCALL _errno_c(void) { ms_errno = errno; return &ms_errno; }
 
 void CCALL exit_c(int32_t status)
 {
@@ -1050,3 +1126,5 @@ int32_t CCALL _putch_c(int32_t c)
     putchar(c);
     return c;
 }
+
+EXTERN_C_END

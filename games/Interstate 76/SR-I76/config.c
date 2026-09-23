@@ -12,6 +12,10 @@
 #include <strings.h>
 #include "config.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define CONFIG_FILE "SR-I76.cfg"
 #define MAX_ENTRIES 64
 
@@ -137,3 +141,7 @@ int config_get_int(const char *key, int def)
     const char *v = config_get(key);
     return (v != NULL && *v) ? atoi(v) : def;
 }
+
+#ifdef __cplusplus
+}
+#endif

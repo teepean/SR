@@ -17,15 +17,18 @@
 #include "printf_x86.h"
 #include "display.h"
 
-void joystick_script(const char *cmd, int a, int b);
 #include "winapi.h"
 #include "winapi-gdi32.h"
+#include "ptr32.h"
+#include "Game-Memory.h"
+
+EXTERN_C_BEGIN
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
-#define STDCALL __attribute__((stdcall))
 
-typedef uint32_t (STDCALL *wndproc_t)(void *hwnd, uint32_t msg, uint32_t wparam, uint32_t lparam);
+// window procedure: address of recompiled game code, called through call_game (stdcall, 4 arguments)
+typedef uint32_t wndproc_t;
 
 
 /* ------------------------------------------------------------------ */
@@ -66,7 +69,7 @@ typedef uint32_t (STDCALL *wndproc_t)(void *hwnd, uint32_t msg, uint32_t wparam,
 #define MK_MBUTTON 0x0010
 
 typedef struct {
-    void *hwnd;
+    PTR32(void) hwnd;
     uint32_t message;
     uint32_t wParam;
     uint32_t lParam;
@@ -121,8 +124,11 @@ static window *get_window(void *hwnd)
 uint32_t winapi_call_wndproc(void *hwnd, uint32_t msg, uint32_t wparam, uint32_t lparam)
 {
     window *w = get_window(hwnd);
-    if ((w == NULL) || (w->wndproc == NULL)) return 0;
-    return w->wndproc(hwnd, msg, wparam, lparam);
+    if ((w == NULL) || (w->wndproc == 0)) return 0;
+    {
+        uint32_t args[4] = { (uint32_t)(uintptr_t) hwnd, msg, wparam, lparam };
+        return call_game(w->wndproc, 4, args);
+    }
 }
 
 static void post_message(void *hwnd, uint32_t msg, uint32_t wparam, uint32_t lparam)
@@ -185,7 +191,7 @@ static uint32_t script_buttons;
 typedef struct { uint8_t vk, scan, ext; } key_map;
 static key_map sdl_keys[SDL_NUM_SCANCODES];
 
-static void set_key(SDL_Scancode sc, uint8_t vk, uint8_t scan, uint8_t ext)
+static void set_key(int sc, uint8_t vk, uint8_t scan, uint8_t ext)
 {
     sdl_keys[sc].vk = vk;
     sdl_keys[sc].scan = scan;
@@ -781,15 +787,15 @@ uint32_t CCALL DefWindowProcA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint3
 
 typedef struct {
     uint32_t style;
-    wndproc_t lpfnWndProc;
+    uint32_t lpfnWndProc;
     int32_t cbClsExtra;
     int32_t cbWndExtra;
-    void *hInstance;
-    void *hIcon;
-    void *hCursor;
-    void *hbrBackground;
-    const char *lpszMenuName;
-    const char *lpszClassName;
+    PTR32(void) hInstance;
+    PTR32(void) hIcon;
+    PTR32(void) hCursor;
+    PTR32(void) hbrBackground;
+    PTR32(const char) lpszMenuName;
+    PTR32(const char) lpszClassName;
 } wndclassa;
 
 uint16_t CCALL RegisterClassA_c(const wndclassa *lpWndClass)
@@ -828,7 +834,8 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
 {
     window *w;
     window_class *c;
-    uint32_t cs[12];
+    // CREATESTRUCTA: the game gets a pointer to it, so it must be in low memory (not on the C stack)
+    static uint32_t cs[12];
 
     c = find_class(lpClassName);
     if (c == NULL)
@@ -837,7 +844,7 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
         return NULL;
     }
 
-    w = (window *) calloc(1, sizeof(window));
+    w = (window *) x86_calloc(1, sizeof(window));
     w->magic = WINDOW_MAGIC;
     w->cls = c;
     w->wndproc = c->wndproc;
@@ -857,7 +864,7 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
         focus_window = w;
         if (!display_create(w->title, w->width, w->height))
         {
-            free(w);
+            x86_free(w);
             main_window = NULL;
             return NULL;
         }
@@ -880,7 +887,7 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
     if ((int32_t)winapi_call_wndproc(w, WM_CREATE, 0, (uint32_t)(uintptr_t) cs) == -1)
     {
         if (main_window == w) main_window = NULL;
-        free(w);
+        x86_free(w);
         return NULL;
     }
     winapi_call_wndproc(w, WM_SIZE, 0, ((uint32_t)w->height << 16) | (uint32_t)w->width);
@@ -951,7 +958,7 @@ int32_t CCALL GetWindowLongA_c(void *hWnd, int32_t nIndex)
     if (w == NULL) return 0;
     switch (nIndex)
     {
-        case -4: return (int32_t)(uintptr_t) w->wndproc;
+        case -4: return (int32_t) w->wndproc;
         case -16: return (int32_t) w->style;
         case -20: return (int32_t) w->exstyle;
         case -21: return (int32_t) w->userdata;
@@ -969,7 +976,7 @@ int32_t CCALL SetWindowLongA_c(void *hWnd, int32_t nIndex, int32_t dwNewLong)
     old = GetWindowLongA_c(hWnd, nIndex);
     switch (nIndex)
     {
-        case -4: w->wndproc = (wndproc_t)(uintptr_t) dwNewLong; return old;
+        case -4: w->wndproc = (wndproc_t) dwNewLong; return old;
         case -16: w->style = (uint32_t) dwNewLong; return old;
         case -20: w->exstyle = (uint32_t) dwNewLong; return old;
         case -21: w->userdata = (uint32_t) dwNewLong; return old;
@@ -1052,7 +1059,7 @@ void * CCALL ImmAssociateContext_c(void *hWnd, void *hIMC) { return NULL; }
 uint32_t CCALL ValidateRect_c(void *hWnd, const win_rect *lpRect) { return 1; }
 
 typedef struct {
-    void *hdc;
+    PTR32(void) hdc;
     uint32_t fErase;
     win_rect rcPaint;
     uint32_t fRestore;
@@ -1171,3 +1178,5 @@ void winapi_user32_init(void)
 {
     init_keymap();
 }
+
+EXTERN_C_END

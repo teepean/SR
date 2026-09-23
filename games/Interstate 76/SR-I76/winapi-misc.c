@@ -10,6 +10,8 @@
 #include "platform.h"
 #include "winapi.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 #define DSERR_NODRIVER 0x88780078u
@@ -37,3 +39,5 @@ uint32_t CCALL DirectDrawEnumerateA_c(void *lpCallback, void *lpContext)
 {
     return 0;
 }
+
+EXTERN_C_END

@@ -45,6 +45,10 @@ typedef int bool;
 #include "printf_x86.h"
 #include "ptr32.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if defined(_MSC_VER)
 #define inline __inline
 #endif
@@ -638,6 +642,7 @@ static inline void *_va_ptr(uint32_t **va)
 #else
 
 #include <endian.h>
+
 #if (__FLOAT_WORD_ORDER == __BIG_ENDIAN)
 #define BIG_ENDIAN_FLOAT_WORD_ORDER
 #else
@@ -1018,3 +1023,7 @@ int vfctprintf_x86(void (*out)(char character, void* arg), void* arg, const char
   const out_fct_wrap_type out_fct_wrap = { out, arg };
   return _vsnprintf(_out_fct, (char*)(uintptr_t)&out_fct_wrap, SIZE_MAX, format, va);
 }
+
+#ifdef __cplusplus
+}
+#endif

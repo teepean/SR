@@ -21,6 +21,8 @@
 #include "mixer.h"
 #include "vfs.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 #define MMSYSERR_BADDEVICEID 2
@@ -379,3 +381,5 @@ uint32_t CCALL auxSetVolume_c(uint32_t uDeviceID, uint32_t dwVolume)
     if (winapi_debug) eprintf("auxSetVolume: %.2f\n", volume);
     return 0;
 }
+
+EXTERN_C_END

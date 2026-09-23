@@ -28,6 +28,10 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SMACKER_VER_UNK 0x004b4d53
 #define SMACKER_VER_2 0x324b4d53
 #define SMACKER_VER_4 0x344b4d53
@@ -122,5 +126,9 @@ void SmackDeallocateFrame(SmackFrame *Frame);
 /* SmackClose releases any allocated resources. */
 void SmackClose(SmackStruct *Smack);
 
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

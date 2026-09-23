@@ -14,7 +14,11 @@
 #include <string.h>
 #include <strings.h>
 #include "platform.h"
+#include "ptr32.h"
+#include "Game-Memory.h"
 #include "winapi.h"
+
+EXTERN_C_BEGIN
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -228,7 +232,7 @@ static int key_path(uint32_t hKey, const char *subkey, char *out, size_t size)
 
 static uint32_t new_handle(const char *path)
 {
-    key_handle *h = (key_handle *) malloc(sizeof(key_handle));
+    key_handle *h = (key_handle *) x86_malloc(sizeof(key_handle));
     h->magic = KEY_MAGIC;
     strncpy(h->path, path, sizeof(h->path) - 1);
     h->path[sizeof(h->path) - 1] = 0;
@@ -274,7 +278,7 @@ int32_t CCALL RegCloseKey_c(uint32_t hKey)
     if ((hKey != 0) && ((key_handle *)(uintptr_t)hKey)->magic == KEY_MAGIC)
     {
         ((key_handle *)(uintptr_t)hKey)->magic = 0;
-        free((void *)(uintptr_t)hKey);
+        x86_free((void *)(uintptr_t)hKey);
         return ERROR_SUCCESS;
     }
     return ERROR_INVALID_HANDLE;
@@ -314,3 +318,5 @@ int32_t CCALL RegSetValueExA_c(uint32_t hKey, const char *lpValueName, uint32_t 
     if (winapi_debug) eprintf("RegSetValueExA: %s\\%s (%u bytes)\n", path, (lpValueName != NULL) ? lpValueName : "", cbData);
     return ERROR_SUCCESS;
 }
+
+EXTERN_C_END

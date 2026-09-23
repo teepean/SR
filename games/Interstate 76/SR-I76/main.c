@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <malloc.h>
 #include <string.h>
 #include <strings.h>
 #include <SDL.h>
@@ -15,9 +16,12 @@
 #include "winapi.h"
 #include "winapi-gdi32.h"
 #include "config.h"
+#include "Game-Memory.h"
+#include "ptr32.h"
 
-void joystick_startup(void);
 #include "display.h"
+
+EXTERN_C_BEGIN
 
 void winapi_user32_init(void);
 
@@ -27,12 +31,12 @@ void winapi_user32_init(void);
 extern "C" {
 #endif
 
-/* recompiled i76.exe */
-extern int CCALL WinMain_(void *hInstance, void *hPrevInstance, char *lpCmdLine, int nCmdShow);
+/* recompiled i76.exe (called through call_game) */
+extern char WinMain_[];
 
-/* C++ static constructor table of i76.exe (__xc_a .. __xc_z) */
-extern void (CCALL *i76_xc_a[])(void);
-extern void (CCALL *i76_xc_z[])(void);
+/* C++ static constructor table of i76.exe (__xc_a .. __xc_z): 32-bit entries */
+extern uint32_t i76_xc_a[];
+extern uint32_t i76_xc_z[];
 
 void CCALL Raw_UnexpectedHandler(int which);
 
@@ -51,14 +55,11 @@ void CCALL Raw_UnexpectedHandler(int which)
 
 static void run_static_constructors(void)
 {
-    void (CCALL **p)(void);
+    uint32_t *p;
 
     for (p = i76_xc_a; p < i76_xc_z; p++)
     {
-        if (*p != NULL)
-        {
-            (*p)();
-        }
+        if (*p != 0) call_game(*p, 0, NULL);
     }
 }
 
@@ -95,7 +96,22 @@ static void prepare_command_line(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-    if (sizeof(void *) != 4)
+#ifndef __cplusplus
+    // 32-bit build: game code assumes Win32 addresses below 2 GB; glibc's malloc would mmap large blocks high
+    // (0xE0000000...), so keep all allocations in the brk heap (which starts right after the executable)
+    mallopt(M_MMAP_MAX, 0);
+    mallopt(M_TRIM_THRESHOLD, 64 * 1024 * 1024);
+#endif
+#ifdef __cplusplus
+    // 64-bit build: everything the game can see must be below 2 GB
+    if (x86_init_malloc())
+    {
+        fprintf(stderr, "Error: can't initialize the low memory allocator\n");
+        return 1;
+    }
+#endif
+    // 32-bit build: native pointers; 64-bit build: game-visible pointers are PTR32 (4 bytes)
+    if (sizeof(PTR32(void)) != 4)
     {
         eprintf("Error: The program wasn't compiled correctly for 32 bits\n");
         return 1;
@@ -132,6 +148,12 @@ int main(int argc, char *argv[])
 
     run_static_constructors();
 
-    app_exit(WinMain_((void *)0x400000, NULL, command_line, 5)); // 5 = SW_SHOW
+    {
+        // WinMain(hInstance, hPrevInstance, lpCmdLine, nCmdShow = SW_SHOW)
+        uint32_t args[4] = { 0x400000, 0, (uint32_t)(uintptr_t) command_line, 5 };
+        app_exit(call_game((uint32_t)(uintptr_t) WinMain_, 4, args));
+    }
     return 0;
 }
+
+EXTERN_C_END

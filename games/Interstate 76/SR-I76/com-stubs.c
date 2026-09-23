@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include "platform.h"
 
+EXTERN_C_BEGIN
+
 #define WEAK __attribute__((weak))
 #define E_NOTIMPL 0x80004001
 
@@ -177,3 +179,5 @@ WEAK uint32_t CCALL IDirectDrawClipper_Initialize_c(uint32_t a0, uint32_t a1, ui
 WEAK uint32_t CCALL IDirectDrawClipper_IsClipListChanged_c(uint32_t a0, uint32_t a1) { static int reported; if (!reported) { reported = 1; fprintf(stderr, "unimplemented COM method: IDirectDrawClipper::IsClipListChanged\n"); } return E_NOTIMPL; }
 WEAK uint32_t CCALL IDirectDrawClipper_SetClipList_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; if (!reported) { reported = 1; fprintf(stderr, "unimplemented COM method: IDirectDrawClipper::SetClipList\n"); } return E_NOTIMPL; }
 WEAK uint32_t CCALL IDirectDrawClipper_SetHWnd_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; if (!reported) { reported = 1; fprintf(stderr, "unimplemented COM method: IDirectDrawClipper::SetHWnd\n"); } return E_NOTIMPL; }
+
+EXTERN_C_END

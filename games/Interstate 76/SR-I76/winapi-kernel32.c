@@ -19,11 +19,47 @@
 #include <fnmatch.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include "ptr32.h"
+#include "Game-Memory.h"
 #include "platform.h"
 #include "config.h"
 #include "vfs.h"
 #include "winapi.h"
 #include "display.h"
+
+EXTERN_C_BEGIN
+
+// mappings the game can see: below 2 GB in the 64-bit build (reserve low address space, map over it)
+static void *low_mmap(size_t len, int fd, off_t offset)
+{
+#ifdef __cplusplus
+    void *base = map_memory_32bit((unsigned int) len, 1);
+    if (base == NULL) return MAP_FAILED;
+    if (fd >= 0) return mmap(base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, fd, offset);
+    return mmap(base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+#else
+    // 32-bit build: the kernel places mappings high (0xE0000000...), but game code assumes Win32 addresses
+    // below 2 GB (e.g. sub_469B00 computes NULL - pointer as a signed length) - search the low range
+    static uintptr_t hint = 0x20000000;
+    uintptr_t start = hint;
+    size_t alen = (len + 4095) & ~(size_t)4095;
+    int flags = ((fd >= 0) ? MAP_PRIVATE : (MAP_PRIVATE | MAP_ANONYMOUS)) | MAP_FIXED_NOREPLACE;
+    for (;;)
+    {
+        void *addr;
+        if (hint + alen > 0x7FFF0000u) hint = 0x10000000;
+        addr = mmap((void *) hint, len, PROT_READ | PROT_WRITE, flags, fd, (fd >= 0) ? offset : 0);
+        if (addr != MAP_FAILED)
+        {
+            hint += alen;
+            return addr;
+        }
+        if (errno != EEXIST) return MAP_FAILED;
+        hint += alen;
+        if ((hint <= start) && (hint + alen > start)) return MAP_FAILED;    // wrapped around: no room
+    }
+#endif
+}
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -58,7 +94,7 @@ enum { HT_FILE = 1, HT_FIND, HT_MAPPING, HT_HEAP, HT_PROCESS, HT_THREAD };
 typedef struct {
     uint32_t type;
     int fd;
-} file_handle;
+} win_file;
 
 typedef struct {
     uint32_t type;
@@ -88,12 +124,12 @@ uint32_t CCALL CloseHandle_c(void *hObject)
     switch (handle_type(hObject))
     {
         case HT_FILE:
-            close(((file_handle *)hObject)->fd);
-            free(hObject);
+            close(((win_file *)hObject)->fd);
+            x86_free(hObject);
             return 1;
         case HT_MAPPING:
             if (((mapping_handle *)hObject)->fd >= 0) close(((mapping_handle *)hObject)->fd);
-            free(hObject);
+            x86_free(hObject);
             return 1;
         case HT_PROCESS:
         case HT_THREAD:
@@ -120,7 +156,7 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
 {
     char path[1024];
     int flags, fd, exists;
-    file_handle *h;
+    win_file *h;
 
     if (lpFileName == NULL)
     {
@@ -154,7 +190,7 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
         return INVALID_HANDLE_VALUE;
     }
 
-    h = (file_handle *) malloc(sizeof(file_handle));
+    h = (win_file *) x86_malloc(sizeof(win_file));
     h->type = HT_FILE;
     h->fd = fd;
 
@@ -173,7 +209,7 @@ uint32_t CCALL ReadFile_c(void *hFile, void *lpBuffer, uint32_t nNumberOfBytesTo
         return 0;
     }
 
-    res = read(((file_handle *)hFile)->fd, lpBuffer, nNumberOfBytesToRead);
+    res = read(((win_file *)hFile)->fd, lpBuffer, nNumberOfBytesToRead);
     if (res < 0)
     {
         last_error = ERROR_READ_FAULT;
@@ -194,7 +230,7 @@ uint32_t CCALL WriteFile_c(void *hFile, const void *lpBuffer, uint32_t nNumberOf
         return 0;
     }
 
-    res = write(((file_handle *)hFile)->fd, lpBuffer, nNumberOfBytesToWrite);
+    res = write(((win_file *)hFile)->fd, lpBuffer, nNumberOfBytesToWrite);
     if (res < 0)
     {
         last_error = ERROR_WRITE_FAULT;
@@ -218,7 +254,7 @@ uint32_t CCALL SetFilePointer_c(void *hFile, int32_t lDistanceToMove, int32_t *l
     dist = lDistanceToMove;
     if (lpDistanceToMoveHigh != NULL) dist = (int64_t)(((uint64_t)(uint32_t)*lpDistanceToMoveHigh << 32) | (uint32_t)lDistanceToMove);
 
-    res = lseek(((file_handle *)hFile)->fd, dist, (dwMoveMethod == 1) ? SEEK_CUR : ((dwMoveMethod == 2) ? SEEK_END : SEEK_SET));
+    res = lseek(((win_file *)hFile)->fd, dist, (dwMoveMethod == 1) ? SEEK_CUR : ((dwMoveMethod == 2) ? SEEK_END : SEEK_SET));
     if (res < 0)
     {
         last_error = ERROR_INVALID_PARAMETER;
@@ -233,8 +269,8 @@ uint32_t CCALL SetEndOfFile_c(void *hFile)
 {
     off_t pos;
     if (handle_type(hFile) != HT_FILE) return 0;
-    pos = lseek(((file_handle *)hFile)->fd, 0, SEEK_CUR);
-    return (ftruncate(((file_handle *)hFile)->fd, pos) == 0) ? 1 : 0;
+    pos = lseek(((win_file *)hFile)->fd, 0, SEEK_CUR);
+    return (ftruncate(((win_file *)hFile)->fd, pos) == 0) ? 1 : 0;
 }
 
 uint32_t CCALL FlushFileBuffers_c(void *hFile)
@@ -262,7 +298,7 @@ uint32_t CCALL GetFileTime_c(void *hFile, uint32_t *lpCreationTime, uint32_t *lp
     struct stat st;
 
     if (handle_type(hFile) != HT_FILE) return 0;
-    if (fstat(((file_handle *)hFile)->fd, &st) != 0) return 0;
+    if (fstat(((win_file *)hFile)->fd, &st) != 0) return 0;
     if (lpCreationTime != NULL) unix_to_filetime(st.st_mtime, lpCreationTime);
     if (lpLastAccessTime != NULL) unix_to_filetime(st.st_atime, lpLastAccessTime);
     if (lpLastWriteTime != NULL) unix_to_filetime(st.st_mtime, lpLastWriteTime);
@@ -395,7 +431,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, win32_find_data *lpFindFil
         return INVALID_HANDLE_VALUE;
     }
 
-    h = (find_handle *) calloc(1, sizeof(find_handle));
+    h = (find_handle *) x86_calloc(1, sizeof(find_handle));
     h->type = HT_FIND;
 
     strncpy(spec, lpFileName, sizeof(spec) - 1);
@@ -420,7 +456,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, win32_find_data *lpFindFil
     {
         if (winapi_debug) eprintf("FindFirstFileA: %s -> not found\n", lpFileName);
         if (h->dir != NULL) closedir(h->dir);
-        free(h);
+        x86_free(h);
         last_error = ERROR_FILE_NOT_FOUND;
         return INVALID_HANDLE_VALUE;
     }
@@ -450,7 +486,7 @@ uint32_t CCALL FindClose_c(void *hFindFile)
 
     if (handle_type(hFindFile) != HT_FIND) return 0;
     if (h->dir != NULL) closedir(h->dir);
-    free(h);
+    x86_free(h);
     return 1;
 }
 
@@ -466,18 +502,18 @@ void * CCALL CreateFileMappingA_c(void *hFile, void *lpAttributes, uint32_t flPr
     mapping_handle *m;
     struct stat st;
 
-    m = (mapping_handle *) calloc(1, sizeof(mapping_handle));
+    m = (mapping_handle *) x86_calloc(1, sizeof(mapping_handle));
     m->type = HT_MAPPING;
     m->writable = (flProtect != PAGE_READONLY);
     m->fd = -1;
 
     if (handle_type(hFile) == HT_FILE)
     {
-        m->fd = dup(((file_handle *)hFile)->fd);
+        m->fd = dup(((win_file *)hFile)->fd);
         if (fstat(m->fd, &st) != 0)
         {
             close(m->fd);
-            free(m);
+            x86_free(m);
             return NULL;
         }
         m->size = (dwMaximumSizeLow != 0) ? dwMaximumSizeLow : (uint32_t) st.st_size;
@@ -509,11 +545,11 @@ void * CCALL MapViewOfFile_c(void *hFileMappingObject, uint32_t dwDesiredAccess,
     if (m->fd >= 0)
     {
         // private mapping: changes are never written back to the file
-        addr = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE, m->fd, dwFileOffsetLow);
+        addr = low_mmap(len, m->fd, dwFileOffsetLow);
     }
     else
     {
-        addr = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        addr = low_mmap(len, -1, 0);
     }
     if (addr == MAP_FAILED) return NULL;
 
@@ -634,12 +670,173 @@ typedef struct heap_obj {
 
 static heap_obj process_heap = { HT_HEAP, NULL };
 
+/* Heap robustness and diagnostics
+ * - the slack after every block is filled with a check pattern; overruns (the game writing past a block) are
+ *   detected when the block is freed/reallocated, and for all blocks once per frame with I76_HEAPCHECK=1
+ * - freed blocks are quarantined before their memory is reused, so that writes to freed memory (the game
+ *   has double frees, so likely also use-after-free) hit quarantined data instead of live data or the host
+ *   allocator's metadata (on Windows such writes usually go unnoticed) */
+// zero: the game relies on zero bytes after its blocks (e.g. sub_469B00 parses a loaded text file with
+// strpbrk and needs a terminator after the data); an overrun shows up as non-zero bytes
+#define HEAP_CANARY 0x00
+#define QUARANTINE_COUNT 4096
+#define QUARANTINE_BYTES (32 * 1024 * 1024)
+
+#define MAX_HEAPS 64
+static heap_obj *heaps[MAX_HEAPS];
+static int num_heaps;
+
+static heap_block *quarantine[QUARANTINE_COUNT];
+static int quarantine_pos;
+static uint32_t quarantine_bytes;
+
+/* I76_HEAPGUARD=1 (debugging): every block gets its own pages, ending right before an inaccessible guard
+ * page, and freed blocks are made inaccessible (kept for a while) - an overrun or a write to freed memory
+ * crashes immediately at the responsible instruction (see the core dump). Uses a lot of memory. */
+static int heap_guard = -1;
+#define GUARD_ZERO_PAD 16
+#define GUARD_KEEP_BYTES (256u * 1024 * 1024)
+static uint32_t guard_kept_bytes;
+static struct { void *base; size_t len; } guard_kept[65536];
+static int guard_kept_pos;
+
+static int use_heap_guard(void)
+{
+    if (heap_guard < 0) heap_guard = (getenv("I76_HEAPGUARD") != NULL);
+    return heap_guard;
+}
+
+static heap_block *guard_alloc(uint32_t total)
+{
+    size_t data = ((total + 3) & ~(size_t)3) + GUARD_ZERO_PAD;  // zero pad (terminators), then the guard page
+    size_t len = (data + 4095) & ~(size_t)4095;
+    uint8_t *base = (uint8_t *) low_mmap(len + 4096, -1, 0);
+    if (base == (uint8_t *) MAP_FAILED) return NULL;
+    mprotect(base + len, 4096, PROT_NONE);
+    return (heap_block *)(base + len - data);
+}
+
+static void guard_free(heap_block *b, uint32_t total)
+{
+    size_t data = ((total + 3) & ~(size_t)3) + GUARD_ZERO_PAD;  // zero pad (terminators), then the guard page
+    size_t len = (data + 4095) & ~(size_t)4095;
+    uint8_t *base = (uint8_t *) b + data - len;
+    mprotect(base, len, PROT_NONE);
+    // keep the freed pages inaccessible for a while, then release them
+    if (guard_kept[guard_kept_pos].base != NULL)
+    {
+        munmap(guard_kept[guard_kept_pos].base, guard_kept[guard_kept_pos].len);
+        guard_kept_bytes -= (uint32_t) guard_kept[guard_kept_pos].len;
+    }
+    guard_kept[guard_kept_pos].base = base;
+    guard_kept[guard_kept_pos].len = len + 4096;
+    guard_kept_bytes += (uint32_t)(len + 4096);
+    guard_kept_pos = (guard_kept_pos + 1) % 65536;
+    (void) GUARD_KEEP_BYTES;
+}
+
+static void block_release(heap_block *b);
+
+static void arm_slack(heap_block *b)
+{
+    if (use_heap_guard()) return;   // no slack in guard mode: the guard page follows the block
+    memset((uint8_t *)(b + 1) + b->size, HEAP_CANARY, HEAP_SLACK);
+}
+
+// returns 0 if the block was damaged (and reports it once)
+static int check_block(heap_block *b, const char *where)
+{
+    const uint8_t *slack = (const uint8_t *)(b + 1) + b->size;
+    int i;
+    if (use_heap_guard()) return 1;
+    if (b->magic != HEAP_BLOCK_MAGIC)
+    {
+        eprintf("heap: block header at %p damaged (%s)\n", (void *)(b + 1), where);
+        return 0;
+    }
+    for (i = 0; i < HEAP_SLACK; i++)
+    {
+        if (slack[i] != HEAP_CANARY)
+        {
+            eprintf("heap: overrun after block %p (size %u) at +%u (%s): %02x %02x %02x %02x\n", (void *)(b + 1), b->size,
+                    b->size + i, where, slack[i], (i + 1 < HEAP_SLACK) ? slack[i + 1] : 0, (i + 2 < HEAP_SLACK) ? slack[i + 2] : 0,
+                    (i + 3 < HEAP_SLACK) ? slack[i + 3] : 0);
+            arm_slack(b);   // report each overrun once
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void quarantine_free(heap_block *b)
+{
+    if (use_heap_guard())
+    {
+        guard_free(b, b->size + sizeof(heap_block));
+        return;
+    }
+    block_release(b);
+}
+
+static void block_release(heap_block *b)
+{
+    uint32_t size = b->size + sizeof(heap_block) + HEAP_SLACK;
+    heap_block *old;
+
+    // evict until there is room
+    while ((quarantine_bytes + size > QUARANTINE_BYTES) || (quarantine[quarantine_pos] != NULL))
+    {
+        old = quarantine[quarantine_pos];
+        if (old != NULL)
+        {
+            quarantine_bytes -= old->size + sizeof(heap_block) + HEAP_SLACK;
+            x86_free(old);
+            quarantine[quarantine_pos] = NULL;
+            if (quarantine_bytes + size <= QUARANTINE_BYTES) break;
+        }
+        quarantine_pos = (quarantine_pos + 1) % QUARANTINE_COUNT;
+        if (quarantine_bytes == 0) break;
+    }
+    if (size > QUARANTINE_BYTES)
+    {
+        x86_free(b);
+        return;
+    }
+    quarantine[quarantine_pos] = b;
+    quarantine_bytes += size;
+    quarantine_pos = (quarantine_pos + 1) % QUARANTINE_COUNT;
+}
+
+void heap_check_all(void)
+{
+    static int enabled = -1;
+    int i;
+    heap_block *b;
+
+    static uint32_t last;
+    uint32_t now;
+
+    if (enabled < 0) enabled = (getenv("I76_HEAPCHECK") != NULL);
+    if (!enabled) return;
+    now = winapi_get_ticks();
+    if (now - last < 100) return;
+    last = now;
+    for (i = -1; i < num_heaps; i++)
+    {
+        heap_obj *h = (i < 0) ? &process_heap : heaps[i];
+        if (h == NULL) continue;
+        for (b = h->first; b != NULL; b = b->next) check_block(b, "periodic check");
+    }
+}
+
 void * CCALL GetProcessHeap_c(void) { return &process_heap; }
 
 void * CCALL HeapCreate_c(uint32_t flOptions, uint32_t dwInitialSize, uint32_t dwMaximumSize)
 {
-    heap_obj *h = (heap_obj *) calloc(1, sizeof(heap_obj));
+    heap_obj *h = (heap_obj *) x86_calloc(1, sizeof(heap_obj));
+    int i;
     h->type = HT_HEAP;
+    for (i = 0; i < MAX_HEAPS; i++) if (heaps[i] == NULL) { heaps[i] = h; if (i >= num_heaps) num_heaps = i + 1; break; }
     return h;
 }
 
@@ -651,12 +848,18 @@ uint32_t CCALL HeapDestroy_c(heap_obj *hHeap)
     for (b = hHeap->first; b != NULL; b = next)
     {
         next = b->next;
+        check_block(b, "HeapDestroy");
         live_remove(b);
         b->magic = 0;
-        free(b);
+        quarantine_free(b);
     }
     hHeap->first = NULL;
-    if (hHeap != &process_heap) free(hHeap);
+    if (hHeap != &process_heap)
+    {
+        int i;
+        for (i = 0; i < num_heaps; i++) if (heaps[i] == hHeap) heaps[i] = NULL;
+        x86_free(hHeap);
+    }
     return 1;
 }
 
@@ -666,13 +869,14 @@ void * CCALL HeapAlloc_c(heap_obj *hHeap, uint32_t dwFlags, uint32_t dwBytes)
 
     if (handle_type(hHeap) != HT_HEAP) hHeap = &process_heap;
 
-    b = (heap_block *) malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
+    b = use_heap_guard() ? guard_alloc(sizeof(heap_block) + dwBytes) : (heap_block *) x86_malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
     if (b == NULL) return NULL;
     // always zero: the game uses uninitialised fields of HeapAlloc'ed structs (e.g. texture
     // animation descriptors in sub_449xxx) which happen to be zero on a fresh Windows heap
-    memset(b + 1, 0, dwBytes + HEAP_SLACK);
+    memset(b + 1, 0, dwBytes);
 
     b->size = dwBytes;
+    arm_slack(b);
     b->magic = HEAP_BLOCK_MAGIC;
     live_insert(b);
     b->heap = hHeap;
@@ -700,10 +904,11 @@ uint32_t CCALL HeapFree_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem)
         if (winapi_debug) eprintf("HeapFree: invalid block %p\n", lpMem);
         return 0;
     }
+    check_block(b, "HeapFree");
     b->magic = 0;
     live_remove(b);
     unlink_block(b);
-    free(b);
+    quarantine_free(b);
     return 1;
 }
 
@@ -715,39 +920,36 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     if (lpMem == NULL) return NULL;
     b = ((heap_block *)lpMem) - 1;
     if (!valid_block(b)) return NULL;
+    check_block(b, "HeapReAlloc");
     oldsize = b->size;
 
     if (dwFlags & HEAP_REALLOC_IN_PLACE_ONLY)
     {
         if (dwBytes > oldsize) return NULL;
         b->size = dwBytes;
+        arm_slack(b);
         return lpMem;
     }
 
-    unlink_block(b);
-    live_remove(b);
-    b->magic = 0;
-    nb = (heap_block *) realloc(b, sizeof(heap_block) + dwBytes + HEAP_SLACK);
-    if (nb == NULL)
-    {
-        b->magic = HEAP_BLOCK_MAGIC;
-        live_insert(b);
-        // re-link the old block
-        b->prev = NULL;
-        b->next = b->heap->first;
-        if (b->next != NULL) b->next->prev = b;
-        b->heap->first = b;
-        return NULL;
-    }
+    // new block + copy; the old block goes to the quarantine (stale pointers to it stay harmless)
+    nb = use_heap_guard() ? guard_alloc(sizeof(heap_block) + dwBytes) : (heap_block *) x86_malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
+    if (nb == NULL) return NULL;
+    memcpy(nb + 1, b + 1, (dwBytes < oldsize) ? dwBytes : oldsize);
     if (dwBytes > oldsize) memset((uint8_t *)(nb + 1) + oldsize, 0, dwBytes - oldsize);
-
     nb->size = dwBytes;
     nb->magic = HEAP_BLOCK_MAGIC;
+    nb->heap = b->heap;
+    arm_slack(nb);
     live_insert(nb);
     nb->prev = NULL;
     nb->next = nb->heap->first;
     if (nb->next != NULL) nb->next->prev = nb;
     nb->heap->first = nb;
+
+    b->magic = 0;
+    live_remove(b);
+    unlink_block(b);
+    quarantine_free(b);
     return nb + 1;
 }
 
@@ -794,7 +996,7 @@ void * CCALL VirtualAlloc_c(void *lpAddress, uint32_t dwSize, uint32_t flAllocat
     }
 
     size = (dwSize + 65535) & ~65535u;
-    addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    addr = low_mmap(size, -1, 0);
     if (addr == MAP_FAILED)
     {
         last_error = ERROR_NOT_ENOUGH_MEMORY;
@@ -1116,8 +1318,8 @@ extern "C" {
 // i76shell.dll
 extern void ShellMain(void);
 extern void ShellWindowProc(void);
-extern void (CCALL *i76shell_xc_a[])(void);
-extern void (CCALL *i76shell_xc_z[])(void);
+extern uint32_t i76shell_xc_a[];     // 32-bit entries (recompiled code), called through call_game
+extern uint32_t i76shell_xc_z[];
 // ZGLIDE.DLL
 extern void CheckFunc(void), FirstDevice(void), GetFuncDesc(void), GetNumDevice(void), GetSocketCaps(void),
             LastDevice(void), LockDisplay(void), LostDeviceDisplay(void), PreloadTexture(void), RefreshDisplay(void),
@@ -1136,8 +1338,8 @@ typedef struct {
     uint32_t type;      // not a handle type - modules are identified by address
     const char *name;
     const module_export *exports;
-    void (CCALL **xc_a)(void);
-    void (CCALL **xc_z)(void);
+    uint32_t *xc_a;
+    uint32_t *xc_z;
     int loaded;
 } module_info;
 
@@ -1211,10 +1413,10 @@ void * CCALL LoadLibraryA_c(const char *lpLibFileName)
         // DllMain equivalent: run the module's C++ static constructors
         if (m->xc_a != NULL)
         {
-            void (CCALL **p)(void);
+            uint32_t *p;
             for (p = m->xc_a; p < m->xc_z; p++)
             {
-                if (*p != NULL) (*p)();
+                if (*p != 0) call_game(*p, 0, NULL);
             }
         }
     }
@@ -1250,3 +1452,5 @@ uint32_t CCALL FreeLibrary_c(void *hLibModule)
 {
     return 1;
 }
+
+EXTERN_C_END

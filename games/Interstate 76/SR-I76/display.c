@@ -16,6 +16,8 @@
 #include "platform.h"
 #include "winapi.h"
 
+EXTERN_C_BEGIN
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 int display_width, display_height;
@@ -186,6 +188,7 @@ static void dump_frame(void)
 
 void display_idle(void)
 {
+    heap_check_all();
     static uint32_t last;
     uint32_t now = SDL_GetTicks();
     if ((getenv("I76_DUMP_FRAMES") != NULL) && renderer_ok && (now - last >= 1000))
@@ -264,3 +267,5 @@ void display_warp_mouse(int cx, int cy)
     window_scale(&sx, &sy);
     SDL_WarpMouseInWindow(window, (int)((vx + (float)cx * vw / display_width) / sx), (int)((vy + (float)cy * vh / display_height) / sy));
 }
+
+EXTERN_C_END

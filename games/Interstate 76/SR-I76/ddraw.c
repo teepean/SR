@@ -15,9 +15,12 @@
 #include "platform.h"
 #include "winapi.h"
 #include "display.h"
+#include "ptr32.h"
+#include "Game-Memory.h"
+
+EXTERN_C_BEGIN
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
-#define STDCALL __attribute__((__stdcall__))
 
 #define DD_OK 0
 #define DDERR_INVALIDPARAMS 0x80070057u
@@ -79,19 +82,19 @@ extern uint32_t IDirectDrawClipperVtbl_asm2c;
 typedef struct { int32_t left, top, right, bottom; } rect_t;
 
 typedef struct dd_palette {
-    void *lpVtbl;
+    PTR32(void) lpVtbl;
     uint32_t refs;
     uint8_t entries[256][4];    // PALETTEENTRY: r, g, b, flags
 } dd_palette;
 
 typedef struct dd_clipper {
-    void *lpVtbl;
+    PTR32(void) lpVtbl;
     uint32_t refs;
     void *hwnd;
 } dd_clipper;
 
 typedef struct dd_surface {
-    void *lpVtbl;
+    PTR32(void) lpVtbl;
     uint32_t refs;
     uint32_t caps;
     int width, height, bpp, pitch;
@@ -105,9 +108,9 @@ typedef struct dd_surface {
 } dd_surface;
 
 typedef struct dd_device {
-    void *lpVtbl;                   // IDirectDraw
+    PTR32(void) lpVtbl;                   // IDirectDraw
     uint32_t refs;
-    struct { void *lpVtbl; struct dd_device *owner; } dd2;  // IDirectDraw2 view
+    struct { PTR32(void) lpVtbl; struct dd_device *owner; } dd2;  // IDirectDraw2 view
     int width, height, bpp;
     dd_surface *primary;
 } dd_device;
@@ -171,11 +174,11 @@ static int is_screen(const dd_surface *s)
 /* ------------------------------------------------------------------ */
 /* IDirectDraw                                                         */
 
-uint32_t CCALL DirectDrawCreate_c(void *lpGUID, dd_device **lplpDD, void *pUnkOuter)
+uint32_t CCALL DirectDrawCreate_c(void *lpGUID, PTR32(dd_device) *lplpDD, void *pUnkOuter)
 {
     dd_device *dd;
     if (lplpDD == NULL) return DDERR_INVALIDPARAMS;
-    dd = (dd_device *)calloc(1, sizeof(dd_device));
+    dd = (dd_device *)x86_calloc(1, sizeof(dd_device));
     dd->lpVtbl = &IDirectDrawVtbl_asm2c;
     dd->refs = 1;
     dd->dd2.lpVtbl = &IDirectDraw2Vtbl_asm2c;
@@ -189,7 +192,7 @@ uint32_t CCALL DirectDrawCreate_c(void *lpGUID, dd_device **lplpDD, void *pUnkOu
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_QueryInterface_c(dd_device *lpThis, uint32_t *riid, void **ppvObj)
+uint32_t CCALL IDirectDraw_QueryInterface_c(dd_device *lpThis, uint32_t *riid, PTR32(void) *ppvObj)
 {
     if (ppvObj == NULL) return DDERR_INVALIDPARAMS;
     *ppvObj = NULL;
@@ -207,28 +210,28 @@ uint32_t CCALL IDirectDraw_Release_c(dd_device *lpThis)
     if (lpThis->refs > 1) return --lpThis->refs;
     if (the_dd == lpThis) the_dd = NULL;
     lpThis->lpVtbl = NULL;
-    free(lpThis);
+    x86_free(lpThis);
     return 0;
 }
 
 uint32_t CCALL IDirectDraw_Compact_c(dd_device *lpThis) { return DD_OK; }
 
-uint32_t CCALL IDirectDraw_CreateClipper_c(dd_device *lpThis, uint32_t dwFlags, dd_clipper **lplpClipper, void *pUnkOuter)
+uint32_t CCALL IDirectDraw_CreateClipper_c(dd_device *lpThis, uint32_t dwFlags, PTR32(dd_clipper) *lplpClipper, void *pUnkOuter)
 {
     dd_clipper *c;
     if (lplpClipper == NULL) return DDERR_INVALIDPARAMS;
-    c = (dd_clipper *)calloc(1, sizeof(dd_clipper));
+    c = (dd_clipper *)x86_calloc(1, sizeof(dd_clipper));
     c->lpVtbl = &IDirectDrawClipperVtbl_asm2c;
     c->refs = 1;
     *lplpClipper = c;
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_CreatePalette_c(dd_device *lpThis, uint32_t dwFlags, const uint8_t *lpColorTable, dd_palette **lplpPalette, void *pUnkOuter)
+uint32_t CCALL IDirectDraw_CreatePalette_c(dd_device *lpThis, uint32_t dwFlags, const uint8_t *lpColorTable, PTR32(dd_palette) *lplpPalette, void *pUnkOuter)
 {
     dd_palette *p;
     if (lplpPalette == NULL) return DDERR_INVALIDPARAMS;
-    p = (dd_palette *)calloc(1, sizeof(dd_palette));
+    p = (dd_palette *)x86_calloc(1, sizeof(dd_palette));
     p->lpVtbl = &IDirectDrawPaletteVtbl_asm2c;
     p->refs = 1;
     if (lpColorTable != NULL) memcpy(p->entries, lpColorTable, (dwFlags & DDPCAPS_8BIT) ? 1024 : 1024);
@@ -238,7 +241,7 @@ uint32_t CCALL IDirectDraw_CreatePalette_c(dd_device *lpThis, uint32_t dwFlags, 
 
 static dd_surface *new_surface(uint32_t caps, int width, int height, int bpp)
 {
-    dd_surface *s = (dd_surface *)calloc(1, sizeof(dd_surface));
+    dd_surface *s = (dd_surface *)x86_calloc(1, sizeof(dd_surface));
     s->lpVtbl = &IDirectDrawSurfaceVtbl_asm2c;
     s->refs = 1;
     s->caps = caps;
@@ -246,11 +249,11 @@ static dd_surface *new_surface(uint32_t caps, int width, int height, int bpp)
     s->height = height;
     s->bpp = bpp;
     s->pitch = ((width * bpp / 8) + 3) & ~3;
-    s->pixels = (uint8_t *)calloc(1, (size_t)s->pitch * height + 16);
+    s->pixels = (uint8_t *)x86_calloc(1, (size_t)s->pitch * height + 16);
     return s;
 }
 
-uint32_t CCALL IDirectDraw_CreateSurface_c(dd_device *lpThis, const uint32_t *desc, dd_surface **lplpSurface, void *pUnkOuter)
+uint32_t CCALL IDirectDraw_CreateSurface_c(dd_device *lpThis, const uint32_t *desc, PTR32(dd_surface) *lplpSurface, void *pUnkOuter)
 {
     // DDSURFACEDESC: dwSize 0, dwFlags 4, dwHeight 8, dwWidth 12, lPitch 16, dwBackBufferCount 20, ...,
     // ddckCKSrcBlt 64, ddpfPixelFormat 72 (dwSize, dwFlags, dwFourCC, dwRGBBitCount 84, ...), ddsCaps 104
@@ -297,18 +300,18 @@ uint32_t CCALL IDirectDraw_CreateSurface_c(dd_device *lpThis, const uint32_t *de
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDraw_DuplicateSurface_c(dd_device *lpThis, dd_surface *src, dd_surface **dst) { return DDERR_UNSUPPORTED; }
+uint32_t CCALL IDirectDraw_DuplicateSurface_c(dd_device *lpThis, dd_surface *src, PTR32(dd_surface) *dst) { return DDERR_UNSUPPORTED; }
 
-typedef uint32_t (STDCALL *enum_modes_cb)(uint32_t *desc, void *context);
 
-uint32_t CCALL IDirectDraw_EnumDisplayModes_c(dd_device *lpThis, uint32_t dwFlags, void *desc, void *context, enum_modes_cb callback)
+uint32_t CCALL IDirectDraw_EnumDisplayModes_c(dd_device *lpThis, uint32_t dwFlags, void *desc, uint32_t context, uint32_t callback)
 {
     // the game needs 640x480x8 (its tables also allow 800x600 and 1024x768, but everything is 640x480)
     static const int modes[][3] = { { 640, 480, 8 }, { 640, 480, 16 } };
-    uint32_t d[27];
+    // the game gets a pointer to the description: low memory, not the C stack
+    static uint32_t d[27];
     int i;
 
-    if (callback == NULL) return DDERR_INVALIDPARAMS;
+    if (callback == 0) return DDERR_INVALIDPARAMS;
     for (i = 0; i < 2; i++)
     {
         memset(d, 0, sizeof(d));
@@ -319,7 +322,10 @@ uint32_t CCALL IDirectDraw_EnumDisplayModes_c(dd_device *lpThis, uint32_t dwFlag
         d[4] = modes[i][0] * modes[i][2] / 8;
         d[6] = 60;
         fill_pixel_format(d + 18, modes[i][2]);
-        if (callback(d, context) == 0) break;   // DDENUMRET_CANCEL
+        {
+            uint32_t args[2] = { (uint32_t)(uintptr_t) d, context };
+            if (call_game(callback, 2, args) == 0) break;   // DDENUMRET_CANCEL (stdcall callback)
+        }
     }
     return DD_OK;
 }
@@ -368,7 +374,7 @@ uint32_t CCALL IDirectDraw_GetDisplayMode_c(dd_device *lpThis, uint32_t *desc)
 }
 
 uint32_t CCALL IDirectDraw_GetFourCCCodes_c(dd_device *lpThis, uint32_t *n, uint32_t *codes) { if (n) *n = 0; return DD_OK; }
-uint32_t CCALL IDirectDraw_GetGDISurface_c(dd_device *lpThis, dd_surface **s) { if (s == NULL) return DDERR_INVALIDPARAMS; *s = lpThis->primary; if (*s) (*s)->refs++; return (*s != NULL) ? DD_OK : DDERR_NOTFOUND; }
+uint32_t CCALL IDirectDraw_GetGDISurface_c(dd_device *lpThis, PTR32(dd_surface) *s) { if (s == NULL) return DDERR_INVALIDPARAMS; *s = lpThis->primary; if (*s) (*s)->refs++; return (*s != NULL) ? DD_OK : DDERR_NOTFOUND; }
 uint32_t CCALL IDirectDraw_GetMonitorFrequency_c(dd_device *lpThis, uint32_t *f) { if (f) *f = 60; return DD_OK; }
 uint32_t CCALL IDirectDraw_GetScanLine_c(dd_device *lpThis, uint32_t *l) { if (l) *l = 0; return DD_OK; }
 uint32_t CCALL IDirectDraw_GetVerticalBlankStatus_c(dd_device *lpThis, uint32_t *b) { if (b) *b = 1; return DD_OK; }
@@ -390,22 +396,22 @@ uint32_t CCALL IDirectDraw_WaitForVerticalBlank_c(dd_device *lpThis, uint32_t dw
 
 /* IDirectDraw2: same object */
 #define DD2(p) ((p)->owner)
-typedef struct { void *lpVtbl; dd_device *owner; } dd2_view;
-uint32_t CCALL IDirectDraw2_QueryInterface_c(dd2_view *p, uint32_t *riid, void **ppv) { return IDirectDraw_QueryInterface_c(DD2(p), riid, ppv); }
+typedef struct { PTR32(void) lpVtbl; dd_device *owner; } dd2_view;
+uint32_t CCALL IDirectDraw2_QueryInterface_c(dd2_view *p, uint32_t *riid, PTR32(void) *ppv) { return IDirectDraw_QueryInterface_c(DD2(p), riid, ppv); }
 uint32_t CCALL IDirectDraw2_AddRef_c(dd2_view *p) { return IDirectDraw_AddRef_c(DD2(p)); }
 uint32_t CCALL IDirectDraw2_Release_c(dd2_view *p) { return IDirectDraw_Release_c(DD2(p)); }
 uint32_t CCALL IDirectDraw2_Compact_c(dd2_view *p) { return DD_OK; }
-uint32_t CCALL IDirectDraw2_CreateClipper_c(dd2_view *p, uint32_t f, dd_clipper **c, void *u) { return IDirectDraw_CreateClipper_c(DD2(p), f, c, u); }
-uint32_t CCALL IDirectDraw2_CreatePalette_c(dd2_view *p, uint32_t f, const uint8_t *t, dd_palette **pal, void *u) { return IDirectDraw_CreatePalette_c(DD2(p), f, t, pal, u); }
-uint32_t CCALL IDirectDraw2_CreateSurface_c(dd2_view *p, const uint32_t *d, dd_surface **s, void *u) { return IDirectDraw_CreateSurface_c(DD2(p), d, s, u); }
-uint32_t CCALL IDirectDraw2_DuplicateSurface_c(dd2_view *p, dd_surface *s, dd_surface **d) { return DDERR_UNSUPPORTED; }
-uint32_t CCALL IDirectDraw2_EnumDisplayModes_c(dd2_view *p, uint32_t f, void *d, void *c, void *cb) { return IDirectDraw_EnumDisplayModes_c(DD2(p), f, d, c, (enum_modes_cb)cb); }
+uint32_t CCALL IDirectDraw2_CreateClipper_c(dd2_view *p, uint32_t f, PTR32(dd_clipper) *c, void *u) { return IDirectDraw_CreateClipper_c(DD2(p), f, c, u); }
+uint32_t CCALL IDirectDraw2_CreatePalette_c(dd2_view *p, uint32_t f, const uint8_t *t, PTR32(dd_palette) *pal, void *u) { return IDirectDraw_CreatePalette_c(DD2(p), f, t, pal, u); }
+uint32_t CCALL IDirectDraw2_CreateSurface_c(dd2_view *p, const uint32_t *d, PTR32(dd_surface) *s, void *u) { return IDirectDraw_CreateSurface_c(DD2(p), d, s, u); }
+uint32_t CCALL IDirectDraw2_DuplicateSurface_c(dd2_view *p, dd_surface *s, PTR32(dd_surface) *d) { return DDERR_UNSUPPORTED; }
+uint32_t CCALL IDirectDraw2_EnumDisplayModes_c(dd2_view *p, uint32_t f, void *d, uint32_t c, uint32_t cb) { return IDirectDraw_EnumDisplayModes_c(DD2(p), f, d, c, cb); }
 uint32_t CCALL IDirectDraw2_EnumSurfaces_c(dd2_view *p, uint32_t f, void *d, void *c, void *cb) { return DDERR_UNSUPPORTED; }
 uint32_t CCALL IDirectDraw2_FlipToGDISurface_c(dd2_view *p) { return DD_OK; }
 uint32_t CCALL IDirectDraw2_GetCaps_c(dd2_view *p, uint32_t *a, uint32_t *b) { return IDirectDraw_GetCaps_c(DD2(p), a, b); }
 uint32_t CCALL IDirectDraw2_GetDisplayMode_c(dd2_view *p, uint32_t *d) { return IDirectDraw_GetDisplayMode_c(DD2(p), d); }
 uint32_t CCALL IDirectDraw2_GetFourCCCodes_c(dd2_view *p, uint32_t *n, uint32_t *c) { if (n) *n = 0; return DD_OK; }
-uint32_t CCALL IDirectDraw2_GetGDISurface_c(dd2_view *p, dd_surface **s) { return IDirectDraw_GetGDISurface_c(DD2(p), s); }
+uint32_t CCALL IDirectDraw2_GetGDISurface_c(dd2_view *p, PTR32(dd_surface) *s) { return IDirectDraw_GetGDISurface_c(DD2(p), s); }
 uint32_t CCALL IDirectDraw2_GetMonitorFrequency_c(dd2_view *p, uint32_t *f) { if (f) *f = 60; return DD_OK; }
 uint32_t CCALL IDirectDraw2_GetScanLine_c(dd2_view *p, uint32_t *l) { if (l) *l = 0; return DD_OK; }
 uint32_t CCALL IDirectDraw2_GetVerticalBlankStatus_c(dd2_view *p, uint32_t *b) { if (b) *b = 1; return DD_OK; }
@@ -425,7 +431,7 @@ uint32_t CCALL IDirectDraw2_GetAvailableVidMem_c(dd2_view *p, uint32_t *caps, ui
 /* ------------------------------------------------------------------ */
 /* IDirectDrawSurface                                                  */
 
-uint32_t CCALL IDirectDrawSurface_QueryInterface_c(dd_surface *lpThis, uint32_t *riid, void **ppvObj)
+uint32_t CCALL IDirectDrawSurface_QueryInterface_c(dd_surface *lpThis, uint32_t *riid, PTR32(void) *ppvObj)
 {
     if (ppvObj == NULL) return DDERR_INVALIDPARAMS;
     *ppvObj = NULL;
@@ -445,9 +451,9 @@ uint32_t CCALL IDirectDrawSurface_AddRef_c(dd_surface *lpThis) { return ++lpThis
 static void free_surface(dd_surface *s)
 {
     if ((the_dd != NULL) && (the_dd->primary == s)) the_dd->primary = NULL;
-    free(s->pixels);
+    x86_free(s->pixels);
     s->lpVtbl = NULL;
-    free(s);
+    x86_free(s);
 }
 
 uint32_t CCALL IDirectDrawSurface_Release_c(dd_surface *lpThis)
@@ -576,7 +582,7 @@ uint32_t CCALL IDirectDrawSurface_Flip_c(dd_surface *lpThis, dd_surface *target,
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_GetAttachedSurface_c(dd_surface *lpThis, const uint32_t *caps, dd_surface **s)
+uint32_t CCALL IDirectDrawSurface_GetAttachedSurface_c(dd_surface *lpThis, const uint32_t *caps, PTR32(dd_surface) *s)
 {
     if (s == NULL) return DDERR_INVALIDPARAMS;
     *s = NULL;
@@ -591,7 +597,7 @@ uint32_t CCALL IDirectDrawSurface_GetAttachedSurface_c(dd_surface *lpThis, const
 
 uint32_t CCALL IDirectDrawSurface_GetBltStatus_c(dd_surface *lpThis, uint32_t f) { return DD_OK; }
 uint32_t CCALL IDirectDrawSurface_GetCaps_c(dd_surface *lpThis, uint32_t *caps) { if (caps) caps[0] = lpThis->caps; return DD_OK; }
-uint32_t CCALL IDirectDrawSurface_GetClipper_c(dd_surface *lpThis, dd_clipper **c) { if (c == NULL) return DDERR_INVALIDPARAMS; *c = lpThis->clipper; if (*c == NULL) return DDERR_NOCLIPPERATTACHED; (*c)->refs++; return DD_OK; }
+uint32_t CCALL IDirectDrawSurface_GetClipper_c(dd_surface *lpThis, PTR32(dd_clipper) *c) { if (c == NULL) return DDERR_INVALIDPARAMS; *c = lpThis->clipper; if (*c == NULL) return DDERR_NOCLIPPERATTACHED; (*c)->refs++; return DD_OK; }
 
 uint32_t CCALL IDirectDrawSurface_GetColorKey_c(dd_surface *lpThis, uint32_t f, uint32_t *key)
 {
@@ -600,7 +606,7 @@ uint32_t CCALL IDirectDrawSurface_GetColorKey_c(dd_surface *lpThis, uint32_t f, 
     return DD_OK;
 }
 
-uint32_t CCALL IDirectDrawSurface_GetDC_c(dd_surface *lpThis, void **hdc)
+uint32_t CCALL IDirectDrawSurface_GetDC_c(dd_surface *lpThis, PTR32(void) *hdc)
 {
     if (winapi_debug) eprintf("IDirectDrawSurface::GetDC: not supported\n");
     return DDERR_UNSUPPORTED;
@@ -608,7 +614,7 @@ uint32_t CCALL IDirectDrawSurface_GetDC_c(dd_surface *lpThis, void **hdc)
 
 uint32_t CCALL IDirectDrawSurface_GetFlipStatus_c(dd_surface *lpThis, uint32_t f) { return DD_OK; }
 uint32_t CCALL IDirectDrawSurface_GetOverlayPosition_c(dd_surface *lpThis, int32_t *x, int32_t *y) { return DDERR_UNSUPPORTED; }
-uint32_t CCALL IDirectDrawSurface_GetPalette_c(dd_surface *lpThis, dd_palette **p) { if (p == NULL) return DDERR_INVALIDPARAMS; *p = lpThis->palette; if (*p == NULL) return DDERR_NOPALETTEATTACHED; (*p)->refs++; return DD_OK; }
+uint32_t CCALL IDirectDrawSurface_GetPalette_c(dd_surface *lpThis, PTR32(dd_palette) *p) { if (p == NULL) return DDERR_INVALIDPARAMS; *p = lpThis->palette; if (*p == NULL) return DDERR_NOPALETTEATTACHED; (*p)->refs++; return DD_OK; }
 uint32_t CCALL IDirectDrawSurface_GetPixelFormat_c(dd_surface *lpThis, uint32_t *pf) { if (pf) fill_pixel_format(pf, lpThis->bpp); return DD_OK; }
 
 static void fill_surface_desc(dd_surface *s, uint32_t *desc)
@@ -691,7 +697,7 @@ uint32_t CCALL IDirectDrawSurface_UpdateOverlayZOrder_c(dd_surface *lpThis, uint
 /* ------------------------------------------------------------------ */
 /* IDirectDrawPalette                                                  */
 
-uint32_t CCALL IDirectDrawPalette_QueryInterface_c(dd_palette *lpThis, uint32_t *riid, void **ppv) { if (ppv) *ppv = NULL; return E_NOINTERFACE; }
+uint32_t CCALL IDirectDrawPalette_QueryInterface_c(dd_palette *lpThis, uint32_t *riid, PTR32(void) *ppv) { if (ppv) *ppv = NULL; return E_NOINTERFACE; }
 uint32_t CCALL IDirectDrawPalette_AddRef_c(dd_palette *lpThis) { return ++lpThis->refs; }
 
 uint32_t CCALL IDirectDrawPalette_Release_c(dd_palette *lpThis)
@@ -726,12 +732,14 @@ uint32_t CCALL IDirectDrawPalette_SetEntries_c(dd_palette *lpThis, uint32_t f, u
 /* ------------------------------------------------------------------ */
 /* IDirectDrawClipper                                                  */
 
-uint32_t CCALL IDirectDrawClipper_QueryInterface_c(dd_clipper *lpThis, uint32_t *riid, void **ppv) { if (ppv) *ppv = NULL; return E_NOINTERFACE; }
+uint32_t CCALL IDirectDrawClipper_QueryInterface_c(dd_clipper *lpThis, uint32_t *riid, PTR32(void) *ppv) { if (ppv) *ppv = NULL; return E_NOINTERFACE; }
 uint32_t CCALL IDirectDrawClipper_AddRef_c(dd_clipper *lpThis) { return ++lpThis->refs; }
 uint32_t CCALL IDirectDrawClipper_Release_c(dd_clipper *lpThis) { if (lpThis->refs > 1) return --lpThis->refs; return 0; }
 uint32_t CCALL IDirectDrawClipper_GetClipList_c(dd_clipper *lpThis, void *r, void *l, uint32_t *s) { return DDERR_UNSUPPORTED; }
-uint32_t CCALL IDirectDrawClipper_GetHWnd_c(dd_clipper *lpThis, void **h) { if (h) *h = lpThis->hwnd; return DD_OK; }
+uint32_t CCALL IDirectDrawClipper_GetHWnd_c(dd_clipper *lpThis, PTR32(void) *h) { if (h) *h = lpThis->hwnd; return DD_OK; }
 uint32_t CCALL IDirectDrawClipper_Initialize_c(dd_clipper *lpThis, void *dd, uint32_t f) { return DD_OK; }
 uint32_t CCALL IDirectDrawClipper_IsClipListChanged_c(dd_clipper *lpThis, uint32_t *b) { if (b) *b = 0; return DD_OK; }
 uint32_t CCALL IDirectDrawClipper_SetClipList_c(dd_clipper *lpThis, void *l, uint32_t f) { return DD_OK; }
 uint32_t CCALL IDirectDrawClipper_SetHWnd_c(dd_clipper *lpThis, uint32_t f, void *h) { lpThis->hwnd = h; return DD_OK; }
+
+EXTERN_C_END

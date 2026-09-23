@@ -347,3 +347,47 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   allocator for 64-bit builds - to reuse for the I76 64-bit port).
 - Playtest status (user): story missions 1-3 played through without problems (Glide, X11, sound, joystick,
   save game created and loaded).
+
+### 2026-09-23 — 64-bit port, step 1 (branch I76_64bit)
+- SRW x64 translator (SRW/SR_full_x64_instr.c): added fpatan, fprem1, fscale, f2xm1, fsincos, fclex (FPU
+  pass-through), setae (setcc group), jecxz (jump group; nasm encodes it with the a32 prefix in 64-bit mode),
+  cmpsw/cmpsd/scasw/scasd (like cmpsb, `a32` string ops). SRW64 is built out of tree with OUTPUT_TYPE OUT_X64
+  (/home/teemu/sorsa/i76work/srw64-build/SRW64.exe).
+- SCI: <module>/x64/ = copies of x86/, except instruction_replacements `CALL i76_frame_tick` (x64 macro).
+- gen_all.sh: ARCH=x64 uses SRW64 ($SRW64), x64 SCI files, nasm -felf64, DEST SR-I76/x64.
+- SR-I76/x64: Septerra's x64 includes (x64inc.inc, asm_call.inc, asm_pushx.inc, asm_unwind.inc, asm_fs_mem.*,
+  asm-calls.inc, misc.inc, asm-cpu.c, x64_stack.h).
+- Result: all four modules generate and assemble as ELF64 objects. Next: runtime (C++/PTR32, low memory,
+  trampolines, x64 asm2c glue) per X64_PORT_PLAN.md.
+- x64 step 2: the runtime builds and links as x86-64 (`scons device=pc64-linux` -> SR-I76-x64; objects .o64,
+  C compiled as C++ like Septerra, EXTERN_C_BEGIN/END around every runtime file, extern "C" guards in all
+  headers; Septerra's Game-Memory.c copied; gen_imports.py writes x64/imports-asm.asm and x64/com-asm.asm with
+  explicit SysV stubs; x64/raw-asm.asm, x64/c2asm.asm (generic C -> game trampoline c_call_asm_n); scanf now
+  translates the format (MS %ld = 32 bits) and passes explicit host arguments). The 32-bit build is unchanged
+  in behaviour (mission test passes). Not yet runnable: trampolines not wired, memory not low, PTR32 fields.
+- x64 step 3: calls into game code go through call_game() (c2asm.c; x86/c2asm.asm and x64/c2asm.asm):
+  WinMain, static and DLL constructors (4-byte xc tables), WndProc, EnumDisplayModes callback, qsort/bsearch
+  comparators. Game-visible memory from x86_malloc/map_memory_32bit (Septerra Game-Memory.c): heaps, handles
+  (windows, files, finds, mappings, registry keys, GDI objects), DirectDraw/DirectSound objects and buffers,
+  DIB sections, LFB, Smacker objects, file views, VirtualAlloc, CREATESTRUCT, EnumDisplayModes desc, errno copy.
+  PTR32 fields: COM lpVtbl, out-params (PTR32(T) *), GrTexInfo.data, GrLfbInfo_t.lfbPtr, DSBUFFERDESC format,
+  ms_FILE (host FILE* moved behind the 32-byte struct / iob_host), _pctype, MSG.hwnd, WNDCLASSA, PAINTSTRUCT.hdc,
+  SmackBuf.Buffer. First x64 run: starts, loads the DLLs, opens Glide and DirectDraw (addresses 0x41xxxxxx).
+- GetKeyState: Windows returns 0xFF80|toggle for a pressed key; the game tests & 0x1000 for Ctrl/Shift/Alt, so
+  modifiers (and the Ctrl+Shift cheat codes like "getdown") never worked with 0x8000.
+- Crash at the start of a later mission (again glibc "double free or corruption (!prev)" noticed inside the
+  NVIDIA driver's texture upload) even with the tracked CRT heap. Heap hardening: the 32-byte slack after
+  every block holds a check pattern (overruns reported on free/realloc, and for all blocks ~10x/s with
+  I76_HEAPCHECK=1); freed blocks (HeapFree, HeapReAlloc's old block, HeapDestroy) are quarantined (up to
+  4096 blocks / 32 MB) before the memory is reused, so use-after-free writes can't hit live data or glibc's
+  metadata; HeapReAlloc always allocates + copies. Training mission: no overruns detected.
+- ROOT CAUSE of the mission-start crashes (found with I76_HEAPGUARD=1: per-block pages + guard page, freed
+  pages made inaccessible): sub_469B00 (parses a loaded text file line by line) computes the remaining length
+  as `strpbrk(...) - Str`; at the end strpbrk returns NULL and NULL - Str is negative on Windows (addresses
+  < 2 GB) but a huge positive length for buffers above 0x80000000 -> strncpy into a 200-byte stack buffer.
+  In the 32-bit Linux build glibc mmaps large allocations high (0xE...). Fix: 32-bit build keeps game memory
+  below 2 GB like Win32 (mallopt(M_MMAP_MAX, 0) -> brk heap; low_mmap searches 0x10000000-0x7FFF0000 with
+  MAP_FIXED_NOREPLACE for file views/VirtualAlloc/guard pages). The x64 build already uses x86_malloc (< 2 GB).
+  Note: the native stack is still high in the 32-bit build.
+- The heap check pattern must be zero (a non-zero pattern broke the same parser's terminator); guard mode keeps
+  16 zero bytes before the guard page. I76_HEAPGUARD=1 training run: no overruns or use-after-free.

@@ -7,7 +7,7 @@ vars.Add(EnumVariable('debug', 'Debug level (0 = release version)', '1',
                                  allowed_values=('0', '1', '2'),
                                  ignorecase=2))
 vars.Add(EnumVariable('device', 'Target device', 'pc-linux',
-                                 allowed_values=('pc-linux',),
+                                 allowed_values=('pc-linux', 'pc64-linux'),
                                  ignorecase=2))
 env = Environment(variables = vars)
 
@@ -16,8 +16,17 @@ device = env['device']
 
 Help(vars.GenerateHelpText(env))
 
-env.Append(CCFLAGS = '-O2 -Wall -m32 -fno-PIE',
-           LINKFLAGS = '-m32 -no-pie -Wl,-z,noexecstack',
+if device == 'pc64-linux':
+    # x86-64 (SRW OUT_X64): the runtime is compiled as C++ (PTR32 types, Game-Memory.c low-memory allocator);
+    # recompiled code uses absolute 32-bit addresses, so the non-PIE executable is linked low (at 0x10000000)
+    env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fno-PIE -fno-exceptions -fno-rtti',
+               LINKFLAGS = '-m64 -no-pie -Wl,-Ttext-segment,0x10000000 -Wl,-z,noexecstack')
+    env['LINK'] = 'g++'
+    env['OBJSUFFIX'] = '.o64'       # the 32-bit build uses .o in the same directories
+else:
+    env.Append(CCFLAGS = '-m32 -fno-PIE',
+               LINKFLAGS = '-m32 -no-pie -Wl,-z,noexecstack')
+env.Append(CCFLAGS = ' -O2 -Wall',
            CPPPATH = ['/usr/include/SDL2', '/usr/local/include/SDL2', '/usr/include/freetype2', '/usr/local/include'],
            LIBPATH = ['/usr/local/lib'],
            LIBS = ['SDL2', 'freetype', 'pthread', 'm']
@@ -35,6 +44,6 @@ if 'PATH_INC' in os.environ:
 if 'PATH_LIB' in os.environ:
     env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
 
-arch_objs = SConscript('x86/SConscript', exports='device env')
+arch_objs = SConscript(('x64' if device == 'pc64-linux' else 'x86') + '/SConscript', exports='device env')
 
-env.Program('SR-I76', Glob('*.c') + arch_objs)
+env.Program('SR-I76' + ('-x64' if device == 'pc64-linux' else ''), Glob('*.c') + arch_objs)

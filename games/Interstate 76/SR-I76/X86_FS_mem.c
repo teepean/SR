@@ -38,6 +38,8 @@ uint32_t current_SEH_frame;
 #endif
 #include "platform.h"
 
+EXTERN_C_BEGIN
+
 #ifdef __cplusplus
 extern "C"
 #endif
@@ -86,3 +88,4 @@ void CCALL X86_WriteFsDword(uint32_t addr, uint32_t value)
 #endif
 }
 
+EXTERN_C_END

@@ -13,7 +13,7 @@ for fname in sys.argv[1:]:
         for name, new in CLASHES.items():
             pat = [
                 (r'^extern %s( ;.*)?$' % name, r'extern %s\1' % new),
-                (r'^(call|jmp|dd|push) %s$' % name, r'\1 %s' % new),
+                (r'^(call|jmp|dd|push|CALL|PUSH32) %s$' % name, r'\1 %s' % new),
                 (r'^(\w+ \w+, )%s$' % name, r'\1%s' % new),
             ]
             for p, r in pat:

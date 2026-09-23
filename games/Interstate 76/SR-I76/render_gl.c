@@ -20,6 +20,10 @@
 #include "config.h"
 #include "winapi.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
 /* ------------------------------------------------------------------ */
@@ -879,3 +883,7 @@ void render_glide_write_argb(int buffer, const uint32_t *src)
     draw_quad(lfb_tex, 1);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
+
+#ifdef __cplusplus
+}
+#endif
