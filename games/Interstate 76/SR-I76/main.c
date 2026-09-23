@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <malloc.h>
 #include <string.h>
 #include <strings.h>
 #include <SDL.h>
@@ -95,6 +96,12 @@ static void prepare_command_line(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+#ifndef __cplusplus
+    // 32-bit build: game code assumes Win32 addresses below 2 GB; glibc's malloc would mmap large blocks high
+    // (0xE0000000...), so keep all allocations in the brk heap (which starts right after the executable)
+    mallopt(M_MMAP_MAX, 0);
+    mallopt(M_TRIM_THRESHOLD, 64 * 1024 * 1024);
+#endif
 #ifdef __cplusplus
     // 64-bit build: everything the game can see must be below 2 GB
     if (x86_init_malloc())

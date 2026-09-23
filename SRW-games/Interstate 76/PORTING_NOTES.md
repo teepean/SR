@@ -381,3 +381,13 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   I76_HEAPCHECK=1); freed blocks (HeapFree, HeapReAlloc's old block, HeapDestroy) are quarantined (up to
   4096 blocks / 32 MB) before the memory is reused, so use-after-free writes can't hit live data or glibc's
   metadata; HeapReAlloc always allocates + copies. Training mission: no overruns detected.
+- ROOT CAUSE of the mission-start crashes (found with I76_HEAPGUARD=1: per-block pages + guard page, freed
+  pages made inaccessible): sub_469B00 (parses a loaded text file line by line) computes the remaining length
+  as `strpbrk(...) - Str`; at the end strpbrk returns NULL and NULL - Str is negative on Windows (addresses
+  < 2 GB) but a huge positive length for buffers above 0x80000000 -> strncpy into a 200-byte stack buffer.
+  In the 32-bit Linux build glibc mmaps large allocations high (0xE...). Fix: 32-bit build keeps game memory
+  below 2 GB like Win32 (mallopt(M_MMAP_MAX, 0) -> brk heap; low_mmap searches 0x10000000-0x7FFF0000 with
+  MAP_FIXED_NOREPLACE for file views/VirtualAlloc/guard pages). The x64 build already uses x86_malloc (< 2 GB).
+  Note: the native stack is still high in the 32-bit build.
+- The heap check pattern must be zero (a non-zero pattern broke the same parser's terminator); guard mode keeps
+  16 zero bytes before the guard page. I76_HEAPGUARD=1 training run: no overruns or use-after-free.

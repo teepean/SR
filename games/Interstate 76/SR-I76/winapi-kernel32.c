@@ -38,8 +38,26 @@ static void *low_mmap(size_t len, int fd, off_t offset)
     if (fd >= 0) return mmap(base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, fd, offset);
     return mmap(base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
 #else
-    if (fd >= 0) return mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, offset);
-    return mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    // 32-bit build: the kernel places mappings high (0xE0000000...), but game code assumes Win32 addresses
+    // below 2 GB (e.g. sub_469B00 computes NULL - pointer as a signed length) - search the low range
+    static uintptr_t hint = 0x20000000;
+    uintptr_t start = hint;
+    size_t alen = (len + 4095) & ~(size_t)4095;
+    int flags = ((fd >= 0) ? MAP_PRIVATE : (MAP_PRIVATE | MAP_ANONYMOUS)) | MAP_FIXED_NOREPLACE;
+    for (;;)
+    {
+        void *addr;
+        if (hint + alen > 0x7FFF0000u) hint = 0x10000000;
+        addr = mmap((void *) hint, len, PROT_READ | PROT_WRITE, flags, fd, (fd >= 0) ? offset : 0);
+        if (addr != MAP_FAILED)
+        {
+            hint += alen;
+            return addr;
+        }
+        if (errno != EEXIST) return MAP_FAILED;
+        hint += alen;
+        if ((hint <= start) && (hint + alen > start)) return MAP_FAILED;    // wrapped around: no room
+    }
 #endif
 }
 
@@ -658,7 +676,9 @@ static heap_obj process_heap = { HT_HEAP, NULL };
  * - freed blocks are quarantined before their memory is reused, so that writes to freed memory (the game
  *   has double frees, so likely also use-after-free) hit quarantined data instead of live data or the host
  *   allocator's metadata (on Windows such writes usually go unnoticed) */
-#define HEAP_CANARY 0x5A
+// zero: the game relies on zero bytes after its blocks (e.g. sub_469B00 parses a loaded text file with
+// strpbrk and needs a terminator after the data); an overrun shows up as non-zero bytes
+#define HEAP_CANARY 0x00
 #define QUARANTINE_COUNT 4096
 #define QUARANTINE_BYTES (32 * 1024 * 1024)
 
@@ -670,8 +690,56 @@ static heap_block *quarantine[QUARANTINE_COUNT];
 static int quarantine_pos;
 static uint32_t quarantine_bytes;
 
+/* I76_HEAPGUARD=1 (debugging): every block gets its own pages, ending right before an inaccessible guard
+ * page, and freed blocks are made inaccessible (kept for a while) - an overrun or a write to freed memory
+ * crashes immediately at the responsible instruction (see the core dump). Uses a lot of memory. */
+static int heap_guard = -1;
+#define GUARD_ZERO_PAD 16
+#define GUARD_KEEP_BYTES (256u * 1024 * 1024)
+static uint32_t guard_kept_bytes;
+static struct { void *base; size_t len; } guard_kept[65536];
+static int guard_kept_pos;
+
+static int use_heap_guard(void)
+{
+    if (heap_guard < 0) heap_guard = (getenv("I76_HEAPGUARD") != NULL);
+    return heap_guard;
+}
+
+static heap_block *guard_alloc(uint32_t total)
+{
+    size_t data = ((total + 3) & ~(size_t)3) + GUARD_ZERO_PAD;  // zero pad (terminators), then the guard page
+    size_t len = (data + 4095) & ~(size_t)4095;
+    uint8_t *base = (uint8_t *) low_mmap(len + 4096, -1, 0);
+    if (base == (uint8_t *) MAP_FAILED) return NULL;
+    mprotect(base + len, 4096, PROT_NONE);
+    return (heap_block *)(base + len - data);
+}
+
+static void guard_free(heap_block *b, uint32_t total)
+{
+    size_t data = ((total + 3) & ~(size_t)3) + GUARD_ZERO_PAD;  // zero pad (terminators), then the guard page
+    size_t len = (data + 4095) & ~(size_t)4095;
+    uint8_t *base = (uint8_t *) b + data - len;
+    mprotect(base, len, PROT_NONE);
+    // keep the freed pages inaccessible for a while, then release them
+    if (guard_kept[guard_kept_pos].base != NULL)
+    {
+        munmap(guard_kept[guard_kept_pos].base, guard_kept[guard_kept_pos].len);
+        guard_kept_bytes -= (uint32_t) guard_kept[guard_kept_pos].len;
+    }
+    guard_kept[guard_kept_pos].base = base;
+    guard_kept[guard_kept_pos].len = len + 4096;
+    guard_kept_bytes += (uint32_t)(len + 4096);
+    guard_kept_pos = (guard_kept_pos + 1) % 65536;
+    (void) GUARD_KEEP_BYTES;
+}
+
+static void block_release(heap_block *b);
+
 static void arm_slack(heap_block *b)
 {
+    if (use_heap_guard()) return;   // no slack in guard mode: the guard page follows the block
     memset((uint8_t *)(b + 1) + b->size, HEAP_CANARY, HEAP_SLACK);
 }
 
@@ -680,6 +748,7 @@ static int check_block(heap_block *b, const char *where)
 {
     const uint8_t *slack = (const uint8_t *)(b + 1) + b->size;
     int i;
+    if (use_heap_guard()) return 1;
     if (b->magic != HEAP_BLOCK_MAGIC)
     {
         eprintf("heap: block header at %p damaged (%s)\n", (void *)(b + 1), where);
@@ -700,6 +769,16 @@ static int check_block(heap_block *b, const char *where)
 }
 
 static void quarantine_free(heap_block *b)
+{
+    if (use_heap_guard())
+    {
+        guard_free(b, b->size + sizeof(heap_block));
+        return;
+    }
+    block_release(b);
+}
+
+static void block_release(heap_block *b)
 {
     uint32_t size = b->size + sizeof(heap_block) + HEAP_SLACK;
     heap_block *old;
@@ -790,7 +869,7 @@ void * CCALL HeapAlloc_c(heap_obj *hHeap, uint32_t dwFlags, uint32_t dwBytes)
 
     if (handle_type(hHeap) != HT_HEAP) hHeap = &process_heap;
 
-    b = (heap_block *) x86_malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
+    b = use_heap_guard() ? guard_alloc(sizeof(heap_block) + dwBytes) : (heap_block *) x86_malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
     if (b == NULL) return NULL;
     // always zero: the game uses uninitialised fields of HeapAlloc'ed structs (e.g. texture
     // animation descriptors in sub_449xxx) which happen to be zero on a fresh Windows heap
@@ -853,7 +932,7 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     }
 
     // new block + copy; the old block goes to the quarantine (stale pointers to it stay harmless)
-    nb = (heap_block *) x86_malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
+    nb = use_heap_guard() ? guard_alloc(sizeof(heap_block) + dwBytes) : (heap_block *) x86_malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
     if (nb == NULL) return NULL;
     memcpy(nb + 1, b + 1, (dwBytes < oldsize) ? dwBytes : oldsize);
     if (dwBytes > oldsize) memset((uint8_t *)(nb + 1) + oldsize, 0, dwBytes - oldsize);
