@@ -410,7 +410,7 @@ int render_init(SDL_Window *w)
     vsync = config_get("vsync");
     SDL_GL_SetSwapInterval((vsync != NULL) ? atoi(vsync) : 1);
 
-    if (winapi_debug) eprintf("render_gl: %s / %s / %s\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION));
+    if (winapi_debug) eprintf("render_gl: %s / %s / %s (SDL video driver %s)\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION), SDL_GetCurrentVideoDriver());
 
     quad_prog = link_program(quad_vs, quad_fs);
     glide_prog = link_program(glide_vs, glide_fs);

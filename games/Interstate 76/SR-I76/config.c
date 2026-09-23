@@ -32,6 +32,8 @@ static const char default_config[] =
     "# frame rate limit: the game logic was made for ~20 FPS (physics, AI and weapons misbehave at high\n"
     "# frame rates); 0 = unlimited\n"
     "fps = 20\n"
+    "# Linux video driver: x11 (default, also on Wayland desktops via XWayland), wayland or auto\n"
+    "video_driver = x11\n"
     "# vertical sync (1 = on, 0 = off)\n"
     "vsync = 1\n"
     "# sound (1 = on, 0 = off)\n"

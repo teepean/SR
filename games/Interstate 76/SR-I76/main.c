@@ -104,6 +104,16 @@ int main(int argc, char *argv[])
     // terminate immediately on SIGTERM/SIGINT (SDL would turn them into a quit event)
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
 
+#if defined(__linux__)
+    // prefer X11 (XWayland on Wayland desktops): with the 32-bit NVIDIA driver, Wayland EGL isn't available and
+    // Mesa's fallback path aborted in libwayland after a mission (SR-I76.cfg: video_driver = x11 | wayland | auto)
+    if (getenv("SDL_VIDEODRIVER") == NULL)
+    {
+        const char *vd = config_get("video_driver");
+        if ((vd == NULL) || (strcasecmp(vd, "auto") != 0)) SDL_SetHint(SDL_HINT_VIDEODRIVER, (vd != NULL) ? vd : "x11,wayland");
+    }
+#endif
+
     if (SDL_Init(SDL_INIT_NOPARACHUTE))
     {
         eprintf("Error: SDL_Init: %s\n", SDL_GetError());

@@ -331,3 +331,10 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   `throttle { - joystick1 ----- }` / `steer { ... ----- }` (no axis) - saved while the controller was frozen.
   Control Configuration -> RESTORE (defaults from JOYSTICK.MAP: throttle = joystick1 Down/Up, steer =
   joystick1 Left/Right) or picking the axes in SELECT INPUT fixes it.
+
+### 2026-09-23 — playtesting
+- Crash after the first mission (user, Wayland/KDE desktop): SIGABRT in libwayland-client (wl_proxy_marshal) from
+  SDL_GL_SwapWindow via libEGL_mesa: in a Wayland session the 32-bit NVIDIA EGL isn't used ("MESA-EGL: failed to
+  create dri2 screen"), rendering fell back to Mesa. No fd leak found (41 fds stable through a mission). The port
+  now prefers X11/XWayland on Linux (SDL video driver hint "x11,wayland"; SR-I76.cfg video_driver = x11 |
+  wayland | auto). I76_DEBUG=1 logs the GL renderer and SDL video driver.
