@@ -218,3 +218,7 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   render in software mode. Offscreen test: `SDL_VIDEODRIVER=offscreen I76_DUMP_FRAMES=<existing dir>
   I76_INPUT_SCRIPT=script4.txt` (the dump dir must exist).
 - Next: driving input check, sound (DirectSound → SDL), then Glide/D3D11.
+- Exit abort "double free or corruption": the game frees dword_504C0C twice in WinMain's cleanup (the original
+  crashes on exit under Wine's debug heap too). Heap blocks now carry a magic; HeapFree/HeapReAlloc/HeapSize
+  fail on invalid blocks like Windows instead of aborting.
+- User test: driving in the training mission works; only audio is missing.

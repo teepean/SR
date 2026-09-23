@@ -555,7 +555,18 @@ typedef struct heap_block {
     struct heap_block *prev, *next;
     uint32_t size;
     struct heap_obj *heap;
-} heap_block;   // 16 bytes
+    uint32_t magic;     // HEAP_BLOCK_MAGIC while allocated
+    uint32_t pad[3];
+} heap_block;   // 32 bytes (keeps 16-byte alignment)
+
+#define HEAP_BLOCK_MAGIC 0x48504C42
+
+// Windows HeapFree/HeapReAlloc/HeapSize fail on invalid blocks instead of aborting;
+// the game frees a block twice at exit (WinMain cleanup, dword_504C0C)
+static int valid_block(const heap_block *b)
+{
+    return b->magic == HEAP_BLOCK_MAGIC;
+}
 
 typedef struct heap_obj {
     uint32_t type;
@@ -601,6 +612,7 @@ void * CCALL HeapAlloc_c(heap_obj *hHeap, uint32_t dwFlags, uint32_t dwBytes)
     memset(b + 1, 0, dwBytes);
 
     b->size = dwBytes;
+    b->magic = HEAP_BLOCK_MAGIC;
     b->heap = hHeap;
     b->prev = NULL;
     b->next = hHeap->first;
@@ -621,6 +633,12 @@ uint32_t CCALL HeapFree_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem)
 
     if (lpMem == NULL) return 1;
     b = ((heap_block *)lpMem) - 1;
+    if (!valid_block(b))
+    {
+        if (winapi_debug) eprintf("HeapFree: invalid block %p\n", lpMem);
+        return 0;
+    }
+    b->magic = 0;
     unlink_block(b);
     free(b);
     return 1;
@@ -633,6 +651,7 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
 
     if (lpMem == NULL) return NULL;
     b = ((heap_block *)lpMem) - 1;
+    if (!valid_block(b)) return NULL;
     oldsize = b->size;
 
     if (dwFlags & HEAP_REALLOC_IN_PLACE_ONLY)
@@ -665,7 +684,7 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
 
 uint32_t CCALL HeapSize_c(heap_obj *hHeap, uint32_t dwFlags, const void *lpMem)
 {
-    if (lpMem == NULL) return (uint32_t)-1;
+    if ((lpMem == NULL) || !valid_block(((const heap_block *)lpMem) - 1)) return (uint32_t)-1;
     return (((const heap_block *)lpMem) - 1)->size;
 }
 
