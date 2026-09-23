@@ -22,8 +22,36 @@ global c_call_asm_n
 section .note.GNU-stack noalloc noexec nowrite progbits
 section .text progbits alloc exec nowrite align=16
 %else
-%error "only elf64 (SysV) is supported"
+section .text code align=16
 %endif
+
+%ifidn __OUTPUT_FORMAT__, win64
+
+; Win64: rcx = stack, edx = func, r8d = nargs, r9 = args
+; The frame is the one the asm2c stubs expect (asm_unwind.inc): [rsp] = 4 free parameter slots,
+; [rsp+FIRST_PARAMETER_OFFSET] = _stack *, the other parameter slots are scratch memory of asm_fs_mem.asm.
+; call_game restores stack->esp afterwards (cdecl functions leave their arguments on the stack).
+
+align 16
+c_call_asm_n:
+        SECTION_PROLOG
+        mov [rsp+FIRST_PARAMETER_OFFSET], rcx
+        mov r11d, [rcx]         ; esp = stack->esp
+        mov r10d, edx           ; function
+        mov ecx, r8d
+        test ecx, ecx
+        jz .call
+.push:
+        mov eax, [r9+rcx*4-4]
+        sub r11d, byte 4
+        mov [r11d], eax
+        dec ecx
+        jnz .push
+.call:
+        CALL r10
+        SECTION_EPILOG
+
+%else
 
 align 16
 c_call_asm_n:
@@ -55,5 +83,7 @@ c_call_asm_n:
         pop rbx
         pop rbp
         ret
+
+%endif
 
 ; end procedure c_call_asm_n

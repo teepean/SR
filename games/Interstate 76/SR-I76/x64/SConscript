@@ -22,7 +22,9 @@ nasmscan = Scanner(function = nasmfile_scan,
 
 SourceFileScanner.add_scanner('.asm', nasmscan)
 
-env1 = Environment(tools=['nasm'], ASFLAGS = '-felf64' + ' -w+orphan-labels -w-number-overflow -ix64/')
+env1 = Environment(tools=['nasm'], ASFLAGS = ('-fwin64' if device == 'pc64-windows' else '-felf64') + ' -w+orphan-labels -w-number-overflow -ix64/')
+if device == 'pc64-windows':
+    env1['OBJSUFFIX'] = '.w64.o'    # the Linux x64 build uses .o in the same directories
 env1_path = env1['ENV']['PATH'].split(os.pathsep)
 nasm_path = shutil.which('nasm')
 if nasm_path is not None:

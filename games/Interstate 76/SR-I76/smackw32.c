@@ -418,6 +418,12 @@ rad_smackbuf * CCALL SmackBufferOpen_c(void *hwnd, uint32_t BlitType, uint32_t w
 {
     rad_smackbuf *b;
 
+    // u16 parameters in RAD's SDK: the game loads them with 16-bit moves and pushes the whole registers
+    width &= 0xFFFF;
+    height &= 0xFFFF;
+    ZoomW &= 0xFFFF;
+    ZoomH &= 0xFFFF;
+
     b = (rad_smackbuf *) game_calloc(1, sizeof(rad_smackbuf));
     b->BlitType = BlitType;
     b->Width = width;

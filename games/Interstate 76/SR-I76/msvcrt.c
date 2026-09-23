@@ -25,7 +25,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
-#include <fnmatch.h>
+#include "compat.h"
 #include <sys/stat.h>
 #include <sys/time.h>
 #include "platform.h"
@@ -450,7 +450,7 @@ int32_t CCALL vsprintf_c(char *str, const char *format, uint32_t *ap)
     return vsprintf_x86(str, format, ap);
 }
 
-int32_t CCALL _vsnprintf_c(char *str, uint32_t size, const char *format, uint32_t *ap)
+int32_t CCALL ms_vsnprintf_c(char *str, uint32_t size, const char *format, uint32_t *ap)
 {
     int res;
 
@@ -903,7 +903,11 @@ int32_t CCALL _mkdir_c(const char *dirname)
     char path[1024];
     if (dirname == NULL) return -1;
     vfs_resolve(dirname, path, sizeof(path));
+#ifdef _WIN32
+    return mkdir(path);
+#else
     return mkdir(path, 0755);
+#endif
 }
 
 int32_t CCALL _unlink_c(const char *filename)

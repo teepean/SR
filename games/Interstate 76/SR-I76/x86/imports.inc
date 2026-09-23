@@ -164,8 +164,8 @@ extern _strnicmp_asm2c
 %define _strnicmp _strnicmp_asm2c
 extern _unlink_asm2c
 %define _unlink _unlink_asm2c
-extern _vsnprintf_asm2c
-%define _vsnprintf _vsnprintf_asm2c
+extern ms_vsnprintf_asm2c
+%define _vsnprintf ms_vsnprintf_asm2c
 extern abort_asm2c
 %define abort abort_asm2c
 extern AddFontResourceA_asm2c

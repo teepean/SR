@@ -78,7 +78,7 @@ extern _stricmp_c
 extern _strlwr_c
 extern _strnicmp_c
 extern _unlink_c
-extern _vsnprintf_c
+extern ms_vsnprintf_c
 extern abort_c
 extern AddFontResourceA_c
 extern AdjustWindowRect_c
@@ -428,7 +428,7 @@ global _stricmp_asm2c
 global _strlwr_asm2c
 global _strnicmp_asm2c
 global _unlink_asm2c
-global _vsnprintf_asm2c
+global ms_vsnprintf_asm2c
 global abort_asm2c
 global AddFontResourceA_asm2c
 global AdjustWindowRect_asm2c
@@ -707,43 +707,94 @@ global i76shell_part_strncmp_asm2c
 section .note.GNU-stack noalloc noexec nowrite progbits
 section .text progbits alloc exec nowrite align=16
 %else
-%error "only elf64 (SysV) is supported"
+section .text code align=16
 %endif
 
 ; ??2@YAPAXI@Z (c1, MSVCRT.dll)
 align 16
 operator_new_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call operator_new_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call operator_new_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; ??3@YAXPAX@Z (c1, MSVCRT.dll)
 align 16
 operator_delete_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call operator_delete_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call operator_delete_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _access (c2, MSVCRT.dll)
 align 16
 _access_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _access_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call _access_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _assert (c3, MSVCRT.dll)
 align 16
 _assert_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call _assert_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call _assert_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _CIacos (f1f, MSVCRT.dll)
 align 16
@@ -773,47 +824,122 @@ _CIpow_asm2c:
 ; _close (c1, MSVCRT.dll)
 align 16
 _close_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _close_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _close_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _errno (c0, MSVCRT.dll)
 align 16
 _errno_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call _errno_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call _errno_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _findclose (c1, MSVCRT.dll)
 align 16
 _findclose_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _findclose_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _findclose_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _findfirst (c2, MSVCRT.dll)
 align 16
 _findfirst_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _findfirst_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call _findfirst_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _findnext (c2, MSVCRT.dll)
 align 16
 _findnext_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _findnext_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call _findnext_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _grAlphaBlendFunction@16 (std4, glide2x.dll)
 align 16
 grAlphaBlendFunction_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grAlphaBlendFunction_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -821,10 +947,29 @@ grAlphaBlendFunction_asm2c:
         mov ecx, [r11d+24]
         call grAlphaBlendFunction_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; _grAlphaCombine@20 (std5, glide2x.dll)
 align 16
 grAlphaCombine_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grAlphaCombine_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -833,44 +978,113 @@ grAlphaCombine_asm2c:
         mov r8d, [r11d+28]
         call grAlphaCombine_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; _grBufferClear@12 (std3, glide2x.dll)
 align 16
 grBufferClear_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call grBufferClear_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call grBufferClear_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; _grBufferSwap@4 (std1, glide2x.dll)
 align 16
 grBufferSwap_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grBufferSwap_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grBufferSwap_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grChromakeyMode@4 (std1, glide2x.dll)
 align 16
 grChromakeyMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grChromakeyMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grChromakeyMode_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grChromakeyValue@4 (std1, glide2x.dll)
 align 16
 grChromakeyValue_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grChromakeyValue_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grChromakeyValue_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grColorCombine@20 (std5, glide2x.dll)
 align 16
 grColorCombine_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grColorCombine_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -879,123 +1093,313 @@ grColorCombine_asm2c:
         mov r8d, [r11d+28]
         call grColorCombine_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; _grConstantColorValue@4 (std1, glide2x.dll)
 align 16
 grConstantColorValue_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grConstantColorValue_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grConstantColorValue_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grCullMode@4 (std1, glide2x.dll)
 align 16
 grCullMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grCullMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grCullMode_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grDepthBufferFunction@4 (std1, glide2x.dll)
 align 16
 grDepthBufferFunction_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grDepthBufferFunction_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grDepthBufferFunction_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grDepthBufferMode@4 (std1, glide2x.dll)
 align 16
 grDepthBufferMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grDepthBufferMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grDepthBufferMode_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grDepthMask@4 (std1, glide2x.dll)
 align 16
 grDepthMask_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grDepthMask_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grDepthMask_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grDrawLine@8 (std2, glide2x.dll)
 align 16
 grDrawLine_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call grDrawLine_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call grDrawLine_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; _grDrawPoint@4 (std1, glide2x.dll)
 align 16
 grDrawPoint_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grDrawPoint_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grDrawPoint_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grDrawTriangle@12 (std3, glide2x.dll)
 align 16
 grDrawTriangle_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call grDrawTriangle_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call grDrawTriangle_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; _grFogColorValue@4 (std1, glide2x.dll)
 align 16
 grFogColorValue_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grFogColorValue_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grFogColorValue_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grFogMode@4 (std1, glide2x.dll)
 align 16
 grFogMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grFogMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grFogMode_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grGlideGetState@4 (std1, glide2x.dll)
 align 16
 grGlideGetState_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grGlideGetState_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grGlideGetState_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grGlideInit@0 (std0, glide2x.dll)
 align 16
 grGlideInit_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call grGlideInit_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call grGlideInit_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _grGlideSetState@4 (std1, glide2x.dll)
 align 16
 grGlideSetState_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grGlideSetState_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grGlideSetState_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grGlideShutdown@0 (std0, glide2x.dll)
 align 16
 grGlideShutdown_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call grGlideShutdown_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call grGlideShutdown_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _grLfbLock@24 (std6, glide2x.dll)
 align 16
 grLfbLock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grLfbLock_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1005,58 +1409,153 @@ grLfbLock_asm2c:
         mov r9d, [r11d+32]
         call grLfbLock_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; _grLfbUnlock@8 (std2, glide2x.dll)
 align 16
 grLfbUnlock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call grLfbUnlock_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call grLfbUnlock_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; _grRenderBuffer@4 (std1, glide2x.dll)
 align 16
 grRenderBuffer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grRenderBuffer_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grRenderBuffer_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grSstQueryBoards@4 (std1, glide2x.dll)
 align 16
 grSstQueryBoards_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grSstQueryBoards_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grSstQueryBoards_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grSstQueryHardware@4 (std1, glide2x.dll)
 align 16
 grSstQueryHardware_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grSstQueryHardware_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grSstQueryHardware_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grSstSelect@4 (std1, glide2x.dll)
 align 16
 grSstSelect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grSstSelect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grSstSelect_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grSstWinClose@0 (std0, glide2x.dll)
 align 16
 grSstWinClose_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call grSstWinClose_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call grSstWinClose_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _grSstWinOpen@28 (std7, glide2x.dll)
 align 16
 grSstWinOpen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grSstWinOpen_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+28
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -1070,10 +1569,25 @@ grSstWinOpen_asm2c:
         call grSstWinOpen_c
         add rsp, 16
         Call_Asm_Epilogue_0 7
+%endif
 
 ; _grTexCalcMemRequired@16 (std4, glide2x.dll)
 align 16
 grTexCalcMemRequired_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grTexCalcMemRequired_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1081,20 +1595,57 @@ grTexCalcMemRequired_asm2c:
         mov ecx, [r11d+24]
         call grTexCalcMemRequired_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; _grTexClampMode@12 (std3, glide2x.dll)
 align 16
 grTexClampMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call grTexClampMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call grTexClampMode_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; _grTexCombine@28 (std7, glide2x.dll)
 align 16
 grTexCombine_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grTexCombine_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+28
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -1108,10 +1659,25 @@ grTexCombine_asm2c:
         call grTexCombine_c
         add rsp, 16
         Call_Asm_Epilogue_0 7
+%endif
 
 ; _grTexDownloadMipMap@16 (std4, glide2x.dll)
 align 16
 grTexDownloadMipMap_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grTexDownloadMipMap_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1119,56 +1685,137 @@ grTexDownloadMipMap_asm2c:
         mov ecx, [r11d+24]
         call grTexDownloadMipMap_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; _grTexDownloadTable@12 (std3, glide2x.dll)
 align 16
 grTexDownloadTable_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call grTexDownloadTable_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call grTexDownloadTable_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; _grTexFilterMode@12 (std3, glide2x.dll)
 align 16
 grTexFilterMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call grTexFilterMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call grTexFilterMode_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; _grTexMaxAddress@4 (std1, glide2x.dll)
 align 16
 grTexMaxAddress_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grTexMaxAddress_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grTexMaxAddress_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grTexMinAddress@4 (std1, glide2x.dll)
 align 16
 grTexMinAddress_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call grTexMinAddress_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call grTexMinAddress_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; _grTexMipMapMode@12 (std3, glide2x.dll)
 align 16
 grTexMipMapMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call grTexMipMapMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call grTexMipMapMode_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; _grTexSource@16 (std4, glide2x.dll)
 align 16
 grTexSource_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call grTexSource_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1176,155 +1823,383 @@ grTexSource_asm2c:
         mov ecx, [r11d+24]
         call grTexSource_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; _isctype (c2, MSVCRT.dll)
 align 16
 _isctype_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _isctype_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call _isctype_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _ismbcalnum (c1, MSVCRT.dll)
 align 16
 _ismbcalnum_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _ismbcalnum_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _ismbcalnum_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _ismbcpunct (c1, MSVCRT.dll)
 align 16
 _ismbcpunct_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _ismbcpunct_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _ismbcpunct_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _ismbcspace (c1, MSVCRT.dll)
 align 16
 _ismbcspace_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _ismbcspace_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _ismbcspace_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _isnan (c2, MSVCRT.dll)
 align 16
 _isnan_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _isnan_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call _isnan_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _itoa (c3, MSVCRT.dll)
 align 16
 _itoa_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call _itoa_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call _itoa_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _lseek (c3, MSVCRT.dll)
 align 16
 _lseek_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call _lseek_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call _lseek_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _mbsicmp (c2, MSVCRT.dll)
 align 16
 _mbsicmp_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _mbsicmp_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call _mbsicmp_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _mbsnbcat (c3, MSVCRT.dll)
 align 16
 _mbsnbcat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call _mbsnbcat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call _mbsnbcat_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _mbsnbcpy (c3, MSVCRT.dll)
 align 16
 _mbsnbcpy_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call _mbsnbcpy_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call _mbsnbcpy_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _mbsnbicmp (c3, MSVCRT.dll)
 align 16
 _mbsnbicmp_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call _mbsnbicmp_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call _mbsnbicmp_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _mkdir (c1, MSVCRT.dll)
 align 16
 _mkdir_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _mkdir_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _mkdir_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _msize (c1, MSVCRT.dll)
 align 16
 _msize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _msize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _msize_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _open (v2, MSVCRT.dll)
 align 16
 _open_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        lea r8d, [r11d+12]
+        call _open_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         lea edx, [r11d+20]
         call _open_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _putch (c1, MSVCRT.dll)
 align 16
 _putch_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _putch_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _putch_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _read (c3, MSVCRT.dll)
 align 16
 _read_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call _read_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call _read_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _splitpath (c5, MSVCRT.dll)
 align 16
 _splitpath_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call _splitpath_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1333,141 +2208,359 @@ _splitpath_asm2c:
         mov r8d, [r11d+28]
         call _splitpath_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _stat (c2, MSVCRT.dll)
 align 16
 _stat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _stat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call _stat_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _stricmp (c2, MSVCRT.dll)
 align 16
 _stricmp_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _stricmp_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call _stricmp_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _strlwr (c1, MSVCRT.dll)
 align 16
 _strlwr_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _strlwr_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _strlwr_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _strnicmp (c3, MSVCRT.dll)
 align 16
 _strnicmp_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call _strnicmp_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call _strnicmp_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _unlink (c1, MSVCRT.dll)
 align 16
 _unlink_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _unlink_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _unlink_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _vsnprintf (c4, MSVCRT.dll)
 align 16
-_vsnprintf_asm2c:
+ms_vsnprintf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call ms_vsnprintf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         mov ecx, [r11d+24]
-        call _vsnprintf_c
+        call ms_vsnprintf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; abort (c0, MSVCRT.dll)
 align 16
 abort_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call abort_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call abort_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; AddFontResourceA (std1, GDI32.dll)
 align 16
 AddFontResourceA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call AddFontResourceA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call AddFontResourceA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; AdjustWindowRect (std3, USER32.dll)
 align 16
 AdjustWindowRect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call AdjustWindowRect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call AdjustWindowRect_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; atoi (c1, MSVCRT.dll)
 align 16
 atoi_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call atoi_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call atoi_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; atol (c1, MSVCRT.dll)
 align 16
 atol_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call atol_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call atol_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; auxGetDevCapsA (std3, WIN32.dll)
 align 16
 auxGetDevCapsA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call auxGetDevCapsA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call auxGetDevCapsA_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; auxGetNumDevs (std0, WIN32.dll)
 align 16
 auxGetNumDevs_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call auxGetNumDevs_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call auxGetNumDevs_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; auxSetVolume (std2, WIN32.dll)
 align 16
 auxSetVolume_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call auxSetVolume_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call auxSetVolume_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; BeginPaint (std2, USER32.dll)
 align 16
 BeginPaint_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call BeginPaint_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call BeginPaint_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; BitBlt (std9, GDI32.dll)
 align 16
 BitBlt_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 48
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov eax, [r11d+36]
+        mov [rsp+64], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call BitBlt_c
+        add rsp, 48
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+36
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 32
         mov eax, [r11d+36]
@@ -1485,10 +2578,29 @@ BitBlt_asm2c:
         call BitBlt_c
         add rsp, 32
         Call_Asm_Epilogue_0 9
+%endif
 
 ; bsearch (c5, MSVCRT.dll)
 align 16
 bsearch_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call bsearch_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1497,84 +2609,215 @@ bsearch_asm2c:
         mov r8d, [r11d+28]
         call bsearch_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; calloc (c2, MSVCRT.dll)
 align 16
 calloc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call calloc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call calloc_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; ClientToScreen (std2, USER32.dll)
 align 16
 ClientToScreen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ClientToScreen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call ClientToScreen_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; ClipCursor (std1, USER32.dll)
 align 16
 ClipCursor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ClipCursor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call ClipCursor_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; clock (c0, MSVCRT.dll)
 align 16
 clock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call clock_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call clock_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; CloseHandle (std1, KERNEL32.dll)
 align 16
 CloseHandle_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call CloseHandle_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call CloseHandle_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; CoInitialize (std1, ole32.dll)
 align 16
 CoInitialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call CoInitialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call CoInitialize_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; CopyFileA (std3, KERNEL32.dll)
 align 16
 CopyFileA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call CopyFileA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call CopyFileA_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; CoUninitialize (std0, ole32.dll)
 align 16
 CoUninitialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call CoUninitialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call CoUninitialize_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; CreateCompatibleDC (std1, GDI32.dll)
 align 16
 CreateCompatibleDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call CreateCompatibleDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call CreateCompatibleDC_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; CreateDIBSection (std6, GDI32.dll)
 align 16
 CreateDIBSection_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CreateDIBSection_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1584,10 +2827,33 @@ CreateDIBSection_asm2c:
         mov r9d, [r11d+32]
         call CreateDIBSection_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; CreateFileA (std7, KERNEL32.dll)
 align 16
 CreateFileA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CreateFileA_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+28
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -1601,10 +2867,31 @@ CreateFileA_asm2c:
         call CreateFileA_c
         add rsp, 16
         Call_Asm_Epilogue_0 7
+%endif
 
 ; CreateFileMappingA (std6, KERNEL32.dll)
 align 16
 CreateFileMappingA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CreateFileMappingA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1614,26 +2901,79 @@ CreateFileMappingA_asm2c:
         mov r9d, [r11d+32]
         call CreateFileMappingA_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; CreateFontIndirectA (std1, GDI32.dll)
 align 16
 CreateFontIndirectA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call CreateFontIndirectA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call CreateFontIndirectA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; CreatePalette (std1, GDI32.dll)
 align 16
 CreatePalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call CreatePalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call CreatePalette_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; CreateProcessA (std10, KERNEL32.dll)
 align 16
 CreateProcessA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 48
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov eax, [r11d+36]
+        mov [rsp+64], rax
+        mov eax, [r11d+40]
+        mov [rsp+72], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CreateProcessA_c
+        add rsp, 48
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+40
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 32
         mov eax, [r11d+36]
@@ -1653,10 +2993,25 @@ CreateProcessA_asm2c:
         call CreateProcessA_c
         add rsp, 32
         Call_Asm_Epilogue_0 10
+%endif
 
 ; CreateScalableFontResourceA (std4, GDI32.dll)
 align 16
 CreateScalableFontResourceA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CreateScalableFontResourceA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1664,10 +3019,31 @@ CreateScalableFontResourceA_asm2c:
         mov ecx, [r11d+24]
         call CreateScalableFontResourceA_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; CreateThread (std6, KERNEL32.dll)
 align 16
 CreateThread_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CreateThread_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1677,10 +3053,43 @@ CreateThread_asm2c:
         mov r9d, [r11d+32]
         call CreateThread_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; CreateWindowExA (std12, USER32.dll)
 align 16
 CreateWindowExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 64
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov eax, [r11d+36]
+        mov [rsp+64], rax
+        mov eax, [r11d+40]
+        mov [rsp+72], rax
+        mov eax, [r11d+44]
+        mov [rsp+80], rax
+        mov eax, [r11d+48]
+        mov [rsp+88], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CreateWindowExA_c
+        add rsp, 64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+48
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 48
         mov eax, [r11d+36]
@@ -1704,10 +3113,25 @@ CreateWindowExA_asm2c:
         call CreateWindowExA_c
         add rsp, 48
         Call_Asm_Epilogue_0 12
+%endif
 
 ; DefWindowProcA (std4, USER32.dll)
 align 16
 DefWindowProcA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call DefWindowProcA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1715,50 +3139,129 @@ DefWindowProcA_asm2c:
         mov ecx, [r11d+24]
         call DefWindowProcA_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; DeleteCriticalSection (std1, KERNEL32.dll)
 align 16
 DeleteCriticalSection_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call DeleteCriticalSection_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call DeleteCriticalSection_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; DeleteDC (std1, GDI32.dll)
 align 16
 DeleteDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call DeleteDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call DeleteDC_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; DeleteFileA (std1, KERNEL32.dll)
 align 16
 DeleteFileA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call DeleteFileA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call DeleteFileA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; DeleteObject (std1, GDI32.dll)
 align 16
 DeleteObject_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call DeleteObject_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call DeleteObject_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; DestroyWindow (std1, USER32.dll)
 align 16
 DestroyWindow_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call DestroyWindow_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call DestroyWindow_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; DialogBoxParamA (std5, USER32.dll)
 align 16
 DialogBoxParamA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call DialogBoxParamA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1767,10 +3270,25 @@ DialogBoxParamA_asm2c:
         mov r8d, [r11d+28]
         call DialogBoxParamA_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; difftime (c2, MSVCRT.dll)
 align 16
 difftime_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call difftime_c
+        movsd [rsp], xmm0
+        fld qword [rsp]
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1778,47 +3296,116 @@ difftime_asm2c:
         movsd [rsp-8], xmm0
         fld qword [rsp-8]
         Call_Asm_Epilogue_0 0
+%endif
 
 ; DirectDrawCreate (std3, DDRAW.dll)
 align 16
 DirectDrawCreate_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call DirectDrawCreate_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call DirectDrawCreate_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; DirectDrawEnumerateA (std2, DDRAW.dll)
 align 16
 DirectDrawEnumerateA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call DirectDrawEnumerateA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call DirectDrawEnumerateA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; DirectSoundCreate (std3, DSOUND.dll)
 align 16
 DirectSoundCreate_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call DirectSoundCreate_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call DirectSoundCreate_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; DispatchMessageA (std1, USER32.dll)
 align 16
 DispatchMessageA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call DispatchMessageA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call DispatchMessageA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; msvcrt_div (c2, MSVCRT.dll)
 align 16
 msvcrt_div_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call msvcrt_div_c
+        mov rdx, rax
+        shr rdx, 32
+        mov eax, eax
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1827,36 +3414,89 @@ msvcrt_div_asm2c:
         shr rdx, 32
         mov eax, eax
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dp_enableDebugPrint (c1, anetdll.dll)
 align 16
 dp_enableDebugPrint_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call dp_enableDebugPrint_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call dp_enableDebugPrint_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpAddPlayerToGroup (c3, anetdll.dll)
 align 16
 dpAddPlayerToGroup_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call dpAddPlayerToGroup_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call dpAddPlayerToGroup_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpClose (c1, anetdll.dll)
 align 16
 dpClose_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call dpClose_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call dpClose_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpCreate (c4, anetdll.dll)
 align 16
 dpCreate_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpCreate_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1864,20 +3504,49 @@ dpCreate_asm2c:
         mov ecx, [r11d+24]
         call dpCreate_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpCreateGroup (c3, anetdll.dll)
 align 16
 dpCreateGroup_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call dpCreateGroup_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call dpCreateGroup_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpCreatePlayer (c4, anetdll.dll)
 align 16
 dpCreatePlayer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpCreatePlayer_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1885,28 +3554,75 @@ dpCreatePlayer_asm2c:
         mov ecx, [r11d+24]
         call dpCreatePlayer_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpDestroy (c2, anetdll.dll)
 align 16
 dpDestroy_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call dpDestroy_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call dpDestroy_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpDestroyPlayer (c2, anetdll.dll)
 align 16
 dpDestroyPlayer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call dpDestroyPlayer_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call dpDestroyPlayer_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpEnumGroupPlayers (c6, anetdll.dll)
 align 16
 dpEnumGroupPlayers_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpEnumGroupPlayers_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1916,10 +3632,29 @@ dpEnumGroupPlayers_asm2c:
         mov r9d, [r11d+32]
         call dpEnumGroupPlayers_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpEnumGroups (c5, anetdll.dll)
 align 16
 dpEnumGroups_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpEnumGroups_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1928,10 +3663,29 @@ dpEnumGroups_asm2c:
         mov r8d, [r11d+28]
         call dpEnumGroups_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpEnumPlayers (c5, anetdll.dll)
 align 16
 dpEnumPlayers_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpEnumPlayers_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1940,10 +3694,31 @@ dpEnumPlayers_asm2c:
         mov r8d, [r11d+28]
         call dpEnumPlayers_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpEnumSessions (c6, anetdll.dll)
 align 16
 dpEnumSessions_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpEnumSessions_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1953,29 +3728,77 @@ dpEnumSessions_asm2c:
         mov r9d, [r11d+32]
         call dpEnumSessions_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpFreeze (c2, anetdll.dll)
 align 16
 dpFreeze_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call dpFreeze_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call dpFreeze_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpEnumTransports (c3, anetdll.dll)
 align 16
 dpEnumTransports_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call dpEnumTransports_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call dpEnumTransports_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpGetPlayerData (c6, anetdll.dll)
 align 16
 dpGetPlayerData_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpGetPlayerData_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1985,10 +3808,25 @@ dpGetPlayerData_asm2c:
         mov r9d, [r11d+32]
         call dpGetPlayerData_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpGetPlayerName (c4, anetdll.dll)
 align 16
 dpGetPlayerName_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpGetPlayerName_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1996,20 +3834,49 @@ dpGetPlayerName_asm2c:
         mov ecx, [r11d+24]
         call dpGetPlayerName_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpGetSessionDesc (c3, anetdll.dll)
 align 16
 dpGetSessionDesc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call dpGetSessionDesc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call dpGetSessionDesc_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpOpen (c4, anetdll.dll)
 align 16
 dpOpen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpOpen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2017,10 +3884,31 @@ dpOpen_asm2c:
         mov ecx, [r11d+24]
         call dpOpen_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpReceive (c6, anetdll.dll)
 align 16
 dpReceive_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpReceive_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2030,10 +3918,31 @@ dpReceive_asm2c:
         mov r9d, [r11d+32]
         call dpReceive_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpSend (c6, anetdll.dll)
 align 16
 dpSend_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpSend_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2043,19 +3952,53 @@ dpSend_asm2c:
         mov r9d, [r11d+32]
         call dpSend_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpSetGameServer (c2, anetdll.dll)
 align 16
 dpSetGameServer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call dpSetGameServer_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call dpSetGameServer_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; dpSetPlayerData (c6, anetdll.dll)
 align 16
 dpSetPlayerData_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call dpSetPlayerData_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2065,121 +4008,299 @@ dpSetPlayerData_asm2c:
         mov r9d, [r11d+32]
         call dpSetPlayerData_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; EndDialog (std2, USER32.dll)
 align 16
 EndDialog_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call EndDialog_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call EndDialog_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; EndPaint (std2, USER32.dll)
 align 16
 EndPaint_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call EndPaint_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call EndPaint_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; EnterCriticalSection (std1, KERNEL32.dll)
 align 16
 EnterCriticalSection_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call EnterCriticalSection_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call EnterCriticalSection_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; exit (c1, MSVCRT.dll)
 align 16
 exit_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call exit_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call exit_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; ExitProcess (std1, KERNEL32.dll)
 align 16
 ExitProcess_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ExitProcess_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call ExitProcess_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; fclose (c1, MSVCRT.dll)
 align 16
 fclose_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call fclose_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call fclose_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fflush (c1, MSVCRT.dll)
 align 16
 fflush_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call fflush_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call fflush_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fgetc (c1, MSVCRT.dll)
 align 16
 fgetc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call fgetc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call fgetc_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fgets (c3, MSVCRT.dll)
 align 16
 fgets_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call fgets_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call fgets_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; FindClose (std1, KERNEL32.dll)
 align 16
 FindClose_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call FindClose_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call FindClose_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; FindFirstFileA (std2, KERNEL32.dll)
 align 16
 FindFirstFileA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call FindFirstFileA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call FindFirstFileA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; FindNextFileA (std2, KERNEL32.dll)
 align 16
 FindNextFileA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call FindNextFileA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call FindNextFileA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; FindWindowA (std2, USER32.dll)
 align 16
 FindWindowA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call FindWindowA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call FindWindowA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; floor (c2, MSVCRT.dll)
 align 16
 floor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call floor_c
+        movsd [rsp], xmm0
+        fld qword [rsp]
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2187,55 +4308,135 @@ floor_asm2c:
         movsd [rsp-8], xmm0
         fld qword [rsp-8]
         Call_Asm_Epilogue_0 0
+%endif
 
 ; FlushFileBuffers (std1, KERNEL32.dll)
 align 16
 FlushFileBuffers_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call FlushFileBuffers_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call FlushFileBuffers_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; fopen (c2, MSVCRT.dll)
 align 16
 fopen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call fopen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call fopen_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fprintf (v2, MSVCRT.dll)
 align 16
 fprintf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        lea r8d, [r11d+12]
+        call fprintf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         lea edx, [r11d+20]
         call fprintf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fputc (c2, MSVCRT.dll)
 align 16
 fputc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call fputc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call fputc_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fputs (c2, MSVCRT.dll)
 align 16
 fputs_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call fputs_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call fputs_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fread (c4, MSVCRT.dll)
 align 16
 fread_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call fread_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2243,54 +4444,133 @@ fread_asm2c:
         mov ecx, [r11d+24]
         call fread_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; free (c1, MSVCRT.dll)
 align 16
 free_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call free_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call free_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; FreeLibrary (std1, KERNEL32.dll)
 align 16
 FreeLibrary_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call FreeLibrary_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call FreeLibrary_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; fscanf (v2, MSVCRT.dll)
 align 16
 fscanf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        lea r8d, [r11d+12]
+        call fscanf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         lea edx, [r11d+20]
         call fscanf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fseek (c3, MSVCRT.dll)
 align 16
 fseek_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call fseek_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call fseek_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; ftell (c1, MSVCRT.dll)
 align 16
 ftell_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ftell_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call ftell_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; fwrite (c4, MSVCRT.dll)
 align 16
 fwrite_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call fwrite_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2298,108 +4578,269 @@ fwrite_asm2c:
         mov ecx, [r11d+24]
         call fwrite_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GdiFlush (std0, GDI32.dll)
 align 16
 GdiFlush_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GdiFlush_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GdiFlush_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetAsyncKeyState (std1, USER32.dll)
 align 16
 GetAsyncKeyState_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetAsyncKeyState_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetAsyncKeyState_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; getc (c1, MSVCRT.dll)
 align 16
 getc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call getc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call getc_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetClientRect (std2, USER32.dll)
 align 16
 GetClientRect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetClientRect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetClientRect_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetCPInfo (std2, KERNEL32.dll)
 align 16
 GetCPInfo_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetCPInfo_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetCPInfo_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetCurrentDirectoryA (std2, KERNEL32.dll)
 align 16
 GetCurrentDirectoryA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetCurrentDirectoryA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetCurrentDirectoryA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetCurrentProcess (std0, KERNEL32.dll)
 align 16
 GetCurrentProcess_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetCurrentProcess_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GetCurrentProcess_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetCurrentThreadId (std0, KERNEL32.dll)
 align 16
 GetCurrentThreadId_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetCurrentThreadId_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GetCurrentThreadId_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetCursorPos (std1, USER32.dll)
 align 16
 GetCursorPos_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetCursorPos_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetCursorPos_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetDC (std1, USER32.dll)
 align 16
 GetDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetDC_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetDeviceCaps (std2, GDI32.dll)
 align 16
 GetDeviceCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetDeviceCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetDeviceCaps_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetDlgItem (std2, USER32.dll)
 align 16
 GetDlgItem_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetDlgItem_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetDlgItem_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetDlgItemTextA (std4, USER32.dll)
 align 16
 GetDlgItemTextA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetDlgItemTextA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2407,18 +4848,45 @@ GetDlgItemTextA_asm2c:
         mov ecx, [r11d+24]
         call GetDlgItemTextA_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; GetDriveTypeA (std1, KERNEL32.dll)
 align 16
 GetDriveTypeA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetDriveTypeA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetDriveTypeA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetFileTime (std4, KERNEL32.dll)
 align 16
 GetFileTime_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetFileTime_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2426,48 +4894,121 @@ GetFileTime_asm2c:
         mov ecx, [r11d+24]
         call GetFileTime_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; GetFileType (std1, KERNEL32.dll)
 align 16
 GetFileType_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetFileType_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetFileType_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetFocus (std0, USER32.dll)
 align 16
 GetFocus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetFocus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GetFocus_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetKeyboardType (std1, USER32.dll)
 align 16
 GetKeyboardType_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetKeyboardType_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetKeyboardType_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetKeyState (std1, USER32.dll)
 align 16
 GetKeyState_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetKeyState_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetKeyState_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetLastError (std0, KERNEL32.dll)
 align 16
 GetLastError_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetLastError_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GetLastError_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetLocaleInfoA (std4, KERNEL32.dll)
 align 16
 GetLocaleInfoA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetLocaleInfoA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2475,10 +5016,25 @@ GetLocaleInfoA_asm2c:
         mov ecx, [r11d+24]
         call GetLocaleInfoA_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; GetLocaleInfoW (std4, KERNEL32.dll)
 align 16
 GetLocaleInfoW_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetLocaleInfoW_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2486,76 +5042,193 @@ GetLocaleInfoW_asm2c:
         mov ecx, [r11d+24]
         call GetLocaleInfoW_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; GetLogicalDrives (std0, KERNEL32.dll)
 align 16
 GetLogicalDrives_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetLogicalDrives_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GetLogicalDrives_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetLogicalDriveStringsA (std2, KERNEL32.dll)
 align 16
 GetLogicalDriveStringsA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetLogicalDriveStringsA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetLogicalDriveStringsA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetModuleFileNameA (std3, KERNEL32.dll)
 align 16
 GetModuleFileNameA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call GetModuleFileNameA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call GetModuleFileNameA_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; GetModuleHandleA (std1, KERNEL32.dll)
 align 16
 GetModuleHandleA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetModuleHandleA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetModuleHandleA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetProcAddress (std2, KERNEL32.dll)
 align 16
 GetProcAddress_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetProcAddress_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetProcAddress_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetProcessHeap (std0, KERNEL32.dll)
 align 16
 GetProcessHeap_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetProcessHeap_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GetProcessHeap_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetStdHandle (std1, KERNEL32.dll)
 align 16
 GetStdHandle_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetStdHandle_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetStdHandle_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetStockObject (std1, GDI32.dll)
 align 16
 GetStockObject_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetStockObject_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetStockObject_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetStringTypeA (std5, KERNEL32.dll)
 align 16
 GetStringTypeA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetStringTypeA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2564,10 +5237,25 @@ GetStringTypeA_asm2c:
         mov r8d, [r11d+28]
         call GetStringTypeA_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; GetStringTypeW (std4, KERNEL32.dll)
 align 16
 GetStringTypeW_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetStringTypeW_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2575,33 +5263,83 @@ GetStringTypeW_asm2c:
         mov ecx, [r11d+24]
         call GetStringTypeW_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; GetSystemDefaultLCID (std0, KERNEL32.dll)
 align 16
 GetSystemDefaultLCID_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetSystemDefaultLCID_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GetSystemDefaultLCID_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetSystemInfo (std1, KERNEL32.dll)
 align 16
 GetSystemInfo_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetSystemInfo_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetSystemInfo_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetSystemMetrics (std1, USER32.dll)
 align 16
 GetSystemMetrics_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GetSystemMetrics_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call GetSystemMetrics_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; GetSystemPaletteEntries (std4, GDI32.dll)
 align 16
 GetSystemPaletteEntries_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetSystemPaletteEntries_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2609,10 +5347,33 @@ GetSystemPaletteEntries_asm2c:
         mov ecx, [r11d+24]
         call GetSystemPaletteEntries_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; GetTextExtentExPointA (std7, GDI32.dll)
 align 16
 GetTextExtentExPointA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetTextExtentExPointA_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+28
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -2626,10 +5387,25 @@ GetTextExtentExPointA_asm2c:
         call GetTextExtentExPointA_c
         add rsp, 16
         Call_Asm_Epilogue_0 7
+%endif
 
 ; GetTextExtentPoint32A (std4, GDI32.dll)
 align 16
 GetTextExtentPoint32A_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetTextExtentPoint32A_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2637,17 +5413,53 @@ GetTextExtentPoint32A_asm2c:
         mov ecx, [r11d+24]
         call GetTextExtentPoint32A_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; GetTickCount (std0, KERNEL32.dll)
 align 16
 GetTickCount_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetTickCount_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call GetTickCount_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; GetVolumeInformationA (std8, KERNEL32.dll)
 align 16
 GetVolumeInformationA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetVolumeInformationA_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+32
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -2663,84 +5475,205 @@ GetVolumeInformationA_asm2c:
         call GetVolumeInformationA_c
         add rsp, 16
         Call_Asm_Epilogue_0 8
+%endif
 
 ; GetWindowLongA (std2, USER32.dll)
 align 16
 GetWindowLongA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetWindowLongA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetWindowLongA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetWindowRect (std2, USER32.dll)
 align 16
 GetWindowRect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetWindowRect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetWindowRect_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; GetWindowsDirectoryA (std2, KERNEL32.dll)
 align 16
 GetWindowsDirectoryA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetWindowsDirectoryA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call GetWindowsDirectoryA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; HeapAlloc (std3, KERNEL32.dll)
 align 16
 HeapAlloc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call HeapAlloc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call HeapAlloc_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; HeapCompact (std2, KERNEL32.dll)
 align 16
 HeapCompact_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call HeapCompact_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call HeapCompact_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; HeapCreate (std3, KERNEL32.dll)
 align 16
 HeapCreate_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call HeapCreate_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call HeapCreate_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; HeapDestroy (std1, KERNEL32.dll)
 align 16
 HeapDestroy_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call HeapDestroy_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call HeapDestroy_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; HeapFree (std3, KERNEL32.dll)
 align 16
 HeapFree_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call HeapFree_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call HeapFree_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; HeapReAlloc (std4, KERNEL32.dll)
 align 16
 HeapReAlloc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call HeapReAlloc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2748,96 +5681,243 @@ HeapReAlloc_asm2c:
         mov ecx, [r11d+24]
         call HeapReAlloc_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; HeapSize (std3, KERNEL32.dll)
 align 16
 HeapSize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call HeapSize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call HeapSize_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; ImmAssociateContext (std2, IMM32.dll)
 align 16
 ImmAssociateContext_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ImmAssociateContext_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call ImmAssociateContext_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; InitializeCriticalSection (std1, KERNEL32.dll)
 align 16
 InitializeCriticalSection_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call InitializeCriticalSection_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call InitializeCriticalSection_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; InterlockedDecrement (std1, KERNEL32.dll)
 align 16
 InterlockedDecrement_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call InterlockedDecrement_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call InterlockedDecrement_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; InterlockedIncrement (std1, KERNEL32.dll)
 align 16
 InterlockedIncrement_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call InterlockedIncrement_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call InterlockedIncrement_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; isspace (c1, MSVCRT.dll)
 align 16
 isspace_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call isspace_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call isspace_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; joyGetDevCapsA (std3, WIN32.dll)
 align 16
 joyGetDevCapsA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call joyGetDevCapsA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call joyGetDevCapsA_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; joyGetNumDevs (std0, WIN32.dll)
 align 16
 joyGetNumDevs_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call joyGetNumDevs_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call joyGetNumDevs_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; joyGetPos (std2, WINMM.dll)
 align 16
 joyGetPos_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call joyGetPos_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call joyGetPos_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; joyGetPosEx (std2, WIN32.dll)
 align 16
 joyGetPosEx_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call joyGetPosEx_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call joyGetPosEx_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; LCMapStringA (std6, KERNEL32.dll)
 align 16
 LCMapStringA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call LCMapStringA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2847,10 +5927,31 @@ LCMapStringA_asm2c:
         mov r9d, [r11d+32]
         call LCMapStringA_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; LCMapStringW (std6, KERNEL32.dll)
 align 16
 LCMapStringW_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call LCMapStringW_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2860,78 +5961,197 @@ LCMapStringW_asm2c:
         mov r9d, [r11d+32]
         call LCMapStringW_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; LeaveCriticalSection (std1, KERNEL32.dll)
 align 16
 LeaveCriticalSection_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call LeaveCriticalSection_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call LeaveCriticalSection_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; LoadCursorA (std2, USER32.dll)
 align 16
 LoadCursorA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call LoadCursorA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call LoadCursorA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; LoadCursorFromFileA (std1, USER32.dll)
 align 16
 LoadCursorFromFileA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call LoadCursorFromFileA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call LoadCursorFromFileA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; LoadLibraryA (std1, KERNEL32.dll)
 align 16
 LoadLibraryA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call LoadLibraryA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call LoadLibraryA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; LoadModule (std2, KERNEL32.dll)
 align 16
 LoadModule_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call LoadModule_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call LoadModule_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; lstrcatA (std2, KERNEL32.dll)
 align 16
 lstrcatA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call lstrcatA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call lstrcatA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; lstrcpyA (std2, KERNEL32.dll)
 align 16
 lstrcpyA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call lstrcpyA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call lstrcpyA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; malloc (c1, MSVCRT.dll)
 align 16
 malloc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call malloc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call malloc_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; MapViewOfFile (std5, KERNEL32.dll)
 align 16
 MapViewOfFile_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call MapViewOfFile_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2940,29 +6160,71 @@ MapViewOfFile_asm2c:
         mov r8d, [r11d+28]
         call MapViewOfFile_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; MapVirtualKeyA (std2, USER32.dll)
 align 16
 MapVirtualKeyA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call MapVirtualKeyA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call MapVirtualKeyA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; mciGetErrorStringA (std3, WIN32.dll)
 align 16
 mciGetErrorStringA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call mciGetErrorStringA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call mciGetErrorStringA_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; mciSendCommandA (std4, WIN32.dll)
 align 16
 mciSendCommandA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call mciSendCommandA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2970,20 +6232,49 @@ mciSendCommandA_asm2c:
         mov ecx, [r11d+24]
         call mciSendCommandA_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; memmove (c3, MSVCRT.dll)
 align 16
 memmove_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call memmove_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call memmove_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; MessageBoxA (std4, USER32.dll)
 align 16
 MessageBoxA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call MessageBoxA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -2991,10 +6282,31 @@ MessageBoxA_asm2c:
         mov ecx, [r11d+24]
         call MessageBoxA_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; MultiByteToWideChar (std6, KERNEL32.dll)
 align 16
 MultiByteToWideChar_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call MultiByteToWideChar_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3004,18 +6316,49 @@ MultiByteToWideChar_asm2c:
         mov r9d, [r11d+32]
         call MultiByteToWideChar_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; OutputDebugStringA (std1, KERNEL32.dll)
 align 16
 OutputDebugStringA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call OutputDebugStringA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call OutputDebugStringA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; PeekMessageA (std5, USER32.dll)
 align 16
 PeekMessageA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call PeekMessageA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3024,10 +6367,25 @@ PeekMessageA_asm2c:
         mov r8d, [r11d+28]
         call PeekMessageA_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; PostMessageA (std4, USER32.dll)
 align 16
 PostMessageA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call PostMessageA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3035,18 +6393,45 @@ PostMessageA_asm2c:
         mov ecx, [r11d+24]
         call PostMessageA_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; PostQuitMessage (std1, USER32.dll)
 align 16
 PostQuitMessage_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call PostQuitMessage_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call PostQuitMessage_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; qsort (c4, MSVCRT.dll)
 align 16
 qsort_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call qsort_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3054,17 +6439,47 @@ qsort_asm2c:
         mov ecx, [r11d+24]
         call qsort_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; rand (c0, MSVCRT.dll)
 align 16
 rand_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call rand_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call rand_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; ReadFile (std5, KERNEL32.dll)
 align 16
 ReadFile_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call ReadFile_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3073,27 +6488,71 @@ ReadFile_asm2c:
         mov r8d, [r11d+28]
         call ReadFile_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; RealizePalette (std1, GDI32.dll)
 align 16
 RealizePalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call RealizePalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call RealizePalette_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; realloc (c2, MSVCRT.dll)
 align 16
 realloc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call realloc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call realloc_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; Rectangle (std5, GDI32.dll)
 align 16
 Rectangle_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call Rectangle_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3102,18 +6561,57 @@ Rectangle_asm2c:
         mov r8d, [r11d+28]
         call Rectangle_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; RegCloseKey (std1, ADVAPI32.dll)
 align 16
 RegCloseKey_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call RegCloseKey_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call RegCloseKey_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; RegCreateKeyExA (std9, ADVAPI32.dll)
 align 16
 RegCreateKeyExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 48
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov eax, [r11d+36]
+        mov [rsp+64], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call RegCreateKeyExA_c
+        add rsp, 48
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+36
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 32
         mov eax, [r11d+36]
@@ -3131,18 +6629,49 @@ RegCreateKeyExA_asm2c:
         call RegCreateKeyExA_c
         add rsp, 32
         Call_Asm_Epilogue_0 9
+%endif
 
 ; RegisterClassA (std1, USER32.dll)
 align 16
 RegisterClassA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call RegisterClassA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call RegisterClassA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; RegOpenKeyExA (std5, ADVAPI32.dll)
 align 16
 RegOpenKeyExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call RegOpenKeyExA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3151,10 +6680,31 @@ RegOpenKeyExA_asm2c:
         mov r8d, [r11d+28]
         call RegOpenKeyExA_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; RegQueryValueExA (std6, ADVAPI32.dll)
 align 16
 RegQueryValueExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call RegQueryValueExA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3164,10 +6714,31 @@ RegQueryValueExA_asm2c:
         mov r9d, [r11d+32]
         call RegQueryValueExA_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; RegSetValueExA (std6, ADVAPI32.dll)
 align 16
 RegSetValueExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call RegSetValueExA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3177,55 +6748,139 @@ RegSetValueExA_asm2c:
         mov r9d, [r11d+32]
         call RegSetValueExA_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; ReleaseDC (std2, USER32.dll)
 align 16
 ReleaseDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ReleaseDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call ReleaseDC_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; RemoveFontResourceA (std1, GDI32.dll)
 align 16
 RemoveFontResourceA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call RemoveFontResourceA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call RemoveFontResourceA_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; ScreenToClient (std2, USER32.dll)
 align 16
 ScreenToClient_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ScreenToClient_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call ScreenToClient_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SelectObject (std2, GDI32.dll)
 align 16
 SelectObject_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SelectObject_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SelectObject_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SelectPalette (std3, GDI32.dll)
 align 16
 SelectPalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call SelectPalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call SelectPalette_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; SendDlgItemMessageA (std5, USER32.dll)
 align 16
 SendDlgItemMessageA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SendDlgItemMessageA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3234,10 +6889,25 @@ SendDlgItemMessageA_asm2c:
         mov r8d, [r11d+28]
         call SendDlgItemMessageA_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; SendMessageA (std4, USER32.dll)
 align 16
 SendMessageA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SendMessageA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3245,45 +6915,111 @@ SendMessageA_asm2c:
         mov ecx, [r11d+24]
         call SendMessageA_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; SetBkColor (std2, GDI32.dll)
 align 16
 SetBkColor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetBkColor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetBkColor_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetBkMode (std2, GDI32.dll)
 align 16
 SetBkMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetBkMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetBkMode_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetCursor (std1, USER32.dll)
 align 16
 SetCursor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SetCursor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SetCursor_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SetCursorPos (std2, USER32.dll)
 align 16
 SetCursorPos_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetCursorPos_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetCursorPos_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetDIBColorTable (std4, GDI32.dll)
 align 16
 SetDIBColorTable_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SetDIBColorTable_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3291,10 +7027,43 @@ SetDIBColorTable_asm2c:
         mov ecx, [r11d+24]
         call SetDIBColorTable_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; SetDIBitsToDevice (std12, GDI32.dll)
 align 16
 SetDIBitsToDevice_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 64
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov eax, [r11d+36]
+        mov [rsp+64], rax
+        mov eax, [r11d+40]
+        mov [rsp+72], rax
+        mov eax, [r11d+44]
+        mov [rsp+80], rax
+        mov eax, [r11d+48]
+        mov [rsp+88], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SetDIBitsToDevice_c
+        add rsp, 64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+48
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 48
         mov eax, [r11d+36]
@@ -3318,37 +7087,91 @@ SetDIBitsToDevice_asm2c:
         call SetDIBitsToDevice_c
         add rsp, 48
         Call_Asm_Epilogue_0 12
+%endif
 
 ; SetDlgItemTextA (std3, USER32.dll)
 align 16
 SetDlgItemTextA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call SetDlgItemTextA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call SetDlgItemTextA_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; SetEndOfFile (std1, KERNEL32.dll)
 align 16
 SetEndOfFile_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SetEndOfFile_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SetEndOfFile_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SetFileAttributesA (std2, KERNEL32.dll)
 align 16
 SetFileAttributesA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetFileAttributesA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetFileAttributesA_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetFilePointer (std4, KERNEL32.dll)
 align 16
 SetFilePointer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SetFilePointer_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3356,53 +7179,131 @@ SetFilePointer_asm2c:
         mov ecx, [r11d+24]
         call SetFilePointer_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; SetFocus (std1, USER32.dll)
 align 16
 SetFocus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SetFocus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SetFocus_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SetLastError (std1, KERNEL32.dll)
 align 16
 SetLastError_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SetLastError_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SetLastError_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; setlocale (c2, MSVCRT.dll)
 align 16
 setlocale_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call setlocale_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call setlocale_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; SetMapperFlags (std2, GDI32.dll)
 align 16
 SetMapperFlags_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetMapperFlags_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetMapperFlags_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetMenu (std2, USER32.dll)
 align 16
 SetMenu_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetMenu_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetMenu_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetPaletteEntries (std4, GDI32.dll)
 align 16
 SetPaletteEntries_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SetPaletteEntries_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3410,19 +7311,51 @@ SetPaletteEntries_asm2c:
         mov ecx, [r11d+24]
         call SetPaletteEntries_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; SetPriorityClass (std2, KERNEL32.dll)
 align 16
 SetPriorityClass_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetPriorityClass_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetPriorityClass_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetRect (std5, USER32.dll)
 align 16
 SetRect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SetRect_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3431,37 +7364,91 @@ SetRect_asm2c:
         mov r8d, [r11d+28]
         call SetRect_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; SetStdHandle (std2, KERNEL32.dll)
 align 16
 SetStdHandle_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetStdHandle_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetStdHandle_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetSystemPaletteUse (std2, GDI32.dll)
 align 16
 SetSystemPaletteUse_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetSystemPaletteUse_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetSystemPaletteUse_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SetTextColor (std2, GDI32.dll)
 align 16
 SetTextColor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SetTextColor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SetTextColor_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; setvbuf (c4, MSVCRT.dll)
 align 16
 setvbuf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call setvbuf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3469,20 +7456,57 @@ setvbuf_asm2c:
         mov ecx, [r11d+24]
         call setvbuf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; SetWindowLongA (std3, USER32.dll)
 align 16
 SetWindowLongA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call SetWindowLongA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call SetWindowLongA_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; SetWindowPos (std7, USER32.dll)
 align 16
 SetWindowPos_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SetWindowPos_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+28
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -3496,35 +7520,97 @@ SetWindowPos_asm2c:
         call SetWindowPos_c
         add rsp, 16
         Call_Asm_Epilogue_0 7
+%endif
 
 ; ShowCursor (std1, USER32.dll)
 align 16
 ShowCursor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ShowCursor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call ShowCursor_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; ShowWindow (std2, USER32.dll)
 align 16
 ShowWindow_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ShowWindow_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call ShowWindow_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; Sleep (std1, KERNEL32.dll)
 align 16
 Sleep_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call Sleep_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call Sleep_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SmackBufferBlit (std8, smackw32.DLL)
 align 16
 SmackBufferBlit_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SmackBufferBlit_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+32
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -3540,28 +7626,75 @@ SmackBufferBlit_asm2c:
         call SmackBufferBlit_c
         add rsp, 16
         Call_Asm_Epilogue_0 8
+%endif
 
 ; SmackBufferClose (std1, smackw32.DLL)
 align 16
 SmackBufferClose_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SmackBufferClose_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SmackBufferClose_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SmackBufferNewPalette (std3, smackw32.DLL)
 align 16
 SmackBufferNewPalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call SmackBufferNewPalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call SmackBufferNewPalette_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; SmackBufferOpen (std6, smackw32.DLL)
 align 16
 SmackBufferOpen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SmackBufferOpen_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3571,26 +7704,65 @@ SmackBufferOpen_asm2c:
         mov r9d, [r11d+32]
         call SmackBufferOpen_c
         Call_Asm_Epilogue_0 6
+%endif
 
 ; SmackBufferSetPalette (std1, smackw32.DLL)
 align 16
 SmackBufferSetPalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SmackBufferSetPalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SmackBufferSetPalette_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SmackClose (std1, smackw32.DLL)
 align 16
 SmackClose_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SmackClose_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SmackClose_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SmackColorRemap (std4, smackw32.DLL)
 align 16
 SmackColorRemap_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SmackColorRemap_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3598,53 +7770,139 @@ SmackColorRemap_asm2c:
         mov ecx, [r11d+24]
         call SmackColorRemap_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; SmackDoFrame (std1, smackw32.DLL)
 align 16
 SmackDoFrame_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SmackDoFrame_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SmackDoFrame_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SmackNextFrame (std1, smackw32.DLL)
 align 16
 SmackNextFrame_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SmackNextFrame_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SmackNextFrame_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SmackOpen (std3, smackw32.DLL)
 align 16
 SmackOpen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call SmackOpen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call SmackOpen_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; SmackSoundOnOff (std2, smackw32.DLL)
 align 16
 SmackSoundOnOff_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SmackSoundOnOff_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SmackSoundOnOff_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SmackSoundUseDirectSound (std1, smackw32.DLL)
 align 16
 SmackSoundUseDirectSound_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SmackSoundUseDirectSound_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SmackSoundUseDirectSound_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; SmackToBuffer (std7, smackw32.DLL)
 align 16
 SmackToBuffer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SmackToBuffer_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+28
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -3658,64 +7916,173 @@ SmackToBuffer_asm2c:
         call SmackToBuffer_c
         add rsp, 16
         Call_Asm_Epilogue_0 7
+%endif
 
 ; SmackToBufferRect (std2, smackw32.DLL)
 align 16
 SmackToBufferRect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SmackToBufferRect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call SmackToBufferRect_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; SmackWait (std1, smackw32.DLL)
 align 16
 SmackWait_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SmackWait_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call SmackWait_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; sprintf (v2, MSVCRT.dll)
 align 16
 sprintf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        lea r8d, [r11d+12]
+        call sprintf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         lea edx, [r11d+20]
         call sprintf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; srand (c1, MSVCRT.dll)
 align 16
 srand_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call srand_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call srand_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; sscanf (v2, MSVCRT.dll)
 align 16
 sscanf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        lea r8d, [r11d+12]
+        call sscanf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         lea edx, [r11d+20]
         call sscanf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; strchr (c2, MSVCRT.dll)
 align 16
 strchr_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call strchr_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call strchr_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; StretchBlt (std11, GDI32.dll)
 align 16
 StretchBlt_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 64
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov eax, [r11d+36]
+        mov [rsp+64], rax
+        mov eax, [r11d+40]
+        mov [rsp+72], rax
+        mov eax, [r11d+44]
+        mov [rsp+80], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call StretchBlt_c
+        add rsp, 64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+44
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 48
         mov eax, [r11d+36]
@@ -3737,75 +8104,187 @@ StretchBlt_asm2c:
         call StretchBlt_c
         add rsp, 48
         Call_Asm_Epilogue_0 11
+%endif
 
 ; strncmp (c3, MSVCRT.dll)
 align 16
 strncmp_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call strncmp_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call strncmp_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; strncpy (c3, MSVCRT.dll)
 align 16
 strncpy_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call strncpy_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call strncpy_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; strpbrk (c2, MSVCRT.dll)
 align 16
 strpbrk_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call strpbrk_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call strpbrk_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; strrchr (c2, MSVCRT.dll)
 align 16
 strrchr_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call strrchr_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call strrchr_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; strstr (c2, MSVCRT.dll)
 align 16
 strstr_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call strstr_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call strstr_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; strtok (c2, MSVCRT.dll)
 align 16
 strtok_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call strtok_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call strtok_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; TerminateProcess (std2, KERNEL32.dll)
 align 16
 TerminateProcess_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call TerminateProcess_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call TerminateProcess_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; TextOutA (std5, GDI32.dll)
 align 16
 TextOutA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call TextOutA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3814,42 +8293,109 @@ TextOutA_asm2c:
         mov r8d, [r11d+28]
         call TextOutA_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; time (c1, MSVCRT.dll)
 align 16
 time_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call time_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call time_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; timeGetTime (std0, WIN32.dll)
 align 16
 timeGetTime_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call timeGetTime_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call timeGetTime_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; TlsGetValue (std1, KERNEL32.dll)
 align 16
 TlsGetValue_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call TlsGetValue_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call TlsGetValue_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; TlsSetValue (std2, KERNEL32.dll)
 align 16
 TlsSetValue_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call TlsSetValue_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call TlsSetValue_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; ToAscii (std5, USER32.dll)
 align 16
 ToAscii_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call ToAscii_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3858,59 +8404,147 @@ ToAscii_asm2c:
         mov r8d, [r11d+28]
         call ToAscii_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; tolower (c1, MSVCRT.dll)
 align 16
 tolower_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call tolower_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call tolower_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; toupper (c1, MSVCRT.dll)
 align 16
 toupper_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call toupper_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call toupper_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; TranslateMessage (std1, USER32.dll)
 align 16
 TranslateMessage_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call TranslateMessage_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call TranslateMessage_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; UnmapViewOfFile (std1, KERNEL32.dll)
 align 16
 UnmapViewOfFile_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call UnmapViewOfFile_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call UnmapViewOfFile_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; UpdateWindow (std1, USER32.dll)
 align 16
 UpdateWindow_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call UpdateWindow_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call UpdateWindow_c
         Call_Asm_Epilogue_0 1
+%endif
 
 ; ValidateRect (std2, USER32.dll)
 align 16
 ValidateRect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ValidateRect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call ValidateRect_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; VirtualAlloc (std4, KERNEL32.dll)
 align 16
 VirtualAlloc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call VirtualAlloc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3918,39 +8552,105 @@ VirtualAlloc_asm2c:
         mov ecx, [r11d+24]
         call VirtualAlloc_c
         Call_Asm_Epilogue_0 4
+%endif
 
 ; VirtualFree (std3, KERNEL32.dll)
 align 16
 VirtualFree_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call VirtualFree_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call VirtualFree_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; VirtualQuery (std3, KERNEL32.dll)
 align 16
 VirtualQuery_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call VirtualQuery_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call VirtualQuery_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; WaitForSingleObject (std2, KERNEL32.dll)
 align 16
 WaitForSingleObject_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call WaitForSingleObject_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call WaitForSingleObject_c
         Call_Asm_Epilogue_0 2
+%endif
 
 ; WideCharToMultiByte (std8, KERNEL32.dll)
 align 16
 WideCharToMultiByte_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call WideCharToMultiByte_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+32
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -3966,10 +8666,29 @@ WideCharToMultiByte_asm2c:
         call WideCharToMultiByte_c
         add rsp, 16
         Call_Asm_Epilogue_0 8
+%endif
 
 ; WriteFile (std5, KERNEL32.dll)
 align 16
 WriteFile_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call WriteFile_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -3978,115 +8697,275 @@ WriteFile_asm2c:
         mov r8d, [r11d+28]
         call WriteFile_c
         Call_Asm_Epilogue_0 5
+%endif
 
 ; wsprintfA (v2, USER32.dll)
 align 16
 wsprintfA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        lea r8d, [r11d+12]
+        call wsprintfA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         lea edx, [r11d+20]
         call wsprintfA_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; wvsprintfA (std3, USER32.dll)
 align 16
 wvsprintfA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call wvsprintfA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call wvsprintfA_c
         Call_Asm_Epilogue_0 3
+%endif
 
 ; strspn (c2, static)
 align 16
 strspn_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call strspn_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call strspn_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; strcspn (c2, static)
 align 16
 strcspn_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call strcspn_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call strcspn_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; strncat (c3, static)
 align 16
 strncat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call strncat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call strncat_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; vsprintf (c3, static)
 align 16
 vsprintf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call vsprintf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call vsprintf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; memcpy (c3, static)
 align 16
 memcpy_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call memcpy_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call memcpy_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; printf (v1, static)
 align 16
 printf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        lea edx, [r11d+8]
+        call printf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         lea esi, [r11d+16]
         call printf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; ungetc (c2, static)
 align 16
 ungetc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ungetc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call ungetc_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; _filbuf (c1, static)
 align 16
 _filbuf_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _filbuf_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _filbuf_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; i76_frame_tick (std0, runtime)
 align 16
 i76_frame_tick_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call i76_frame_tick_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         call i76_frame_tick_c
         Call_Asm_Epilogue_0 0
+%endif
 
 ; i76shell_part_strncmp (c3, runtime)
 align 16
 i76shell_part_strncmp_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call i76shell_part_strncmp_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call i76shell_part_strncmp_c
         Call_Asm_Epilogue_0 0
+%endif
 

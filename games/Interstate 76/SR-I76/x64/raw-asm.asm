@@ -21,7 +21,14 @@ extern Raw_UnexpectedHandler
 section .note.GNU-stack noalloc noexec nowrite progbits
 section .text progbits alloc exec nowrite align=16
 %else
-%error "only elf64 (SysV) is supported"
+section .text code align=16
+%endif
+
+; scratch memory: the red zone below rsp (SysV) / the free parameter slots above rsp (Win64, see asm_unwind.inc)
+%ifidn __OUTPUT_FORMAT__, win64
+%define SCRATCH(x) (rsp+16+(x))
+%else
+%define SCRATCH(x) (rsp+(x))
 %endif
 
 align 16
@@ -30,17 +37,16 @@ _ftol_asm2c:
 ; st0    = value
 ; [r11d] = return address (emulated x86 stack)
 ; result: edx:eax = (int64_t) value (truncated), st0 popped
-; uses the red zone below rsp as scratch memory
 
-        fnstcw [rsp-4]
-        mov ax, [rsp-4]
+        fnstcw [SCRATCH(-4)]
+        mov ax, [SCRATCH(-4)]
         or ax, 0x0c00               ; rounding control = truncate
-        mov [rsp-2], ax
-        fldcw [rsp-2]
-        fistp qword [rsp-16]
-        fldcw [rsp-4]
-        mov eax, [rsp-16]
-        mov edx, [rsp-12]
+        mov [SCRATCH(-2)], ax
+        fldcw [SCRATCH(-2)]
+        fistp qword [SCRATCH(-16)]
+        fldcw [SCRATCH(-4)]
+        mov eax, [SCRATCH(-16)]
+        mov edx, [SCRATCH(-12)]
         RET
 
 ; end procedure _ftol_asm2c
@@ -52,7 +58,12 @@ __CxxFrameHandler_asm2c:
 ; Only called by the Win32 exception dispatcher, which doesn't exist here.
 
         and rsp, byte -16
+%ifidn __OUTPUT_FORMAT__, win64
+        sub rsp, byte 32
+        mov ecx, 1
+%else
         mov edi, 1
+%endif
         call Raw_UnexpectedHandler
 
 ; end procedure __CxxFrameHandler_asm2c
@@ -64,7 +75,12 @@ _except_handler3_asm2c:
 ; Only called by the Win32 exception dispatcher, which doesn't exist here.
 
         and rsp, byte -16
+%ifidn __OUTPUT_FORMAT__, win64
+        sub rsp, byte 32
+        mov ecx, 2
+%else
         mov edi, 2
+%endif
         call Raw_UnexpectedHandler
 
 ; end procedure _except_handler3_asm2c

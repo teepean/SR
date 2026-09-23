@@ -77,7 +77,7 @@ extern _stricmp_c
 extern _strlwr_c
 extern _strnicmp_c
 extern _unlink_c
-extern _vsnprintf_c
+extern ms_vsnprintf_c
 extern abort_c
 extern AddFontResourceA_c
 extern AdjustWindowRect_c
@@ -427,7 +427,7 @@ global _stricmp_asm2c
 global _strlwr_asm2c
 global _strnicmp_asm2c
 global _unlink_asm2c
-global _vsnprintf_asm2c
+global ms_vsnprintf_asm2c
 global abort_asm2c
 global AddFontResourceA_asm2c
 global AdjustWindowRect_asm2c
@@ -1085,9 +1085,9 @@ _unlink_asm2c:
         Call_Asm_Stack1 _unlink_c
 
 align 16
-_vsnprintf_asm2c:
+ms_vsnprintf_asm2c:
 ; _vsnprintf (c4, MSVCRT.dll)
-        Call_Asm_Stack4 _vsnprintf_c
+        Call_Asm_Stack4 ms_vsnprintf_c
 
 align 16
 abort_asm2c:

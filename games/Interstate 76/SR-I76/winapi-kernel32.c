@@ -16,8 +16,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
-#include <fnmatch.h>
-#include <sys/mman.h>
+#include "compat.h"
 #include <sys/stat.h>
 #include "ptr32.h"
 #include "Game-Memory.h"
@@ -26,40 +25,9 @@
 #include "vfs.h"
 #include "winapi.h"
 #include "display.h"
+#include "sysmem.h"
 
 EXTERN_C_BEGIN
-
-// mappings the game can see: below 2 GB in the 64-bit build (reserve low address space, map over it)
-static void *low_mmap(size_t len, int fd, off_t offset)
-{
-#ifdef __cplusplus
-    void *base = map_memory_32bit((unsigned int) len, 1);
-    if (base == NULL) return MAP_FAILED;
-    if (fd >= 0) return mmap(base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, fd, offset);
-    return mmap(base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
-#else
-    // 32-bit build: the kernel places mappings high (0xE0000000...), but game code assumes Win32 addresses
-    // below 2 GB (e.g. sub_469B00 computes NULL - pointer as a signed length) - search the low range
-    static uintptr_t hint = 0x20000000;
-    uintptr_t start = hint;
-    size_t alen = (len + 4095) & ~(size_t)4095;
-    int flags = ((fd >= 0) ? MAP_PRIVATE : (MAP_PRIVATE | MAP_ANONYMOUS)) | MAP_FIXED_NOREPLACE;
-    for (;;)
-    {
-        void *addr;
-        if (hint + alen > 0x7FFF0000u) hint = 0x10000000;
-        addr = mmap((void *) hint, len, PROT_READ | PROT_WRITE, flags, fd, (fd >= 0) ? offset : 0);
-        if (addr != MAP_FAILED)
-        {
-            hint += alen;
-            return addr;
-        }
-        if (errno != EEXIST) return MAP_FAILED;
-        hint += alen;
-        if ((hint <= start) && (hint + alen > start)) return MAP_FAILED;    // wrapped around: no room
-    }
-#endif
-}
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -545,13 +513,13 @@ void * CCALL MapViewOfFile_c(void *hFileMappingObject, uint32_t dwDesiredAccess,
     if (m->fd >= 0)
     {
         // private mapping: changes are never written back to the file
-        addr = low_mmap(len, m->fd, dwFileOffsetLow);
+        addr = sys_map_low(len, m->fd, dwFileOffsetLow);
     }
     else
     {
-        addr = low_mmap(len, -1, 0);
+        addr = sys_map_low(len, -1, 0);
     }
-    if (addr == MAP_FAILED) return NULL;
+    if (addr == NULL) return NULL;
 
     for (i = 0; i < MAX_VIEWS; i++)
     {
@@ -573,7 +541,7 @@ uint32_t CCALL UnmapViewOfFile_c(void *lpBaseAddress)
     {
         if (views[i].addr == lpBaseAddress)
         {
-            munmap(views[i].addr, views[i].len);
+            sys_unmap(views[i].addr, views[i].len);
             views[i].addr = NULL;
             return 1;
         }
@@ -710,9 +678,9 @@ static heap_block *guard_alloc(uint32_t total)
 {
     size_t data = ((total + 3) & ~(size_t)3) + GUARD_ZERO_PAD;  // zero pad (terminators), then the guard page
     size_t len = (data + 4095) & ~(size_t)4095;
-    uint8_t *base = (uint8_t *) low_mmap(len + 4096, -1, 0);
-    if (base == (uint8_t *) MAP_FAILED) return NULL;
-    mprotect(base + len, 4096, PROT_NONE);
+    uint8_t *base = (uint8_t *) sys_map_low(len + 4096, -1, 0);
+    if (base == NULL) return NULL;
+    sys_protect_none(base + len, 4096);
     return (heap_block *)(base + len - data);
 }
 
@@ -721,11 +689,11 @@ static void guard_free(heap_block *b, uint32_t total)
     size_t data = ((total + 3) & ~(size_t)3) + GUARD_ZERO_PAD;  // zero pad (terminators), then the guard page
     size_t len = (data + 4095) & ~(size_t)4095;
     uint8_t *base = (uint8_t *) b + data - len;
-    mprotect(base, len, PROT_NONE);
+    sys_protect_none(base, len);
     // keep the freed pages inaccessible for a while, then release them
     if (guard_kept[guard_kept_pos].base != NULL)
     {
-        munmap(guard_kept[guard_kept_pos].base, guard_kept[guard_kept_pos].len);
+        sys_unmap(guard_kept[guard_kept_pos].base, guard_kept[guard_kept_pos].len);
         guard_kept_bytes -= (uint32_t) guard_kept[guard_kept_pos].len;
     }
     guard_kept[guard_kept_pos].base = base;
@@ -1035,8 +1003,8 @@ void * CCALL VirtualAlloc_c(void *lpAddress, uint32_t dwSize, uint32_t flAllocat
     }
 
     size = (dwSize + 65535) & ~65535u;
-    addr = low_mmap(size, -1, 0);
-    if (addr == MAP_FAILED)
+    addr = sys_map_low(size, -1, 0);
+    if (addr == NULL)
     {
         last_error = ERROR_NOT_ENOUGH_MEMORY;
         return NULL;
@@ -1065,7 +1033,7 @@ uint32_t CCALL VirtualFree_c(void *lpAddress, uint32_t dwSize, uint32_t dwFreeTy
     {
         if (regions[i].addr == lpAddress)
         {
-            munmap(regions[i].addr, regions[i].size);
+            sys_unmap(regions[i].addr, regions[i].size);
             regions[i].addr = NULL;
             return 1;
         }

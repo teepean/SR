@@ -12,6 +12,7 @@
 #include <strings.h>
 #include <SDL.h>
 #include "platform.h"
+#include "sysmem.h"
 #include "msvcrt.h"
 #include "winapi.h"
 #include "winapi-gdi32.h"
@@ -96,6 +97,12 @@ static void prepare_command_line(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+    // log file (stderr of a Windows GUI program goes nowhere)
+    if (getenv("I76_LOG") != NULL)
+    {
+        if (freopen(getenv("I76_LOG"), "w", stderr) != NULL) setvbuf(stderr, NULL, _IONBF, 0);
+    }
+    sys_install_crash_handler();
 #ifndef __cplusplus
     // 32-bit build: game code assumes Win32 addresses below 2 GB; glibc's malloc would mmap large blocks high
     // (0xE0000000...), so keep all allocations in the brk heap (which starts right after the executable)

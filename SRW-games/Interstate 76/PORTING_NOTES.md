@@ -431,3 +431,28 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
 - Milestone (user, 2026-09-23): the whole game played to the end in the x64 build (with the getup cheat for some
   missions). Decision: further development targets the 64-bit build only; the 32-bit build is kept as it is
   (its open heap corruption above is not being pursued).
+
+### 2026-09-23 — Windows x64 build, step 1 (cross-compiled with MinGW-w64, tested with Wine)
+- SConstruct device=pc64-windows: x86_64-w64-mingw32 gcc/g++ (C++ like pc64-linux), nasm -fwin64, objects
+  *.w64.o; image base 0x10000000 without ASLR/relocations (recompiled code needs addresses < 2 GB);
+  WIN_DEPS=<dir> with SDL2 (official SDL2-devel mingw package) and a static freetype (built with
+  --host=x86_64-w64-mingw32 --without-{zlib,png,bzip2,brotli,harfbuzz}); winpthread linked statically ->
+  the exe needs only SDL2.dll.
+- gen_imports.py: every x64 stub has a Win64 variant (args in ecx/edx/r8d/r9d + [rsp+32...], the frame's
+  shadow space is free for calls, _stack* at [rsp+FIRST_PARAMETER_OFFSET], rsi/rdi are callee-saved on Win64).
+  PE/COFF weak symbols don't work reliably (some weak aliases were missing -> undefined references), so
+  imports-stubs.c/com-stubs.c now only contain ordinary definitions for the functions that have no
+  implementation (gen_imports.py scans the C files for `CCALL name_c(...) {`): rerun gen_imports.py after
+  implementing an import. _vsnprintf's C function is ms_vsnprintf_c (_vsnprintf_c exists in the Windows CRT).
+- x64/c2asm.asm Win64 c_call_asm_n uses asm_unwind.inc's SECTION_PROLOG frame. Bug found on the way: the saved
+  esp was kept in a parameter home slot, but asm_fs_mem.asm (Win64) uses those slots as scratch (the game's
+  fs:[0] SEH accesses) -> stack->esp = saved RFLAGS (0x200206) -> jmp 0. call_game now saves/restores
+  stack->esp in C. raw-asm.asm: no red zone on Win64 (_ftol uses the shadow space).
+- New sysmem.c/h (mmap vs VirtualAlloc/map_memory_32bit; file views are read into low memory on Windows),
+  compat.c/h (fnmatch, strcasestr for MinGW), I76_LOG=<file> (stderr of GUI programs goes nowhere), a crash
+  handler on Windows (registers, host stack, emulated stack via r10 = _stack*).
+- Game bug exposed by Windows: SmackBufferOpen's width/height/zoom are u16 in RAD's SDK - the game loads them
+  with 16-bit moves and pushes whole registers (garbage upper halves, 0 by luck on Linux) -> masked.
+- Result (Wine 10, NVIDIA GL through Wine's Windows driver): intro, main menu, save load, mission 12, getup,
+  mission 13 in Glide/OpenGL mode. Next: sound (DirectSound/SDL under Wine), joystick, a Direct3D 11
+  renderer, packaging.

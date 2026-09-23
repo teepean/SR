@@ -7,7 +7,7 @@ vars.Add(EnumVariable('debug', 'Debug level (0 = release version)', '1',
                                  allowed_values=('0', '1', '2'),
                                  ignorecase=2))
 vars.Add(EnumVariable('device', 'Target device', 'pc-linux',
-                                 allowed_values=('pc-linux', 'pc64-linux'),
+                                 allowed_values=('pc-linux', 'pc64-linux', 'pc64-windows'),
                                  ignorecase=2))
 env = Environment(variables = vars)
 
@@ -23,14 +23,35 @@ if device == 'pc64-linux':
                LINKFLAGS = '-m64 -no-pie -Wl,-Ttext-segment,0x10000000 -Wl,-z,noexecstack')
     env['LINK'] = 'g++'
     env['OBJSUFFIX'] = '.o64'       # the 32-bit build uses .o in the same directories
+elif device == 'pc64-windows':
+    # Windows x64, cross-compiled with MinGW-w64 (x86_64-w64-mingw32-*). SDL2 and freetype for MinGW:
+    # WIN_DEPS=<dir> with <dir>/include/SDL2, <dir>/include/freetype2 and <dir>/lib (see BUILDING.md).
+    # Like on Linux, the recompiled code needs everything below 2 GB: fixed image base 0x10000000, no ASLR.
+    env['CC'] = 'x86_64-w64-mingw32-gcc'
+    env['CXX'] = 'x86_64-w64-mingw32-g++'
+    env['LINK'] = 'x86_64-w64-mingw32-g++'
+    env['AR'] = 'x86_64-w64-mingw32-ar'
+    env['RANLIB'] = 'x86_64-w64-mingw32-ranlib'
+    env['PROGSUFFIX'] = '.exe'
+    env['OBJSUFFIX'] = '.w64.o'
+    win_deps = os.environ.get('WIN_DEPS', '/usr/x86_64-w64-mingw32')
+    env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fno-exceptions -fno-rtti -Dmain=SDL_main',
+               CPPPATH = [win_deps + '/include/SDL2', win_deps + '/include/freetype2', win_deps + '/include'],
+               LIBPATH = [win_deps + '/lib'],
+               LINKFLAGS = '-m64 -mwindows -static-libgcc -static-libstdc++ -Wl,--image-base,0x10000000,--disable-dynamicbase,--disable-reloc-section,--disable-high-entropy-va,--nxcompat',
+               LIBS = ['mingw32', 'SDL2main', 'SDL2', 'freetype', 'opengl32', 'ws2_32', 'winmm']
+              )
+    # no libwinpthread-1.dll next to the exe: link it statically
+    env.Append(_LIBFLAGS = ' -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic')
 else:
     env.Append(CCFLAGS = '-m32 -fno-PIE',
                LINKFLAGS = '-m32 -no-pie -Wl,-z,noexecstack')
-env.Append(CCFLAGS = ' -O2 -Wall',
-           CPPPATH = ['/usr/include/SDL2', '/usr/local/include/SDL2', '/usr/include/freetype2', '/usr/local/include'],
-           LIBPATH = ['/usr/local/lib'],
-           LIBS = ['SDL2', 'freetype', 'pthread', 'm']
-          )
+if device != 'pc64-windows':
+    env.Append(CCFLAGS = ' -O2 -Wall',
+               CPPPATH = ['/usr/include/SDL2', '/usr/local/include/SDL2', '/usr/include/freetype2', '/usr/local/include'],
+               LIBPATH = ['/usr/local/lib'],
+               LIBS = ['SDL2', 'freetype', 'pthread', 'm']
+              )
 
 if debug <= 0:
     env.Append(LINKFLAGS = '-s')
@@ -44,6 +65,6 @@ if 'PATH_INC' in os.environ:
 if 'PATH_LIB' in os.environ:
     env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
 
-arch_objs = SConscript(('x64' if device == 'pc64-linux' else 'x86') + '/SConscript', exports='device env')
+arch_objs = SConscript(('x64' if device.startswith('pc64-') else 'x86') + '/SConscript', exports='device env')
 
 env.Program('SR-I76' + ('-x64' if device == 'pc64-linux' else ''), Glob('*.c') + arch_objs)

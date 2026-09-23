@@ -187,34 +187,86 @@ global IDirectDrawClipperVtbl_asm2c
 section .note.GNU-stack noalloc noexec nowrite progbits
 section .text progbits alloc exec nowrite align=16
 %else
-%error "only elf64 (SysV) is supported"
+section .text code align=16
 %endif
 
 align 16
 IDirectSound_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSound_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSound_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSound_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSound_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound_CreateSoundBuffer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSound_CreateSoundBuffer_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -222,106 +274,278 @@ IDirectSound_CreateSoundBuffer_asm2c:
         mov ecx, [r11d+24]
         call IDirectSound_CreateSoundBuffer_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectSound_GetCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound_GetCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound_GetCaps_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound_DuplicateSoundBuffer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound_DuplicateSoundBuffer_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound_DuplicateSoundBuffer_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound_SetCooperativeLevel_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound_SetCooperativeLevel_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound_SetCooperativeLevel_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound_Compact_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSound_Compact_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSound_Compact_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound_GetSpeakerConfig_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound_GetSpeakerConfig_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound_GetSpeakerConfig_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound_SetSpeakerConfig_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound_SetSpeakerConfig_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound_SetSpeakerConfig_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound_Initialize_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSoundBuffer_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSoundBuffer_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSoundBuffer_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSoundBuffer_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSoundBuffer_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSoundBuffer_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSoundBuffer_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSoundBuffer_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSoundBuffer_GetCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_GetCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_GetCaps_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_GetCurrentPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSoundBuffer_GetCurrentPosition_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSoundBuffer_GetCurrentPosition_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSoundBuffer_GetFormat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSoundBuffer_GetFormat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -329,50 +553,141 @@ IDirectSoundBuffer_GetFormat_asm2c:
         mov ecx, [r11d+24]
         call IDirectSoundBuffer_GetFormat_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectSoundBuffer_GetVolume_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_GetVolume_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_GetVolume_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_GetPan_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_GetPan_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_GetPan_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_GetFrequency_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_GetFrequency_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_GetFrequency_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_GetStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_GetStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_GetStatus_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSoundBuffer_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSoundBuffer_Initialize_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSoundBuffer_Lock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSoundBuffer_Lock_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+32
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -388,9 +703,24 @@ IDirectSoundBuffer_Lock_asm2c:
         call IDirectSoundBuffer_Lock_c
         add rsp, 16
         Call_Asm_Epilogue_0 8
+%endif
 
 align 16
 IDirectSoundBuffer_Play_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSoundBuffer_Play_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -398,56 +728,152 @@ IDirectSoundBuffer_Play_asm2c:
         mov ecx, [r11d+24]
         call IDirectSoundBuffer_Play_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectSoundBuffer_SetCurrentPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_SetCurrentPosition_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_SetCurrentPosition_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_SetFormat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_SetFormat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_SetFormat_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_SetVolume_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_SetVolume_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_SetVolume_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_SetPan_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_SetPan_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_SetPan_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_SetFrequency_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSoundBuffer_SetFrequency_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSoundBuffer_SetFrequency_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSoundBuffer_Stop_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSoundBuffer_Stop_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSoundBuffer_Stop_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSoundBuffer_Unlock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSoundBuffer_Unlock_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -456,123 +882,332 @@ IDirectSoundBuffer_Unlock_asm2c:
         mov r8d, [r11d+28]
         call IDirectSoundBuffer_Unlock_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectSoundBuffer_Restore_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSoundBuffer_Restore_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSoundBuffer_Restore_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound3DListener_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DListener_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DListener_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DListener_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSound3DListener_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSound3DListener_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound3DListener_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSound3DListener_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSound3DListener_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound3DListener_GetAllParameters_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DListener_GetAllParameters_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DListener_GetAllParameters_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DListener_GetDistanceFactor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DListener_GetDistanceFactor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DListener_GetDistanceFactor_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DListener_GetDopplerFactor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DListener_GetDopplerFactor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DListener_GetDopplerFactor_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DListener_GetOrientation_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DListener_GetOrientation_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DListener_GetOrientation_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DListener_GetPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DListener_GetPosition_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DListener_GetPosition_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DListener_GetRolloffFactor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DListener_GetRolloffFactor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DListener_GetRolloffFactor_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DListener_GetVelocity_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DListener_GetVelocity_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DListener_GetVelocity_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DListener_SetAllParameters_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DListener_SetAllParameters_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DListener_SetAllParameters_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DListener_SetDistanceFactor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DListener_SetDistanceFactor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DListener_SetDistanceFactor_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DListener_SetDopplerFactor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DListener_SetDopplerFactor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DListener_SetDopplerFactor_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DListener_SetOrientation_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSound3DListener_SetOrientation_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+32
+        jmp r8
+%else
         Call_Asm_Prologue_0
         sub rsp, 16
         mov eax, [r11d+36]
@@ -588,9 +1223,28 @@ IDirectSound3DListener_SetOrientation_asm2c:
         call IDirectSound3DListener_SetOrientation_c
         add rsp, 16
         Call_Asm_Epilogue_0 8
+%endif
 
 align 16
 IDirectSound3DListener_SetPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSound3DListener_SetPosition_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -599,18 +1253,51 @@ IDirectSound3DListener_SetPosition_asm2c:
         mov r8d, [r11d+28]
         call IDirectSound3DListener_SetPosition_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectSound3DListener_SetRolloffFactor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DListener_SetRolloffFactor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DListener_SetRolloffFactor_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DListener_SetVelocity_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSound3DListener_SetVelocity_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -619,121 +1306,318 @@ IDirectSound3DListener_SetVelocity_asm2c:
         mov r8d, [r11d+28]
         call IDirectSound3DListener_SetVelocity_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectSound3DListener_CommitDeferredSettings_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSound3DListener_CommitDeferredSettings_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSound3DListener_CommitDeferredSettings_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound3DBuffer_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DBuffer_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DBuffer_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DBuffer_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSound3DBuffer_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSound3DBuffer_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound3DBuffer_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectSound3DBuffer_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectSound3DBuffer_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectSound3DBuffer_GetAllParameters_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DBuffer_GetAllParameters_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DBuffer_GetAllParameters_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DBuffer_GetConeAngles_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DBuffer_GetConeAngles_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DBuffer_GetConeAngles_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DBuffer_GetConeOrientation_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DBuffer_GetConeOrientation_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DBuffer_GetConeOrientation_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DBuffer_GetConeOutsideVolume_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DBuffer_GetConeOutsideVolume_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DBuffer_GetConeOutsideVolume_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DBuffer_GetMaxDistance_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DBuffer_GetMaxDistance_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DBuffer_GetMaxDistance_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DBuffer_GetMinDistance_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DBuffer_GetMinDistance_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DBuffer_GetMinDistance_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DBuffer_GetMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DBuffer_GetMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DBuffer_GetMode_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DBuffer_GetPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DBuffer_GetPosition_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DBuffer_GetPosition_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DBuffer_GetVelocity_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectSound3DBuffer_GetVelocity_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectSound3DBuffer_GetVelocity_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectSound3DBuffer_SetAllParameters_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DBuffer_SetAllParameters_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DBuffer_SetAllParameters_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DBuffer_SetConeAngles_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSound3DBuffer_SetConeAngles_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -741,9 +1625,28 @@ IDirectSound3DBuffer_SetConeAngles_asm2c:
         mov ecx, [r11d+24]
         call IDirectSound3DBuffer_SetConeAngles_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectSound3DBuffer_SetConeOrientation_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSound3DBuffer_SetConeOrientation_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -752,45 +1655,120 @@ IDirectSound3DBuffer_SetConeOrientation_asm2c:
         mov r8d, [r11d+28]
         call IDirectSound3DBuffer_SetConeOrientation_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectSound3DBuffer_SetConeOutsideVolume_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DBuffer_SetConeOutsideVolume_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DBuffer_SetConeOutsideVolume_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DBuffer_SetMaxDistance_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DBuffer_SetMaxDistance_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DBuffer_SetMaxDistance_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DBuffer_SetMinDistance_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DBuffer_SetMinDistance_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DBuffer_SetMinDistance_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DBuffer_SetMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectSound3DBuffer_SetMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectSound3DBuffer_SetMode_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectSound3DBuffer_SetPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSound3DBuffer_SetPosition_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -799,9 +1777,28 @@ IDirectSound3DBuffer_SetPosition_asm2c:
         mov r8d, [r11d+28]
         call IDirectSound3DBuffer_SetPosition_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectSound3DBuffer_SetVelocity_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectSound3DBuffer_SetVelocity_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -810,39 +1807,104 @@ IDirectSound3DBuffer_SetVelocity_asm2c:
         mov r8d, [r11d+28]
         call IDirectSound3DBuffer_SetVelocity_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDraw_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw_Compact_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw_Compact_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw_Compact_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw_CreateClipper_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw_CreateClipper_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -850,9 +1912,28 @@ IDirectDraw_CreateClipper_asm2c:
         mov ecx, [r11d+24]
         call IDirectDraw_CreateClipper_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDraw_CreatePalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw_CreatePalette_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -861,9 +1942,24 @@ IDirectDraw_CreatePalette_asm2c:
         mov r8d, [r11d+28]
         call IDirectDraw_CreatePalette_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDraw_CreateSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw_CreateSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -871,18 +1967,51 @@ IDirectDraw_CreateSurface_asm2c:
         mov ecx, [r11d+24]
         call IDirectDraw_CreateSurface_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDraw_DuplicateSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw_DuplicateSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw_DuplicateSurface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw_EnumDisplayModes_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw_EnumDisplayModes_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -891,9 +2020,28 @@ IDirectDraw_EnumDisplayModes_asm2c:
         mov r8d, [r11d+28]
         call IDirectDraw_EnumDisplayModes_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDraw_EnumSurfaces_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw_EnumSurfaces_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -902,98 +2050,257 @@ IDirectDraw_EnumSurfaces_asm2c:
         mov r8d, [r11d+28]
         call IDirectDraw_EnumSurfaces_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDraw_FlipToGDISurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw_FlipToGDISurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw_FlipToGDISurface_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw_GetCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw_GetCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw_GetCaps_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw_GetDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw_GetDisplayMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw_GetDisplayMode_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw_GetFourCCCodes_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw_GetFourCCCodes_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw_GetFourCCCodes_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw_GetGDISurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw_GetGDISurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw_GetGDISurface_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw_GetMonitorFrequency_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw_GetMonitorFrequency_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw_GetMonitorFrequency_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw_GetScanLine_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw_GetScanLine_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw_GetScanLine_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw_GetVerticalBlankStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw_GetVerticalBlankStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw_GetVerticalBlankStatus_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw_Initialize_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw_RestoreDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw_RestoreDisplayMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw_RestoreDisplayMode_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw_SetCooperativeLevel_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw_SetCooperativeLevel_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw_SetCooperativeLevel_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw_SetDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw_SetDisplayMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1001,48 +2308,127 @@ IDirectDraw_SetDisplayMode_asm2c:
         mov ecx, [r11d+24]
         call IDirectDraw_SetDisplayMode_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDraw_WaitForVerticalBlank_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw_WaitForVerticalBlank_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw_WaitForVerticalBlank_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw2_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw2_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw2_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw2_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw2_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw2_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw2_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw2_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw2_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw2_Compact_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw2_Compact_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw2_Compact_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw2_CreateClipper_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw2_CreateClipper_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1050,9 +2436,28 @@ IDirectDraw2_CreateClipper_asm2c:
         mov ecx, [r11d+24]
         call IDirectDraw2_CreateClipper_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDraw2_CreatePalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw2_CreatePalette_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1061,9 +2466,24 @@ IDirectDraw2_CreatePalette_asm2c:
         mov r8d, [r11d+28]
         call IDirectDraw2_CreatePalette_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDraw2_CreateSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw2_CreateSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1071,18 +2491,51 @@ IDirectDraw2_CreateSurface_asm2c:
         mov ecx, [r11d+24]
         call IDirectDraw2_CreateSurface_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDraw2_DuplicateSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw2_DuplicateSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw2_DuplicateSurface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw2_EnumDisplayModes_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw2_EnumDisplayModes_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1091,9 +2544,28 @@ IDirectDraw2_EnumDisplayModes_asm2c:
         mov r8d, [r11d+28]
         call IDirectDraw2_EnumDisplayModes_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDraw2_EnumSurfaces_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw2_EnumSurfaces_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1102,98 +2574,263 @@ IDirectDraw2_EnumSurfaces_asm2c:
         mov r8d, [r11d+28]
         call IDirectDraw2_EnumSurfaces_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDraw2_FlipToGDISurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw2_FlipToGDISurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw2_FlipToGDISurface_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw2_GetCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw2_GetCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw2_GetCaps_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw2_GetDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw2_GetDisplayMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw2_GetDisplayMode_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw2_GetFourCCCodes_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw2_GetFourCCCodes_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw2_GetFourCCCodes_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw2_GetGDISurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw2_GetGDISurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw2_GetGDISurface_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw2_GetMonitorFrequency_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw2_GetMonitorFrequency_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw2_GetMonitorFrequency_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw2_GetScanLine_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw2_GetScanLine_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw2_GetScanLine_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw2_GetVerticalBlankStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw2_GetVerticalBlankStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw2_GetVerticalBlankStatus_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw2_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw2_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDraw2_Initialize_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDraw2_RestoreDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw2_RestoreDisplayMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDraw2_RestoreDisplayMode_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDraw2_SetCooperativeLevel_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw2_SetCooperativeLevel_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw2_SetCooperativeLevel_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw2_SetDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw2_SetDisplayMode_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1203,18 +2840,47 @@ IDirectDraw2_SetDisplayMode_asm2c:
         mov r9d, [r11d+32]
         call IDirectDraw2_SetDisplayMode_c
         Call_Asm_Epilogue_0 6
+%endif
 
 align 16
 IDirectDraw2_WaitForVerticalBlank_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw2_WaitForVerticalBlank_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDraw2_WaitForVerticalBlank_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDraw2_GetAvailableVidMem_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw2_GetAvailableVidMem_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1222,48 +2888,133 @@ IDirectDraw2_GetAvailableVidMem_asm2c:
         mov ecx, [r11d+24]
         call IDirectDraw2_GetAvailableVidMem_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDrawSurface_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDrawSurface_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDrawSurface_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDrawSurface_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDrawSurface_AddAttachedSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_AddAttachedSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_AddAttachedSurface_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_AddOverlayDirtyRect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_AddOverlayDirtyRect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_AddOverlayDirtyRect_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_Blt_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface_Blt_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1273,9 +3024,24 @@ IDirectDrawSurface_Blt_asm2c:
         mov r9d, [r11d+32]
         call IDirectDrawSurface_Blt_c
         Call_Asm_Epilogue_0 6
+%endif
 
 align 16
 IDirectDrawSurface_BltBatch_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface_BltBatch_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1283,9 +3049,30 @@ IDirectDrawSurface_BltBatch_asm2c:
         mov ecx, [r11d+24]
         call IDirectDrawSurface_BltBatch_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDrawSurface_BltFast_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface_BltFast_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1295,27 +3082,70 @@ IDirectDrawSurface_BltFast_asm2c:
         mov r9d, [r11d+32]
         call IDirectDrawSurface_BltFast_c
         Call_Asm_Epilogue_0 6
+%endif
 
 align 16
 IDirectDrawSurface_DeleteAttachedSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_DeleteAttachedSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_DeleteAttachedSurface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_EnumAttachedSurfaces_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_EnumAttachedSurfaces_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_EnumAttachedSurfaces_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_EnumOverlayZOrders_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface_EnumOverlayZOrders_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1323,125 +3153,330 @@ IDirectDrawSurface_EnumOverlayZOrders_asm2c:
         mov ecx, [r11d+24]
         call IDirectDrawSurface_EnumOverlayZOrders_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDrawSurface_Flip_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_Flip_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_Flip_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_GetAttachedSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_GetAttachedSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_GetAttachedSurface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_GetBltStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_GetBltStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_GetBltStatus_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_GetCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_GetCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_GetCaps_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_GetClipper_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_GetClipper_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_GetClipper_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_GetColorKey_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_GetColorKey_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_GetColorKey_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_GetDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_GetDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_GetDC_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_GetFlipStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_GetFlipStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_GetFlipStatus_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_GetOverlayPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_GetOverlayPosition_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_GetOverlayPosition_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_GetPalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_GetPalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_GetPalette_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_GetPixelFormat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_GetPixelFormat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_GetPixelFormat_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_GetSurfaceDesc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_GetSurfaceDesc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_GetSurfaceDesc_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_Initialize_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_IsLost_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface_IsLost_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDrawSurface_IsLost_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDrawSurface_Lock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface_Lock_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1450,66 +3485,179 @@ IDirectDrawSurface_Lock_asm2c:
         mov r8d, [r11d+28]
         call IDirectDrawSurface_Lock_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDrawSurface_ReleaseDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_ReleaseDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_ReleaseDC_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_Restore_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface_Restore_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDrawSurface_Restore_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDrawSurface_SetClipper_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_SetClipper_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_SetClipper_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_SetColorKey_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_SetColorKey_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_SetColorKey_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_SetOverlayPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_SetOverlayPosition_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_SetOverlayPosition_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawSurface_SetPalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_SetPalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_SetPalette_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_Unlock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_Unlock_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_Unlock_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_UpdateOverlay_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface_UpdateOverlay_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1519,57 +3667,154 @@ IDirectDrawSurface_UpdateOverlay_asm2c:
         mov r9d, [r11d+32]
         call IDirectDrawSurface_UpdateOverlay_c
         Call_Asm_Epilogue_0 6
+%endif
 
 align 16
 IDirectDrawSurface_UpdateOverlayDisplay_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface_UpdateOverlayDisplay_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawSurface_UpdateOverlayDisplay_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawSurface_UpdateOverlayZOrder_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface_UpdateOverlayZOrder_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawSurface_UpdateOverlayZOrder_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawPalette_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawPalette_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawPalette_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawPalette_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawPalette_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDrawPalette_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDrawPalette_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawPalette_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDrawPalette_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDrawPalette_GetCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawPalette_GetCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawPalette_GetCaps_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawPalette_GetEntries_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawPalette_GetEntries_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1578,9 +3823,24 @@ IDirectDrawPalette_GetEntries_asm2c:
         mov r8d, [r11d+28]
         call IDirectDrawPalette_GetEntries_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDrawPalette_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawPalette_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1588,9 +3848,28 @@ IDirectDrawPalette_Initialize_asm2c:
         mov ecx, [r11d+24]
         call IDirectDrawPalette_Initialize_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDrawPalette_SetEntries_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawPalette_SetEntries_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1599,32 +3878,85 @@ IDirectDrawPalette_SetEntries_asm2c:
         mov r8d, [r11d+28]
         call IDirectDrawPalette_SetEntries_c
         Call_Asm_Epilogue_0 5
+%endif
 
 align 16
 IDirectDrawClipper_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawClipper_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawClipper_QueryInterface_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawClipper_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawClipper_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDrawClipper_AddRef_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDrawClipper_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawClipper_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call IDirectDrawClipper_Release_c
         Call_Asm_Epilogue_0 1
+%endif
 
 align 16
 IDirectDrawClipper_GetClipList_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawClipper_GetClipList_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
@@ -1632,49 +3964,118 @@ IDirectDrawClipper_GetClipList_asm2c:
         mov ecx, [r11d+24]
         call IDirectDrawClipper_GetClipList_c
         Call_Asm_Epilogue_0 4
+%endif
 
 align 16
 IDirectDrawClipper_GetHWnd_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawClipper_GetHWnd_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawClipper_GetHWnd_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawClipper_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawClipper_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawClipper_Initialize_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawClipper_IsClipListChanged_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawClipper_IsClipListChanged_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         call IDirectDrawClipper_IsClipListChanged_c
         Call_Asm_Epilogue_0 2
+%endif
 
 align 16
 IDirectDrawClipper_SetClipList_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawClipper_SetClipList_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawClipper_SetClipList_c
         Call_Asm_Epilogue_0 3
+%endif
 
 align 16
 IDirectDrawClipper_SetHWnd_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawClipper_SetHWnd_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call IDirectDrawClipper_SetHWnd_c
         Call_Asm_Epilogue_0 3
+%endif
 
 
 section .rodata progbits alloc noexec nowrite align=4
