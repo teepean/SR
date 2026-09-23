@@ -75,7 +75,8 @@ static int subsystem_ok;
 void joystick_startup(void)
 {
     if (!config_get_int("joystick", 1)) return;
-    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "0");
+    // the game checks GetFocus itself; SDL's idea of focus can differ from the window manager's
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     if (SDL_InitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0)
     {
         eprintf("joystick: SDL init failed: %s\n", SDL_GetError());
@@ -279,6 +280,16 @@ uint32_t CCALL joyGetPosEx_c(uint32_t uJoyID, joyinfoex *pji)
     size = pji->dwSize;
     flags = pji->dwFlags;
     read_device(&devices[uJoyID], pji);
+    if (winapi_debug >= 2)
+    {
+        static uint32_t last;
+        uint32_t now = SDL_GetTicks();
+        if (now - last >= 500)
+        {
+            last = now;
+            eprintf("joystick %u: x %u y %u z %u r %u u %u buttons 0x%x pov %u\n", uJoyID, pji->dwXpos, pji->dwYpos, pji->dwZpos, pji->dwRpos, pji->dwUpos, pji->dwButtons, pji->dwPOV);
+        }
+    }
     pji->dwSize = size;
     pji->dwFlags = flags;
     return JOYERR_NOERROR;
