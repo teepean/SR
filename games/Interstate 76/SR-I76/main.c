@@ -15,6 +15,8 @@
 #include "winapi.h"
 #include "winapi-gdi32.h"
 #include "config.h"
+
+void joystick_startup(void);
 #include "display.h"
 
 void winapi_user32_init(void);
@@ -110,6 +112,7 @@ int main(int argc, char *argv[])
 
 
     winapi_debug = (getenv("I76_DEBUG") != NULL) ? atoi(getenv("I76_DEBUG")) : 0;
+    joystick_startup();
 
     msvcrt_init();
     winapi_user32_init();

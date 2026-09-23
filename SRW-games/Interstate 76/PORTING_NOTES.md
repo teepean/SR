@@ -308,3 +308,10 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   25 FPS exes for the frame-rate bugs; 16-bit depth buffers avoided; crashes reported between story missions
   (to check in playthrough tests). Widescreen isn't possible from the Glide side (the game renders into 640x480
   screen coordinates; wrappers only stretch) - would need a camera/FOV change in the game.
+- joystick.c: winmm joyGetNumDevs/joyGetDevCapsA/joyGetPosEx/joyGetPos on SDL. Game controllers: X/Y left
+  stick, Z = triggers as one throttle axis (RT forward), R/U right stick, 11 buttons, d-pad = POV; other devices:
+  axes 0-5, 32 buttons, hat 0. The game enumerates joysticks through its input driver table (0x4F53F8) when the
+  Control Configuration screen opens; no default joystick bindings (the player binds in that screen).
+  SDL3/sdl2-compat enumerates devices asynchronously: the subsystem is started at program start
+  (joystick_startup) and devices are opened on first use. I76_VIRTUAL_JOYSTICK=1 attaches a virtual controller.
+  Config: joystick = 0/1.
