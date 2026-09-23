@@ -345,3 +345,5 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   and every heap block has 32 bytes of zeroed slack so small overruns don't hit glibc's chunk headers.
   Septerra's runtime has no such protection (its 32-bit build uses plain malloc; Game-Memory.c is its low-4GB
   allocator for 64-bit builds - to reuse for the I76 64-bit port).
+- Playtest status (user): story missions 1-3 played through without problems (Glide, X11, sound, joystick,
+  save game created and loaded).
