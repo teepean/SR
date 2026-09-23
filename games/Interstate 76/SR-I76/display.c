@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <SDL.h>
 #include "display.h"
+#include "config.h"
 #include "render.h"
 #include "platform.h"
 #include "winapi.h"
@@ -54,14 +55,14 @@ int display_create(const char *title, int width, int height)
     display_height = height;
     display_pixels = (uint32_t *) calloc((size_t)width * height, sizeof(uint32_t));
 
-    scale = (getenv("I76_SCALE") != NULL) ? atoi(getenv("I76_SCALE")) : 2;
+    scale = config_get_int("window_scale", config_get_int("scale", 2));
     if (scale < 1) scale = 1;
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width * scale, height * scale, SDL_WINDOW_RESIZABLE | render_window_flags());
+    window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width * scale, height * scale, SDL_WINDOW_RESIZABLE | render_window_flags() | (config_get_int("fullscreen", 0) ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
     if (window == NULL)
     {
         eprintf("Error: SDL_CreateWindow: %s\n", SDL_GetError());
@@ -119,7 +120,7 @@ uint32_t CCALL i76_frame_tick_c(void)
 
     if (fps < 0)
     {
-        fps = (getenv("I76_FPS") != NULL) ? atoi(getenv("I76_FPS")) : 20;
+        fps = config_get_int("fps", 20);
         if (fps > 0) period = 1000.0 / fps;
     }
 

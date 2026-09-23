@@ -11,6 +11,7 @@
 #include <string.h>
 #include <SDL.h>
 #include "mixer.h"
+#include "config.h"
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -56,7 +57,7 @@ int mixer_init(void)
     if (initialized) return device != 0;
     initialized = 1;
 
-    if (getenv("I76_NOSOUND") != NULL) return 0;
+    if ((getenv("I76_NOSOUND") != NULL) || !config_get_int("sound", 1)) return 0;
 
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0)
     {

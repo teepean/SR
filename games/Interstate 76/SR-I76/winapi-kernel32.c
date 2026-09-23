@@ -20,6 +20,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include "platform.h"
+#include "config.h"
 #include "vfs.h"
 #include "winapi.h"
 #include "display.h"
@@ -983,7 +984,7 @@ uint32_t CCALL GetModuleFileNameA_c(void *hModule, char *lpFilename, uint32_t nS
 static int cd_mode(void)
 {
     static int mode = -1;
-    if (mode == -1) mode = (getenv("I76_CD") != NULL) ? atoi(getenv("I76_CD")) : 2;
+    if (mode == -1) mode = config_get_int("cd", 2);
     return mode;
 }
 

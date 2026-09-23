@@ -17,6 +17,7 @@
 #define GL_GLEXT_PROTOTYPES 0
 #include <GL/glcorearb.h>
 #include "render.h"
+#include "config.h"
 #include "winapi.h"
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
@@ -406,7 +407,7 @@ int render_init(SDL_Window *w)
     SDL_GL_MakeCurrent(window, context);
     if (!load_gl()) return 0;
 
-    vsync = getenv("I76_VSYNC");
+    vsync = config_get("vsync");
     SDL_GL_SetSwapInterval((vsync != NULL) ? atoi(vsync) : 1);
 
     if (winapi_debug) eprintf("render_gl: %s / %s / %s\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION));
@@ -597,7 +598,7 @@ int render_glide_open(int width, int height)
     if (context == NULL) return 0;
     if (glide_open) render_glide_close();
 
-    s = getenv("I76_GLIDE_SCALE");
+    s = config_get("glide_scale");
     glide_scale = (s != NULL) ? atoi(s) : 2;
     if (glide_scale < 1) glide_scale = 1;
     if (glide_scale > 8) glide_scale = 8;

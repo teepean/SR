@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <SDL.h>
 #include "platform.h"
+#include "config.h"
 #include "smack.h"
 #include "vfs.h"
 #include "winapi.h"
@@ -182,7 +183,7 @@ static void smk_audio_open(rad_smack *s)
     smk_audio *a;
 
     if ((s->decoder->AudioSize[0] == 0) || !(info & 0x40000000)) return;
-    if (getenv("I76_NOSOUND") != NULL) return;
+    if ((getenv("I76_NOSOUND") != NULL) || !config_get_int("sound", 1)) return;
     if (!mixer_init()) return;
 
     a = (smk_audio *)calloc(1, sizeof(smk_audio));

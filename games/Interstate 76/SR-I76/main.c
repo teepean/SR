@@ -14,6 +14,7 @@
 #include "msvcrt.h"
 #include "winapi.h"
 #include "winapi-gdi32.h"
+#include "config.h"
 #include "display.h"
 
 void winapi_user32_init(void);
@@ -63,18 +64,27 @@ static char command_line[256];
 
 static void prepare_command_line(int argc, char *argv[])
 {
-    int i, hardware = 0;
+    int i, hardware = -1;
+    const char *renderer;
 
     for (i = 1; i < argc; i++)
     {
         if ((strcasecmp(argv[i], "/glide") == 0) || (strcasecmp(argv[i], "-glide") == 0)) hardware = 1;
+        if ((strcasecmp(argv[i], "/gdi") == 0) || (strcasecmp(argv[i], "-gdi") == 0)) hardware = 0;
+    }
+    if (hardware == -1)
+    {
+        // renderer from SR-I76.cfg (default: glide)
+        renderer = config_get("renderer");
+        hardware = (renderer == NULL) || (strcasecmp(renderer, "software") != 0);
     }
 
-    // the software renderer presents through GDI (windowed) unless another renderer is selected;
-    // with /glide, /gdi must not be given (it switches video playback to a DirectDraw path)
-    strcpy(command_line, hardware ? "" : "/gdi");
+    // the software renderer presents through GDI (windowed); with /glide, /gdi must not be given
+    // (it switches video playback to a DirectDraw path)
+    strcpy(command_line, hardware ? "/glide" : "/gdi");
     for (i = 1; i < argc; i++)
     {
+        if ((strcasecmp(argv[i] + 1, "glide") == 0) || (strcasecmp(argv[i] + 1, "gdi") == 0)) continue;
         if (strlen(command_line) + strlen(argv[i]) + 2 >= sizeof(command_line)) break;
         if (command_line[0] != 0) strcat(command_line, " ");
         strcat(command_line, argv[i]);

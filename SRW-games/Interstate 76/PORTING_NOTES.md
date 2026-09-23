@@ -298,3 +298,13 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   reliable (HeapDestroy and a moving HeapReAlloc left it in freed memory, which can be reused without being
   overwritten). Live heap blocks are now tracked in a hash set; HeapFree/HeapReAlloc/HeapSize of anything else
   fails like on Windows. Verified: ESC -> Abort Mission -> Exit Game -> Yes exits cleanly in Glide mode.
+
+### 2026-09-23 — settings
+- config.c: SR-I76.cfg in the game directory (written with commented defaults if missing), keys: renderer
+  (glide|software, default glide), glide_scale, window_scale, fullscreen, fps, vsync, sound, cd, joystick.
+  Environment variables I76_<KEY> override the file. Command line /gdi or /glide overrides renderer.
+- Community notes (GOG forum, user-provided): dgVoodoo users fixed texture corruption (road-sign textures on
+  roads, explosions on the sky) by limiting texture memory to 2 MB = ZGLIDE's allocator bug (we emulate 2 MB);
+  25 FPS exes for the frame-rate bugs; 16-bit depth buffers avoided; crashes reported between story missions
+  (to check in playthrough tests). Widescreen isn't possible from the Glide side (the game renders into 640x480
+  screen coordinates; wrappers only stretch) - would need a camera/FOV change in the game.
