@@ -950,6 +950,24 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     return nb + 1;
 }
 
+// GlobalAlloc & co. (ANETDLL, WINET): fixed memory from the process heap (GMEM_MOVEABLE handles are the pointers)
+void * CCALL GlobalAlloc_c(uint32_t uFlags, uint32_t dwBytes)
+{
+    return HeapAlloc_c(&process_heap, HEAP_ZERO_MEMORY, dwBytes ? dwBytes : 1);
+}
+
+void * CCALL GlobalReAlloc_c(void *hMem, uint32_t dwBytes, uint32_t uFlags)
+{
+    if (hMem == NULL) return GlobalAlloc_c(uFlags, dwBytes);
+    return HeapReAlloc_c(&process_heap, HEAP_ZERO_MEMORY, hMem, dwBytes ? dwBytes : 1);
+}
+
+void * CCALL GlobalFree_c(void *hMem)
+{
+    if (hMem == NULL) return NULL;
+    return HeapFree_c(&process_heap, 0, hMem) ? NULL : hMem;
+}
+
 /* Memory the runtime hands to the game (COM objects, surfaces, sound buffers, handles, Smacker objects...):
  * allocated from a private emulated Win32 heap, so it gets the same protection as the game's own heap blocks
  * (quarantine after free, overrun detection, I76_HEAPGUARD) - in the 32-bit build x86_malloc is glibc's malloc,
@@ -1332,6 +1350,8 @@ extern void CheckFunc(void), FirstDevice(void), GetFuncDesc(void), GetNumDevice(
             LastDevice(void), LockDisplay(void), LostDeviceDisplay(void), PreloadTexture(void), RefreshDisplay(void),
             Render(void), RenderNoClip(void), RenderRefresh(void), RestoreDevice(void), SetLumaTable(void),
             SetState(void), SetTexturePalette(void), UnlockDisplay(void), UpdateTexture(void);
+// DLL\WINET.DLL (ANETDLL's TCP/IP transport)
+extern void commDriverInfo(void), commGroupAdd(void), commGroupAlloc(void), commGroupFree(void), commInit(void), commNoOp(void), commPeekPkt(void), commPlayerInfo(void), commPrintAddr(void), commRxPkt(void), commSayBye(void), commSayHi(void), commScanAddr(void), commSetParam(void), commTerm(void), commTxFull(void), commTxPkt(void);
 #ifdef __cplusplus
 }
 #endif
@@ -1379,9 +1399,31 @@ static const module_export zglide_exports[] = {
     { NULL, NULL }
 };
 
+static const module_export winet_exports[] = {
+    { "commDriverInfo", (void *) commDriverInfo },
+    { "commGroupAdd", (void *) commGroupAdd },
+    { "commGroupAlloc", (void *) commGroupAlloc },
+    { "commGroupFree", (void *) commGroupFree },
+    { "commInit", (void *) commInit },
+    { "commNoOp", (void *) commNoOp },
+    { "commPeekPkt", (void *) commPeekPkt },
+    { "commPlayerInfo", (void *) commPlayerInfo },
+    { "commPrintAddr", (void *) commPrintAddr },
+    { "commRxPkt", (void *) commRxPkt },
+    { "commSayBye", (void *) commSayBye },
+    { "commSayHi", (void *) commSayHi },
+    { "commScanAddr", (void *) commScanAddr },
+    { "commSetParam", (void *) commSetParam },
+    { "commTerm", (void *) commTerm },
+    { "commTxFull", (void *) commTxFull },
+    { "commTxPkt", (void *) commTxPkt },
+    { NULL, NULL }
+};
+
 static module_info modules[] = {
     { 0, "I76SHELL.DLL", shell_exports, i76shell_xc_a, i76shell_xc_z, 0 },
     { 0, "ZGLIDE.DLL", zglide_exports, NULL, NULL, 0 },
+    { 0, "WINET.DLL", winet_exports, NULL, NULL, 0 },
 };
 
 static module_info *find_module(const char *name)

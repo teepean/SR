@@ -88,7 +88,7 @@ static int SR_disassemble_fixup_operand(unsigned int Entry, const char *ostr, fi
             {
                 memcpy(tmpbuf, &(section[Entry].adr[offset]), decoded_length + 4);
                 fixupofs = (uint32_t *) &(tmpbuf[fixup->sofs - offset]);
-                *fixupofs = ~(*fixupofs);
+                *fixupofs = (*fixupofs - fixup->tofs) + ~fixup->tofs;   // same as SR_full_dos.c: the searched string is section start + ~tofs
                 tmpfixup = *fixup;
                 tmpfixup.tofs = ~tmpfixup.tofs;
 

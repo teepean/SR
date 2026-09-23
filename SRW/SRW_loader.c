@@ -1160,6 +1160,7 @@ int SRW_LoadFile(const char *fname)
                             case   8: ProcName = "ws2_32.htonl"; break;
                             case   9: ProcName = "ws2_32.htons"; break;
                             case  10: ProcName = "ws2_32.inet_addr"; break;
+                            case  11: ProcName = "ws2_32.inet_ntoa"; break;
                             case  12: ProcName = "ws2_32.ioctlsocket"; break;
                             case  13: ProcName = "ws2_32.listen"; break;
                             case  14: ProcName = "ws2_32.ntohl"; break;
@@ -1176,6 +1177,7 @@ int SRW_LoadFile(const char *fname)
                             case  57: ProcName = "ws2_32.gethostname"; break;
                             case 111: ProcName = "ws2_32.WSAGetLastError"; break;
                             case 115: ProcName = "ws2_32.WSAStartup"; break;
+                            case 116: ProcName = "ws2_32.WSACleanup"; break;
                         }
                     }
 

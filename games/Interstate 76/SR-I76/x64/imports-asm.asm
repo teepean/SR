@@ -121,28 +121,6 @@ extern DirectDrawEnumerateA_c
 extern DirectSoundCreate_c
 extern DispatchMessageA_c
 extern msvcrt_div_c
-extern dp_enableDebugPrint_c
-extern dpAddPlayerToGroup_c
-extern dpClose_c
-extern dpCreate_c
-extern dpCreateGroup_c
-extern dpCreatePlayer_c
-extern dpDestroy_c
-extern dpDestroyPlayer_c
-extern dpEnumGroupPlayers_c
-extern dpEnumGroups_c
-extern dpEnumPlayers_c
-extern dpEnumSessions_c
-extern dpFreeze_c
-extern dpEnumTransports_c
-extern dpGetPlayerData_c
-extern dpGetPlayerName_c
-extern dpGetSessionDesc_c
-extern dpOpen_c
-extern dpReceive_c
-extern dpSend_c
-extern dpSetGameServer_c
-extern dpSetPlayerData_c
 extern EndDialog_c
 extern EndPaint_c
 extern EnterCriticalSection_c
@@ -342,6 +320,23 @@ extern WideCharToMultiByte_c
 extern WriteFile_c
 extern wsprintfA_c
 extern wvsprintfA_c
+extern ws2_32_WSAStartup_c
+extern ws2_32_WSACleanup_c
+extern ws2_32_WSAGetLastError_c
+extern ws2_32_socket_c
+extern ws2_32_bind_c
+extern ws2_32_closesocket_c
+extern ws2_32_sendto_c
+extern recvfrom_c
+extern setsockopt_c
+extern ws2_32_ioctlsocket_c
+extern ws2_32_htons_c
+extern ws2_32_inet_addr_c
+extern ws2_32_inet_ntoa_c
+extern ws2_32_gethostbyname_c
+extern GlobalAlloc_c
+extern GlobalReAlloc_c
+extern GlobalFree_c
 extern strspn_c
 extern strcspn_c
 extern strncat_c
@@ -350,6 +345,9 @@ extern memcpy_c
 extern printf_c
 extern ungetc_c
 extern _filbuf_c
+extern _makepath_c
+extern _ftime_c
+extern _strcmpi_c
 extern i76_frame_tick_c
 extern i76shell_part_strncmp_c
 
@@ -471,28 +469,6 @@ global DirectDrawEnumerateA_asm2c
 global DirectSoundCreate_asm2c
 global DispatchMessageA_asm2c
 global msvcrt_div_asm2c
-global dp_enableDebugPrint_asm2c
-global dpAddPlayerToGroup_asm2c
-global dpClose_asm2c
-global dpCreate_asm2c
-global dpCreateGroup_asm2c
-global dpCreatePlayer_asm2c
-global dpDestroy_asm2c
-global dpDestroyPlayer_asm2c
-global dpEnumGroupPlayers_asm2c
-global dpEnumGroups_asm2c
-global dpEnumPlayers_asm2c
-global dpEnumSessions_asm2c
-global dpFreeze_asm2c
-global dpEnumTransports_asm2c
-global dpGetPlayerData_asm2c
-global dpGetPlayerName_asm2c
-global dpGetSessionDesc_asm2c
-global dpOpen_asm2c
-global dpReceive_asm2c
-global dpSend_asm2c
-global dpSetGameServer_asm2c
-global dpSetPlayerData_asm2c
 global EndDialog_asm2c
 global EndPaint_asm2c
 global EnterCriticalSection_asm2c
@@ -692,6 +668,23 @@ global WideCharToMultiByte_asm2c
 global WriteFile_asm2c
 global wsprintfA_asm2c
 global wvsprintfA_asm2c
+global ws2_32_WSAStartup_asm2c
+global ws2_32_WSACleanup_asm2c
+global ws2_32_WSAGetLastError_asm2c
+global ws2_32_socket_asm2c
+global ws2_32_bind_asm2c
+global ws2_32_closesocket_asm2c
+global ws2_32_sendto_asm2c
+global recvfrom_asm2c
+global setsockopt_asm2c
+global ws2_32_ioctlsocket_asm2c
+global ws2_32_htons_asm2c
+global ws2_32_inet_addr_asm2c
+global ws2_32_inet_ntoa_asm2c
+global ws2_32_gethostbyname_asm2c
+global GlobalAlloc_asm2c
+global GlobalReAlloc_asm2c
+global GlobalFree_asm2c
 global strspn_asm2c
 global strcspn_asm2c
 global strncat_asm2c
@@ -700,6 +693,9 @@ global memcpy_asm2c
 global printf_asm2c
 global ungetc_asm2c
 global _filbuf_asm2c
+global _makepath_asm2c
+global _ftime_asm2c
+global _strcmpi_asm2c
 global i76_frame_tick_asm2c
 global i76shell_part_strncmp_asm2c
 
@@ -3413,600 +3409,6 @@ msvcrt_div_asm2c:
         mov rdx, rax
         shr rdx, 32
         mov eax, eax
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dp_enableDebugPrint (c1, anetdll.dll)
-align 16
-dp_enableDebugPrint_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        call dp_enableDebugPrint_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        call dp_enableDebugPrint_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpAddPlayerToGroup (c3, anetdll.dll)
-align 16
-dpAddPlayerToGroup_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        call dpAddPlayerToGroup_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        call dpAddPlayerToGroup_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpClose (c1, anetdll.dll)
-align 16
-dpClose_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        call dpClose_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        call dpClose_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpCreate (c4, anetdll.dll)
-align 16
-dpCreate_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpCreate_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        call dpCreate_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpCreateGroup (c3, anetdll.dll)
-align 16
-dpCreateGroup_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        call dpCreateGroup_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        call dpCreateGroup_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpCreatePlayer (c4, anetdll.dll)
-align 16
-dpCreatePlayer_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpCreatePlayer_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        call dpCreatePlayer_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpDestroy (c2, anetdll.dll)
-align 16
-dpDestroy_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        call dpDestroy_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        call dpDestroy_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpDestroyPlayer (c2, anetdll.dll)
-align 16
-dpDestroyPlayer_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        call dpDestroyPlayer_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        call dpDestroyPlayer_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpEnumGroupPlayers (c6, anetdll.dll)
-align 16
-dpEnumGroupPlayers_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov eax, [r11d+24]
-        mov [rsp+40], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpEnumGroupPlayers_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        mov r9d, [r11d+32]
-        call dpEnumGroupPlayers_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpEnumGroups (c5, anetdll.dll)
-align 16
-dpEnumGroups_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpEnumGroups_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        call dpEnumGroups_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpEnumPlayers (c5, anetdll.dll)
-align 16
-dpEnumPlayers_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpEnumPlayers_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        call dpEnumPlayers_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpEnumSessions (c6, anetdll.dll)
-align 16
-dpEnumSessions_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov eax, [r11d+24]
-        mov [rsp+40], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpEnumSessions_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        mov r9d, [r11d+32]
-        call dpEnumSessions_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpFreeze (c2, anetdll.dll)
-align 16
-dpFreeze_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        call dpFreeze_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        call dpFreeze_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpEnumTransports (c3, anetdll.dll)
-align 16
-dpEnumTransports_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        call dpEnumTransports_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        call dpEnumTransports_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpGetPlayerData (c6, anetdll.dll)
-align 16
-dpGetPlayerData_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov eax, [r11d+24]
-        mov [rsp+40], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpGetPlayerData_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        mov r9d, [r11d+32]
-        call dpGetPlayerData_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpGetPlayerName (c4, anetdll.dll)
-align 16
-dpGetPlayerName_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpGetPlayerName_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        call dpGetPlayerName_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpGetSessionDesc (c3, anetdll.dll)
-align 16
-dpGetSessionDesc_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        call dpGetSessionDesc_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        call dpGetSessionDesc_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpOpen (c4, anetdll.dll)
-align 16
-dpOpen_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpOpen_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        call dpOpen_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpReceive (c6, anetdll.dll)
-align 16
-dpReceive_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov eax, [r11d+24]
-        mov [rsp+40], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpReceive_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        mov r9d, [r11d+32]
-        call dpReceive_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpSend (c6, anetdll.dll)
-align 16
-dpSend_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov eax, [r11d+24]
-        mov [rsp+40], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpSend_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        mov r9d, [r11d+32]
-        call dpSend_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpSetGameServer (c2, anetdll.dll)
-align 16
-dpSetGameServer_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        call dpSetGameServer_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        call dpSetGameServer_c
-        Call_Asm_Epilogue_0 0
-%endif
-
-; dpSetPlayerData (c6, anetdll.dll)
-align 16
-dpSetPlayerData_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov eax, [r11d+24]
-        mov [rsp+40], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call dpSetPlayerData_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+0
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        mov r9d, [r11d+32]
-        call dpSetPlayerData_c
         Call_Asm_Epilogue_0 0
 %endif
 
@@ -8747,6 +8149,401 @@ wvsprintfA_asm2c:
         Call_Asm_Epilogue_0 3
 %endif
 
+; ws2_32.WSAStartup (std2, WSOCK32.dll)
+align 16
+ws2_32_WSAStartup_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ws2_32_WSAStartup_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call ws2_32_WSAStartup_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+; ws2_32.WSACleanup (std0, WSOCK32.dll)
+align 16
+ws2_32_WSACleanup_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ws2_32_WSACleanup_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ws2_32_WSACleanup_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ws2_32.WSAGetLastError (std0, WSOCK32.dll)
+align 16
+ws2_32_WSAGetLastError_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ws2_32_WSAGetLastError_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ws2_32_WSAGetLastError_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ws2_32.socket (std3, WSOCK32.dll)
+align 16
+ws2_32_socket_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call ws2_32_socket_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call ws2_32_socket_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+; ws2_32.bind (std3, WSOCK32.dll)
+align 16
+ws2_32_bind_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call ws2_32_bind_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call ws2_32_bind_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+; ws2_32.closesocket (std1, WSOCK32.dll)
+align 16
+ws2_32_closesocket_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ws2_32_closesocket_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ws2_32_closesocket_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; ws2_32.sendto (std6, WSOCK32.dll)
+align 16
+ws2_32_sendto_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call ws2_32_sendto_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call ws2_32_sendto_c
+        Call_Asm_Epilogue_0 6
+%endif
+
+; recvfrom (std6, WSOCK32.dll)
+align 16
+recvfrom_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call recvfrom_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call recvfrom_c
+        Call_Asm_Epilogue_0 6
+%endif
+
+; setsockopt (std5, WSOCK32.dll)
+align 16
+setsockopt_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call setsockopt_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call setsockopt_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+; ws2_32.ioctlsocket (std3, WSOCK32.dll)
+align 16
+ws2_32_ioctlsocket_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call ws2_32_ioctlsocket_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call ws2_32_ioctlsocket_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+; ws2_32.htons (std1, WSOCK32.dll)
+align 16
+ws2_32_htons_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ws2_32_htons_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ws2_32_htons_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; ws2_32.inet_addr (std1, WSOCK32.dll)
+align 16
+ws2_32_inet_addr_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ws2_32_inet_addr_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ws2_32_inet_addr_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; ws2_32.inet_ntoa (std1, WSOCK32.dll)
+align 16
+ws2_32_inet_ntoa_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ws2_32_inet_ntoa_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ws2_32_inet_ntoa_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; ws2_32.gethostbyname (std1, WSOCK32.dll)
+align 16
+ws2_32_gethostbyname_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ws2_32_gethostbyname_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ws2_32_gethostbyname_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; GlobalAlloc (std2, KERNEL32.dll)
+align 16
+GlobalAlloc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GlobalAlloc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call GlobalAlloc_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+; GlobalReAlloc (std3, KERNEL32.dll)
+align 16
+GlobalReAlloc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call GlobalReAlloc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call GlobalReAlloc_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+; GlobalFree (std1, KERNEL32.dll)
+align 16
+GlobalFree_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call GlobalFree_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call GlobalFree_c
+        Call_Asm_Epilogue_0 1
+%endif
+
 ; strspn (c2, static)
 align 16
 strspn_asm2c:
@@ -8924,6 +8721,79 @@ _filbuf_asm2c:
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call _filbuf_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; _makepath (c5, static)
+align 16
+_makepath_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call _makepath_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call _makepath_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; _ftime (c1, static)
+align 16
+_ftime_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call _ftime_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call _ftime_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; _strcmpi (c2, static)
+align 16
+_strcmpi_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call _strcmpi_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call _strcmpi_c
         Call_Asm_Epilogue_0 0
 %endif
 

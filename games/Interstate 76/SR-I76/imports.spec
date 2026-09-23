@@ -129,28 +129,28 @@ DirectDrawEnumerateA         std2   -     DDRAW.dll      # exe | HRESULT (__stdc
 DirectSoundCreate            std3   -     DSOUND.dll     # exe | HRESULT (__stdcall *)(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
 DispatchMessageA             std1   -     USER32.dll     # exe,shell | LRESULT (__stdcall *)(const MSG *lpMsg)
 msvcrt_div                   c2     u64   MSVCRT.dll     # exe | div_t (__cdecl *)(int Numerator, int Denominator)
-dp_enableDebugPrint          c1     -     anetdll.dll    # shell |
-dpAddPlayerToGroup           c3     -     anetdll.dll    # exe |
-dpClose                      c1     -     anetdll.dll    # shell |
-dpCreate                     c4     -     anetdll.dll    # shell |
-dpCreateGroup                c3     -     anetdll.dll    # shell |
-dpCreatePlayer               c4     -     anetdll.dll    # shell |
-dpDestroy                    c2     -     anetdll.dll    # shell |
-dpDestroyPlayer              c2     -     anetdll.dll    # exe,shell |
-dpEnumGroupPlayers           c6     -     anetdll.dll    # exe |
-dpEnumGroups                 c5     -     anetdll.dll    # exe |
-dpEnumPlayers                c5     -     anetdll.dll    # exe,shell |
-dpEnumSessions               c6     -     anetdll.dll    # shell |
-dpFreeze                     c2     -     anetdll.dll    # shell (dead code) |
-dpEnumTransports             c3     -     anetdll.dll    # shell |
-dpGetPlayerData              c6     -     anetdll.dll    # exe,shell |
-dpGetPlayerName              c4     -     anetdll.dll    # exe |
-dpGetSessionDesc             c3     -     anetdll.dll    # shell |
-dpOpen                       c4     -     anetdll.dll    # shell |
-dpReceive                    c6     -     anetdll.dll    # exe,shell |
-dpSend                       c6     -     anetdll.dll    # exe,shell |
-dpSetGameServer              c2     -     anetdll.dll    # shell |
-dpSetPlayerData              c6     -     anetdll.dll    # exe,shell |
+dp_enableDebugPrint          module -     anetdll.dll       # shell |
+dpAddPlayerToGroup           module -     anetdll.dll       # exe |
+dpClose                      module -     anetdll.dll       # shell |
+dpCreate                     module -     anetdll.dll       # shell |
+dpCreateGroup                module -     anetdll.dll       # shell |
+dpCreatePlayer               module -     anetdll.dll       # shell |
+dpDestroy                    module -     anetdll.dll       # shell |
+dpDestroyPlayer              module -     anetdll.dll       # exe,shell |
+dpEnumGroupPlayers           module -     anetdll.dll       # exe |
+dpEnumGroups                 module -     anetdll.dll       # exe |
+dpEnumPlayers                module -     anetdll.dll       # exe,shell |
+dpEnumSessions               module -     anetdll.dll       # shell |
+dpFreeze                     module -     anetdll.dll       # shell (dead code) |
+dpEnumTransports             module -     anetdll.dll       # shell |
+dpGetPlayerData              module -     anetdll.dll       # exe,shell |
+dpGetPlayerName              module -     anetdll.dll       # exe |
+dpGetSessionDesc             module -     anetdll.dll       # shell |
+dpOpen                       module -     anetdll.dll       # shell |
+dpReceive                    module -     anetdll.dll       # exe,shell |
+dpSend                       module -     anetdll.dll       # exe,shell |
+dpSetGameServer              module -     anetdll.dll       # shell |
+dpSetPlayerData              module -     anetdll.dll       # exe,shell |
 EndDialog                    std2   -     USER32.dll     # shell | BOOL (__stdcall *)(HWND hDlg, INT_PTR nResult)
 EndPaint                     std2   -     USER32.dll     # exe,shell | BOOL (__stdcall *)(HWND hWnd, const PAINTSTRUCT *lpPaint)
 EnterCriticalSection         std1   -     KERNEL32.dll   # zglide | void (__stdcall *)(LPCRITICAL_SECTION lpCriticalSection)
@@ -355,6 +355,23 @@ WideCharToMultiByte          std8   -     KERNEL32.dll   # zglide | int (__stdca
 WriteFile                    std5   -     KERNEL32.dll   # zglide | BOOL (__stdcall *)(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite, LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped)
 wsprintfA                    v2     -     USER32.dll     # exe,shell | int (*)(LPSTR, LPCSTR, ...)
 wvsprintfA                   std3   -     USER32.dll     # exe,shell | int (__stdcall *)(LPSTR, LPCSTR, va_list arglist)
+ws2_32.WSAStartup            std2   -     WSOCK32.dll    # winet | int WSAStartup(WORD wVersionRequested, LPWSADATA lpWSAData)
+ws2_32.WSACleanup            std0   -     WSOCK32.dll    # winet | int WSACleanup(void)
+ws2_32.WSAGetLastError       std0   -     WSOCK32.dll    # winet | int WSAGetLastError(void)
+ws2_32.socket                std3   -     WSOCK32.dll    # winet | SOCKET socket(int af, int type, int protocol)
+ws2_32.bind                  std3   -     WSOCK32.dll    # winet | int bind(SOCKET s, const struct sockaddr *name, int namelen)
+ws2_32.closesocket           std1   -     WSOCK32.dll    # winet | int closesocket(SOCKET s)
+ws2_32.sendto                std6   -     WSOCK32.dll    # winet | int sendto(SOCKET s, const char *buf, int len, int flags, const struct sockaddr *to, int tolen)
+recvfrom                     std6   -     WSOCK32.dll    # winet | int recvfrom(SOCKET s, char *buf, int len, int flags, struct sockaddr *from, int *fromlen)
+setsockopt                   std5   -     WSOCK32.dll    # winet | int setsockopt(SOCKET s, int level, int optname, const char *optval, int optlen)
+ws2_32.ioctlsocket           std3   -     WSOCK32.dll    # winet | int ioctlsocket(SOCKET s, long cmd, u_long *argp)
+ws2_32.htons                 std1   -     WSOCK32.dll    # winet | u_short htons(u_short hostshort)
+ws2_32.inet_addr             std1   -     WSOCK32.dll    # winet | unsigned long inet_addr(const char *cp)
+ws2_32.inet_ntoa             std1   -     WSOCK32.dll    # winet | char *inet_ntoa(struct in_addr in)
+ws2_32.gethostbyname         std1   -     WSOCK32.dll    # winet | struct hostent *gethostbyname(const char *name)
+GlobalAlloc                  std2   -     KERNEL32.dll   # anetdll,winet | HGLOBAL GlobalAlloc(UINT uFlags, SIZE_T dwBytes)
+GlobalReAlloc                std3   -     KERNEL32.dll   # anetdll | HGLOBAL GlobalReAlloc(HGLOBAL hMem, SIZE_T dwBytes, UINT uFlags)
+GlobalFree                   std1   -     KERNEL32.dll   # anetdll,winet | HGLOBAL GlobalFree(HGLOBAL hMem)
 # statically linked CRT functions of the DLLs (redirected with external_procedures.sci)
 strspn                       c2     -     static         # strlkup | size_t strspn(const char *, const char *)
 strcspn                      c2     -     static         # strlkup | size_t strcspn(const char *, const char *)
@@ -364,6 +381,9 @@ memcpy                       c3     -     static         # zglide | void *memcpy
 printf                       v1     -     static         # zglide | int printf(const char *, ...)
 ungetc                       c2     -     static         # zglide | int ungetc(int, FILE *)
 _filbuf                      c1     -     static         # zglide | int _filbuf(FILE *) - called by inline getc macro
+_makepath                    c5     -     static         # anetdll | void _makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext)
+_ftime                       c1     -     static         # anetdll,winet | void _ftime(struct _timeb *)
+_strcmpi                     c2     -     static         # anetdll | int _strcmpi(const char *, const char *)
 # runtime hooks called from instruction_replacements.sci
 i76_frame_tick               std0   -     runtime        # exe | GetTickCount replacement in the per-frame timer sub_49C920 (frame limiter)
 i76shell_part_strncmp        c3     -     runtime        # shell | strncmp replacement in the part lookup of sub_10002130 (gamefixes.c)

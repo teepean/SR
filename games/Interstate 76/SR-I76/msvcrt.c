@@ -1100,6 +1100,54 @@ void CCALL _splitpath_c(const char *path, char *drive, char *dir, char *fname, c
     }
 }
 
+void CCALL _makepath_c(char *path, const char *drive, const char *dir, const char *fname, const char *ext)
+{
+    size_t len;
+
+    path[0] = 0;
+    if ((drive != NULL) && (drive[0] != 0))
+    {
+        path[0] = drive[0];
+        path[1] = ':';
+        path[2] = 0;
+    }
+    if ((dir != NULL) && (dir[0] != 0))
+    {
+        strcat(path, dir);
+        len = strlen(path);
+        if ((path[len - 1] != '\\') && (path[len - 1] != '/')) strcat(path, "\\");
+    }
+    if (fname != NULL) strcat(path, fname);
+    if ((ext != NULL) && (ext[0] != 0))
+    {
+        if (ext[0] != '.') strcat(path, ".");
+        strcat(path, ext);
+    }
+}
+
+// struct _timeb (32-bit MSVC)
+typedef struct {
+    int32_t time;
+    uint16_t millitm;
+    int16_t timezone;
+    int16_t dstflag;
+} ms_timeb;
+
+void CCALL _ftime_c(ms_timeb *tp)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    tp->time = (int32_t) tv.tv_sec;
+    tp->millitm = (uint16_t)(tv.tv_usec / 1000);
+    tp->timezone = 0;
+    tp->dstflag = 0;
+}
+
+int32_t CCALL _strcmpi_c(const char *s1, const char *s2)
+{
+    return strcasecmp(s1, s2);
+}
+
 
 /* ------------------------------------------------------------------ */
 /* process                                                             */

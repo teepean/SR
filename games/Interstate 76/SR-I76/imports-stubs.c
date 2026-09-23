@@ -17,28 +17,6 @@ static void unimplemented(const char *name, int *reported)
 
 uint32_t CCALL CreateProcessA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7, uint32_t a8, uint32_t a9) { static int reported; unimplemented("CreateProcessA", &reported); return 0; }
 uint32_t CCALL CreateThread_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("CreateThread", &reported); return 0; }
-uint32_t CCALL dp_enableDebugPrint_c(uint32_t a0) { static int reported; unimplemented("dp_enableDebugPrint", &reported); return 0; }
-uint32_t CCALL dpAddPlayerToGroup_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("dpAddPlayerToGroup", &reported); return 0; }
-uint32_t CCALL dpClose_c(uint32_t a0) { static int reported; unimplemented("dpClose", &reported); return 0; }
-uint32_t CCALL dpCreate_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("dpCreate", &reported); return 0; }
-uint32_t CCALL dpCreateGroup_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("dpCreateGroup", &reported); return 0; }
-uint32_t CCALL dpCreatePlayer_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("dpCreatePlayer", &reported); return 0; }
-uint32_t CCALL dpDestroy_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("dpDestroy", &reported); return 0; }
-uint32_t CCALL dpDestroyPlayer_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("dpDestroyPlayer", &reported); return 0; }
-uint32_t CCALL dpEnumGroupPlayers_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("dpEnumGroupPlayers", &reported); return 0; }
-uint32_t CCALL dpEnumGroups_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4) { static int reported; unimplemented("dpEnumGroups", &reported); return 0; }
-uint32_t CCALL dpEnumPlayers_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4) { static int reported; unimplemented("dpEnumPlayers", &reported); return 0; }
-uint32_t CCALL dpEnumSessions_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("dpEnumSessions", &reported); return 0; }
-uint32_t CCALL dpFreeze_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("dpFreeze", &reported); return 0; }
-uint32_t CCALL dpEnumTransports_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("dpEnumTransports", &reported); return 0; }
-uint32_t CCALL dpGetPlayerData_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("dpGetPlayerData", &reported); return 0; }
-uint32_t CCALL dpGetPlayerName_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("dpGetPlayerName", &reported); return 0; }
-uint32_t CCALL dpGetSessionDesc_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("dpGetSessionDesc", &reported); return 0; }
-uint32_t CCALL dpOpen_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("dpOpen", &reported); return 0; }
-uint32_t CCALL dpReceive_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("dpReceive", &reported); return 0; }
-uint32_t CCALL dpSend_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("dpSend", &reported); return 0; }
-uint32_t CCALL dpSetGameServer_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("dpSetGameServer", &reported); return 0; }
-uint32_t CCALL dpSetPlayerData_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("dpSetPlayerData", &reported); return 0; }
 uint32_t CCALL GetLocaleInfoA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("GetLocaleInfoA", &reported); return 0; }
 uint32_t CCALL GetLocaleInfoW_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("GetLocaleInfoW", &reported); return 0; }
 uint32_t CCALL GetStringTypeA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4) { static int reported; unimplemented("GetStringTypeA", &reported); return 0; }

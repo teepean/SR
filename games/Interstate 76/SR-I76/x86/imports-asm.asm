@@ -120,28 +120,6 @@ extern DirectDrawEnumerateA_c
 extern DirectSoundCreate_c
 extern DispatchMessageA_c
 extern msvcrt_div_c
-extern dp_enableDebugPrint_c
-extern dpAddPlayerToGroup_c
-extern dpClose_c
-extern dpCreate_c
-extern dpCreateGroup_c
-extern dpCreatePlayer_c
-extern dpDestroy_c
-extern dpDestroyPlayer_c
-extern dpEnumGroupPlayers_c
-extern dpEnumGroups_c
-extern dpEnumPlayers_c
-extern dpEnumSessions_c
-extern dpFreeze_c
-extern dpEnumTransports_c
-extern dpGetPlayerData_c
-extern dpGetPlayerName_c
-extern dpGetSessionDesc_c
-extern dpOpen_c
-extern dpReceive_c
-extern dpSend_c
-extern dpSetGameServer_c
-extern dpSetPlayerData_c
 extern EndDialog_c
 extern EndPaint_c
 extern EnterCriticalSection_c
@@ -341,6 +319,23 @@ extern WideCharToMultiByte_c
 extern WriteFile_c
 extern wsprintfA_c
 extern wvsprintfA_c
+extern ws2_32_WSAStartup_c
+extern ws2_32_WSACleanup_c
+extern ws2_32_WSAGetLastError_c
+extern ws2_32_socket_c
+extern ws2_32_bind_c
+extern ws2_32_closesocket_c
+extern ws2_32_sendto_c
+extern recvfrom_c
+extern setsockopt_c
+extern ws2_32_ioctlsocket_c
+extern ws2_32_htons_c
+extern ws2_32_inet_addr_c
+extern ws2_32_inet_ntoa_c
+extern ws2_32_gethostbyname_c
+extern GlobalAlloc_c
+extern GlobalReAlloc_c
+extern GlobalFree_c
 extern strspn_c
 extern strcspn_c
 extern strncat_c
@@ -349,6 +344,9 @@ extern memcpy_c
 extern printf_c
 extern ungetc_c
 extern _filbuf_c
+extern _makepath_c
+extern _ftime_c
+extern _strcmpi_c
 extern i76_frame_tick_c
 extern i76shell_part_strncmp_c
 
@@ -470,28 +468,6 @@ global DirectDrawEnumerateA_asm2c
 global DirectSoundCreate_asm2c
 global DispatchMessageA_asm2c
 global msvcrt_div_asm2c
-global dp_enableDebugPrint_asm2c
-global dpAddPlayerToGroup_asm2c
-global dpClose_asm2c
-global dpCreate_asm2c
-global dpCreateGroup_asm2c
-global dpCreatePlayer_asm2c
-global dpDestroy_asm2c
-global dpDestroyPlayer_asm2c
-global dpEnumGroupPlayers_asm2c
-global dpEnumGroups_asm2c
-global dpEnumPlayers_asm2c
-global dpEnumSessions_asm2c
-global dpFreeze_asm2c
-global dpEnumTransports_asm2c
-global dpGetPlayerData_asm2c
-global dpGetPlayerName_asm2c
-global dpGetSessionDesc_asm2c
-global dpOpen_asm2c
-global dpReceive_asm2c
-global dpSend_asm2c
-global dpSetGameServer_asm2c
-global dpSetPlayerData_asm2c
 global EndDialog_asm2c
 global EndPaint_asm2c
 global EnterCriticalSection_asm2c
@@ -691,6 +667,23 @@ global WideCharToMultiByte_asm2c
 global WriteFile_asm2c
 global wsprintfA_asm2c
 global wvsprintfA_asm2c
+global ws2_32_WSAStartup_asm2c
+global ws2_32_WSACleanup_asm2c
+global ws2_32_WSAGetLastError_asm2c
+global ws2_32_socket_asm2c
+global ws2_32_bind_asm2c
+global ws2_32_closesocket_asm2c
+global ws2_32_sendto_asm2c
+global recvfrom_asm2c
+global setsockopt_asm2c
+global ws2_32_ioctlsocket_asm2c
+global ws2_32_htons_asm2c
+global ws2_32_inet_addr_asm2c
+global ws2_32_inet_ntoa_asm2c
+global ws2_32_gethostbyname_asm2c
+global GlobalAlloc_asm2c
+global GlobalReAlloc_asm2c
+global GlobalFree_asm2c
 global strspn_asm2c
 global strcspn_asm2c
 global strncat_asm2c
@@ -699,6 +692,9 @@ global memcpy_asm2c
 global printf_asm2c
 global ungetc_asm2c
 global _filbuf_asm2c
+global _makepath_asm2c
+global _ftime_asm2c
+global _strcmpi_asm2c
 global i76_frame_tick_asm2c
 global i76shell_part_strncmp_asm2c
 
@@ -1298,116 +1294,6 @@ align 16
 msvcrt_div_asm2c:
 ; msvcrt_div (c2, MSVCRT.dll)
         Call_Asm_Stack2 msvcrt_div_c
-
-align 16
-dp_enableDebugPrint_asm2c:
-; dp_enableDebugPrint (c1, anetdll.dll)
-        Call_Asm_Stack1 dp_enableDebugPrint_c
-
-align 16
-dpAddPlayerToGroup_asm2c:
-; dpAddPlayerToGroup (c3, anetdll.dll)
-        Call_Asm_Stack3 dpAddPlayerToGroup_c
-
-align 16
-dpClose_asm2c:
-; dpClose (c1, anetdll.dll)
-        Call_Asm_Stack1 dpClose_c
-
-align 16
-dpCreate_asm2c:
-; dpCreate (c4, anetdll.dll)
-        Call_Asm_Stack4 dpCreate_c
-
-align 16
-dpCreateGroup_asm2c:
-; dpCreateGroup (c3, anetdll.dll)
-        Call_Asm_Stack3 dpCreateGroup_c
-
-align 16
-dpCreatePlayer_asm2c:
-; dpCreatePlayer (c4, anetdll.dll)
-        Call_Asm_Stack4 dpCreatePlayer_c
-
-align 16
-dpDestroy_asm2c:
-; dpDestroy (c2, anetdll.dll)
-        Call_Asm_Stack2 dpDestroy_c
-
-align 16
-dpDestroyPlayer_asm2c:
-; dpDestroyPlayer (c2, anetdll.dll)
-        Call_Asm_Stack2 dpDestroyPlayer_c
-
-align 16
-dpEnumGroupPlayers_asm2c:
-; dpEnumGroupPlayers (c6, anetdll.dll)
-        Call_Asm_Stack6 dpEnumGroupPlayers_c
-
-align 16
-dpEnumGroups_asm2c:
-; dpEnumGroups (c5, anetdll.dll)
-        Call_Asm_Stack5 dpEnumGroups_c
-
-align 16
-dpEnumPlayers_asm2c:
-; dpEnumPlayers (c5, anetdll.dll)
-        Call_Asm_Stack5 dpEnumPlayers_c
-
-align 16
-dpEnumSessions_asm2c:
-; dpEnumSessions (c6, anetdll.dll)
-        Call_Asm_Stack6 dpEnumSessions_c
-
-align 16
-dpFreeze_asm2c:
-; dpFreeze (c2, anetdll.dll)
-        Call_Asm_Stack2 dpFreeze_c
-
-align 16
-dpEnumTransports_asm2c:
-; dpEnumTransports (c3, anetdll.dll)
-        Call_Asm_Stack3 dpEnumTransports_c
-
-align 16
-dpGetPlayerData_asm2c:
-; dpGetPlayerData (c6, anetdll.dll)
-        Call_Asm_Stack6 dpGetPlayerData_c
-
-align 16
-dpGetPlayerName_asm2c:
-; dpGetPlayerName (c4, anetdll.dll)
-        Call_Asm_Stack4 dpGetPlayerName_c
-
-align 16
-dpGetSessionDesc_asm2c:
-; dpGetSessionDesc (c3, anetdll.dll)
-        Call_Asm_Stack3 dpGetSessionDesc_c
-
-align 16
-dpOpen_asm2c:
-; dpOpen (c4, anetdll.dll)
-        Call_Asm_Stack4 dpOpen_c
-
-align 16
-dpReceive_asm2c:
-; dpReceive (c6, anetdll.dll)
-        Call_Asm_Stack6 dpReceive_c
-
-align 16
-dpSend_asm2c:
-; dpSend (c6, anetdll.dll)
-        Call_Asm_Stack6 dpSend_c
-
-align 16
-dpSetGameServer_asm2c:
-; dpSetGameServer (c2, anetdll.dll)
-        Call_Asm_Stack2 dpSetGameServer_c
-
-align 16
-dpSetPlayerData_asm2c:
-; dpSetPlayerData (c6, anetdll.dll)
-        Call_Asm_Stack6 dpSetPlayerData_c
 
 align 16
 EndDialog_asm2c:
@@ -2405,6 +2291,91 @@ wvsprintfA_asm2c:
         Call_Asm_Stack3 wvsprintfA_c, 3
 
 align 16
+ws2_32_WSAStartup_asm2c:
+; ws2_32.WSAStartup (std2, WSOCK32.dll)
+        Call_Asm_Stack2 ws2_32_WSAStartup_c, 2
+
+align 16
+ws2_32_WSACleanup_asm2c:
+; ws2_32.WSACleanup (std0, WSOCK32.dll)
+        Call_Asm_Stack0 ws2_32_WSACleanup_c, 0
+
+align 16
+ws2_32_WSAGetLastError_asm2c:
+; ws2_32.WSAGetLastError (std0, WSOCK32.dll)
+        Call_Asm_Stack0 ws2_32_WSAGetLastError_c, 0
+
+align 16
+ws2_32_socket_asm2c:
+; ws2_32.socket (std3, WSOCK32.dll)
+        Call_Asm_Stack3 ws2_32_socket_c, 3
+
+align 16
+ws2_32_bind_asm2c:
+; ws2_32.bind (std3, WSOCK32.dll)
+        Call_Asm_Stack3 ws2_32_bind_c, 3
+
+align 16
+ws2_32_closesocket_asm2c:
+; ws2_32.closesocket (std1, WSOCK32.dll)
+        Call_Asm_Stack1 ws2_32_closesocket_c, 1
+
+align 16
+ws2_32_sendto_asm2c:
+; ws2_32.sendto (std6, WSOCK32.dll)
+        Call_Asm_Stack6 ws2_32_sendto_c, 6
+
+align 16
+recvfrom_asm2c:
+; recvfrom (std6, WSOCK32.dll)
+        Call_Asm_Stack6 recvfrom_c, 6
+
+align 16
+setsockopt_asm2c:
+; setsockopt (std5, WSOCK32.dll)
+        Call_Asm_Stack5 setsockopt_c, 5
+
+align 16
+ws2_32_ioctlsocket_asm2c:
+; ws2_32.ioctlsocket (std3, WSOCK32.dll)
+        Call_Asm_Stack3 ws2_32_ioctlsocket_c, 3
+
+align 16
+ws2_32_htons_asm2c:
+; ws2_32.htons (std1, WSOCK32.dll)
+        Call_Asm_Stack1 ws2_32_htons_c, 1
+
+align 16
+ws2_32_inet_addr_asm2c:
+; ws2_32.inet_addr (std1, WSOCK32.dll)
+        Call_Asm_Stack1 ws2_32_inet_addr_c, 1
+
+align 16
+ws2_32_inet_ntoa_asm2c:
+; ws2_32.inet_ntoa (std1, WSOCK32.dll)
+        Call_Asm_Stack1 ws2_32_inet_ntoa_c, 1
+
+align 16
+ws2_32_gethostbyname_asm2c:
+; ws2_32.gethostbyname (std1, WSOCK32.dll)
+        Call_Asm_Stack1 ws2_32_gethostbyname_c, 1
+
+align 16
+GlobalAlloc_asm2c:
+; GlobalAlloc (std2, KERNEL32.dll)
+        Call_Asm_Stack2 GlobalAlloc_c, 2
+
+align 16
+GlobalReAlloc_asm2c:
+; GlobalReAlloc (std3, KERNEL32.dll)
+        Call_Asm_Stack3 GlobalReAlloc_c, 3
+
+align 16
+GlobalFree_asm2c:
+; GlobalFree (std1, KERNEL32.dll)
+        Call_Asm_Stack1 GlobalFree_c, 1
+
+align 16
 strspn_asm2c:
 ; strspn (c2, static)
         Call_Asm_Stack2 strspn_c
@@ -2443,6 +2414,21 @@ align 16
 _filbuf_asm2c:
 ; _filbuf (c1, static)
         Call_Asm_Stack1 _filbuf_c
+
+align 16
+_makepath_asm2c:
+; _makepath (c5, static)
+        Call_Asm_Stack5 _makepath_c
+
+align 16
+_ftime_asm2c:
+; _ftime (c1, static)
+        Call_Asm_Stack1 _ftime_c
+
+align 16
+_strcmpi_asm2c:
+; _strcmpi (c2, static)
+        Call_Asm_Stack2 _strcmpi_c
 
 align 16
 i76_frame_tick_asm2c:

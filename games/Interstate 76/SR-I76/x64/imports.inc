@@ -250,50 +250,6 @@ extern DispatchMessageA_asm2c
 %define DispatchMessageA DispatchMessageA_asm2c
 extern msvcrt_div_asm2c
 %define msvcrt_div msvcrt_div_asm2c
-extern dp_enableDebugPrint_asm2c
-%define dp_enableDebugPrint dp_enableDebugPrint_asm2c
-extern dpAddPlayerToGroup_asm2c
-%define dpAddPlayerToGroup dpAddPlayerToGroup_asm2c
-extern dpClose_asm2c
-%define dpClose dpClose_asm2c
-extern dpCreate_asm2c
-%define dpCreate dpCreate_asm2c
-extern dpCreateGroup_asm2c
-%define dpCreateGroup dpCreateGroup_asm2c
-extern dpCreatePlayer_asm2c
-%define dpCreatePlayer dpCreatePlayer_asm2c
-extern dpDestroy_asm2c
-%define dpDestroy dpDestroy_asm2c
-extern dpDestroyPlayer_asm2c
-%define dpDestroyPlayer dpDestroyPlayer_asm2c
-extern dpEnumGroupPlayers_asm2c
-%define dpEnumGroupPlayers dpEnumGroupPlayers_asm2c
-extern dpEnumGroups_asm2c
-%define dpEnumGroups dpEnumGroups_asm2c
-extern dpEnumPlayers_asm2c
-%define dpEnumPlayers dpEnumPlayers_asm2c
-extern dpEnumSessions_asm2c
-%define dpEnumSessions dpEnumSessions_asm2c
-extern dpFreeze_asm2c
-%define dpFreeze dpFreeze_asm2c
-extern dpEnumTransports_asm2c
-%define dpEnumTransports dpEnumTransports_asm2c
-extern dpGetPlayerData_asm2c
-%define dpGetPlayerData dpGetPlayerData_asm2c
-extern dpGetPlayerName_asm2c
-%define dpGetPlayerName dpGetPlayerName_asm2c
-extern dpGetSessionDesc_asm2c
-%define dpGetSessionDesc dpGetSessionDesc_asm2c
-extern dpOpen_asm2c
-%define dpOpen dpOpen_asm2c
-extern dpReceive_asm2c
-%define dpReceive dpReceive_asm2c
-extern dpSend_asm2c
-%define dpSend dpSend_asm2c
-extern dpSetGameServer_asm2c
-%define dpSetGameServer dpSetGameServer_asm2c
-extern dpSetPlayerData_asm2c
-%define dpSetPlayerData dpSetPlayerData_asm2c
 extern EndDialog_asm2c
 %define EndDialog EndDialog_asm2c
 extern EndPaint_asm2c
@@ -692,6 +648,40 @@ extern wsprintfA_asm2c
 %define wsprintfA wsprintfA_asm2c
 extern wvsprintfA_asm2c
 %define wvsprintfA wvsprintfA_asm2c
+extern ws2_32_WSAStartup_asm2c
+%define ws2_32.WSAStartup ws2_32_WSAStartup_asm2c
+extern ws2_32_WSACleanup_asm2c
+%define ws2_32.WSACleanup ws2_32_WSACleanup_asm2c
+extern ws2_32_WSAGetLastError_asm2c
+%define ws2_32.WSAGetLastError ws2_32_WSAGetLastError_asm2c
+extern ws2_32_socket_asm2c
+%define ws2_32.socket ws2_32_socket_asm2c
+extern ws2_32_bind_asm2c
+%define ws2_32.bind ws2_32_bind_asm2c
+extern ws2_32_closesocket_asm2c
+%define ws2_32.closesocket ws2_32_closesocket_asm2c
+extern ws2_32_sendto_asm2c
+%define ws2_32.sendto ws2_32_sendto_asm2c
+extern recvfrom_asm2c
+%define recvfrom recvfrom_asm2c
+extern setsockopt_asm2c
+%define setsockopt setsockopt_asm2c
+extern ws2_32_ioctlsocket_asm2c
+%define ws2_32.ioctlsocket ws2_32_ioctlsocket_asm2c
+extern ws2_32_htons_asm2c
+%define ws2_32.htons ws2_32_htons_asm2c
+extern ws2_32_inet_addr_asm2c
+%define ws2_32.inet_addr ws2_32_inet_addr_asm2c
+extern ws2_32_inet_ntoa_asm2c
+%define ws2_32.inet_ntoa ws2_32_inet_ntoa_asm2c
+extern ws2_32_gethostbyname_asm2c
+%define ws2_32.gethostbyname ws2_32_gethostbyname_asm2c
+extern GlobalAlloc_asm2c
+%define GlobalAlloc GlobalAlloc_asm2c
+extern GlobalReAlloc_asm2c
+%define GlobalReAlloc GlobalReAlloc_asm2c
+extern GlobalFree_asm2c
+%define GlobalFree GlobalFree_asm2c
 extern strspn_asm2c
 %define strspn strspn_asm2c
 extern strcspn_asm2c
@@ -708,6 +698,12 @@ extern ungetc_asm2c
 %define ungetc ungetc_asm2c
 extern _filbuf_asm2c
 %define _filbuf _filbuf_asm2c
+extern _makepath_asm2c
+%define _makepath _makepath_asm2c
+extern _ftime_asm2c
+%define _ftime _ftime_asm2c
+extern _strcmpi_asm2c
+%define _strcmpi _strcmpi_asm2c
 extern i76_frame_tick_asm2c
 %define i76_frame_tick i76_frame_tick_asm2c
 extern i76shell_part_strncmp_asm2c

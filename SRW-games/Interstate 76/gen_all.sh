@@ -35,6 +35,7 @@ gen() {
     mkdir "$dir"
     cp "$SRWBIN" "$dir/SRW.exe"
     cp "$GAME/$orig" "$HERE/$sub/SR.cfg" "$HERE/$sub/compact_source.py" "$dir/"
+    orig="$(basename "$orig")"
     for f in "$@"; do cp "$HERE/$sub/$f" "$dir/"; done
     for f in "$HERE/$sub/$ARCH/"*.sci; do [ -e "$f" ] && cp "$f" "$dir/"; done
     (cd "$dir" && ./SRW.exe "$orig" "$mod.asm" > srw.out 2> srw.err; echo "$mod: SRW rc=$?"; grep -E "^Error" srw.err; python3 compact_source.py; python3 "$HERE/fix_import_names.py" "$mod.asm" seg*.inc)
@@ -53,3 +54,5 @@ gen SRW          i76.exe      i76      relocations.csv bssborder.csv
 gen SRW-i76shell i76shell.dll i76shell
 gen SRW-zglide   ZGLIDE.DLL   zglide
 gen SRW-strlkup  STRLKUP.DLL  strlkup
+gen SRW-anetdll  ANETDLL.DLL  anetdll
+gen SRW-winet    DLL/WINET.DLL winet

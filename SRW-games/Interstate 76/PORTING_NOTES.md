@@ -475,3 +475,32 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   reads and frame dumps. Shaders compiled at startup with D3DCompile (d3dcompiler_47.dll, loaded dynamically).
 - Verified under Wine (wined3d): menus and mission 12 -> 13 look the same as with OpenGL; fallback tested
   with WINEDLLOVERRIDES="d3dcompiler_47=d".
+
+### 2026-09-23 — multiplayer, step 1: recompiled ANETDLL.DLL + DLL\WINET.DLL
+- The GOG install ships Activision's Anet (Activenet, Mar 1997): ANETDLL.DLL (dp* API, loads transports from DLL\
+  by name: commInit/commTxPkt/... 17 exports) and DLL\WINET.DLL (TCP/IP: UDP via WSOCK32), WIPX/WMODEM/WSERIAL.
+  Anet was later released as LGPL (anet-0.10, kegel.com/anet) - useful reference for the protocol.
+- Both DLLs are recompiled like strlkup/zglide (new SRW-anetdll, SRW-winet: IDA export, gen_code_fixups,
+  external_procedures for the statically linked CRT, gen_ignored); the game's 22 dp* imports are `module`
+  imports now; WINET.DLL is in the LoadLibrary module table; DllMains aren't needed (attach counter;
+  WSAStartup). New imports: GlobalAlloc/ReAlloc/Free (process heap), _makepath, _ftime, _strcmpi.
+  The shell references dpFreeze only from data (dead code) -> `extern dpFreeze` in x86|x64/i76shell/extern.inc.
+- SRW changes: WSOCK32 ordinals 11 (inet_ntoa) and 116 (WSACleanup); upstream bug in the x64 and llasm
+  translators: when both operands of an instruction carry the same relocated value (`mov dword [X], X`), the
+  one's-complement disambiguation flipped the whole value (~value) instead of (value - tofs) + ~tofs like
+  SR_full_dos.c -> "fixup operand mismatch" (WINET's ___initstdio).
+- Winsock: winsock.c (14 WSOCK32 functions, 32-bit layouts, Winsock error codes) over hostnet.c (BSD sockets /
+  Winsock 2; SIO_UDP_CONNRESET off on Windows). WINET learns its own address by broadcasting to its port and
+  waiting for the packet; Linux (here: probably the firewall) doesn't deliver own broadcasts, Windows does ->
+  own broadcasts are queued locally (sender = hn_local_ip()), host-delivered copies are dropped.
+  SR-I76.cfg net_bind_ip (I76_NET_BIND_IP) binds to one local address: two instances on one machine with
+  127.0.0.1 / 127.0.0.2 (UDP port 21155).
+- Game UI: MELEE -> MULTI MELEE -> HOST/JOIN -> INTERNET (WINET) -> "Connect to server" list (internet.lst:
+  u32 count + 96-byte entries name[32] address[64]). Players today use the host's IP as the "server" (Tunngle
+  era); LAN play used IPX (IPXWrapper); OTHER = "maybe in the next version". The server list entry 127.0.0.1
+  makes the host its own game server.
+- Status: host (127.0.0.1) -> BROADCAST GAME -> the host is in the arena; the joiner (127.0.0.2) sees the
+  session "The Crater (1/4)", joins (anet traffic both ways), then crashes: it elects itself master
+  (sub_454E40: lowest player id among players with a measured ping; the host's ping is still -1.0) and spawns
+  locally (sub_456100 -> sub_451030: rand() % spawn point count = 0, no arena loaded) -> SIGFPE. Next: the
+  game's ping exchange / why the joiner hasn't measured the host yet (timing, lost packets?).
