@@ -85,27 +85,33 @@ void joystick_startup(void)
     subsystem_ok = 1;
 }
 
-static void init_joysticks(void)
+static int eligible(int index)
+{
+    return (getenv("I76_VIRTUAL_JOYSTICK") == NULL) || SDL_JoystickIsVirtual(index);
+}
+
+static void close_devices(void)
+{
+    int i;
+    for (i = 0; i < num_devices; i++)
+    {
+        if (devices[i].controller != NULL) SDL_GameControllerClose(devices[i].controller);
+        else if (devices[i].joystick != NULL) SDL_JoystickClose(devices[i].joystick);
+    }
+    memset(devices, 0, sizeof(devices));
+    num_devices = 0;
+}
+
+static void open_devices(void)
 {
     int i, n;
 
-    if (initialized) return;
-    initialized = 1;
-    if (!subsystem_ok) return;
-    SDL_PumpEvents();
-
-    // debugging without hardware: a virtual game controller
-    if (getenv("I76_VIRTUAL_JOYSTICK") != NULL)
-    {
-        int vi = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
-        if (vi < 0) eprintf("joystick: can't attach a virtual joystick: %s\n", SDL_GetError());
-    }
-
+    close_devices();
     n = SDL_NumJoysticks();
     for (i = 0; (i < n) && (num_devices < MAX_DEVICES); i++)
     {
         device *d = &devices[num_devices];
-        if ((getenv("I76_VIRTUAL_JOYSTICK") != NULL) && !SDL_JoystickIsVirtual(i)) continue;
+        if (!eligible(i)) continue;
         if (SDL_IsGameController(i))
         {
             d->controller = SDL_GameControllerOpen(i);
@@ -133,6 +139,52 @@ static void init_joysticks(void)
     if (winapi_debug) eprintf("joystick: %d device(s)\n", num_devices);
 }
 
+static void init_joysticks(void)
+{
+    if (initialized) return;
+    initialized = 1;
+    if (!subsystem_ok) return;
+    SDL_PumpEvents();
+
+    // debugging without hardware: a virtual game controller
+    if (getenv("I76_VIRTUAL_JOYSTICK") != NULL)
+    {
+        int vi = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
+        if (vi < 0) eprintf("joystick: can't attach a virtual joystick: %s\n", SDL_GetError());
+    }
+    open_devices();
+}
+
+// hotplug: SDL can replace a device (e.g. on Linux a controller first opened through evdev is taken over by
+// the HIDAPI driver: the first handle is detached and keeps stale values), so the devices are reopened when
+// the list changes or a handle is detached
+static void check_devices(void)
+{
+    static uint32_t last;
+    uint32_t now;
+    int i, n, eligible_count = 0, stale = 0;
+
+    init_joysticks();
+    if (!subsystem_ok) return;
+    now = SDL_GetTicks();
+    if (now - last < 500) return;
+    last = now;
+
+    SDL_PumpEvents();
+    n = SDL_NumJoysticks();
+    for (i = 0; i < n; i++) if (eligible(i)) eligible_count++;
+    if (eligible_count > MAX_DEVICES) eligible_count = MAX_DEVICES;
+    for (i = 0; i < num_devices; i++)
+    {
+        if ((devices[i].joystick == NULL) || !SDL_JoystickGetAttached(devices[i].joystick)) stale = 1;
+    }
+    if (stale || (eligible_count != num_devices))
+    {
+        if (winapi_debug) eprintf("joystick: device list changed, reopening\n");
+        open_devices();
+    }
+}
+
 static const char *device_name(const device *d)
 {
     const char *name = d->controller ? SDL_GameControllerName(d->controller) : SDL_JoystickName(d->joystick);
@@ -141,7 +193,7 @@ static const char *device_name(const device *d)
 
 uint32_t CCALL joyGetNumDevs_c(void)
 {
-    init_joysticks();
+    check_devices();
     return num_devices;
 }
 
@@ -149,7 +201,7 @@ uint32_t CCALL joyGetDevCapsA_c(uint32_t uJoyID, joycaps_a *pjc, uint32_t cbjc)
 {
     device *d;
 
-    init_joysticks();
+    check_devices();
     if (winapi_debug >= 2) eprintf("joyGetDevCapsA: %u\n", uJoyID);
     if ((pjc == NULL) || (cbjc < sizeof(joycaps_a))) return MMSYSERR_INVALPARAM;
     if (uJoyID >= (uint32_t)num_devices) return JOYERR_PARMS;
@@ -265,7 +317,7 @@ uint32_t CCALL joyGetPosEx_c(uint32_t uJoyID, joyinfoex *pji)
 {
     uint32_t size, flags;
 
-    init_joysticks();
+    check_devices();
     if (pji == NULL) return MMSYSERR_INVALPARAM;
     if (uJoyID >= (uint32_t)num_devices) return JOYERR_PARMS;
     if (!SDL_JoystickGetAttached(devices[uJoyID].joystick)) return JOYERR_UNPLUGGED;
@@ -317,6 +369,15 @@ uint32_t CCALL joyGetPos_c(uint32_t uJoyID, joyinfo *pji)
 void joystick_script(const char *cmd, int a, int b)
 {
     init_joysticks();
+    if (0 == strcmp(cmd, "jreattach"))
+    {
+        // simulates a driver switch: the virtual device is detached and a new one attached
+        int i, n = SDL_NumJoysticks();
+        for (i = n - 1; i >= 0; i--) if (SDL_JoystickIsVirtual(i)) SDL_JoystickDetachVirtual(i);
+        SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, SDL_CONTROLLER_AXIS_MAX, SDL_CONTROLLER_BUTTON_MAX, 0);
+        SDL_PumpEvents();
+        return;
+    }
     if ((num_devices == 0) || (devices[0].joystick == NULL)) return;
     if (0 == strcmp(cmd, "jbutton")) SDL_JoystickSetVirtualButton(devices[0].joystick, a, (Uint8)b);
     else if (0 == strcmp(cmd, "jaxis")) SDL_JoystickSetVirtualAxis(devices[0].joystick, a, (Sint16)b);

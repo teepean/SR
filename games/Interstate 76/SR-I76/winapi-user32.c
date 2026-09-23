@@ -563,7 +563,7 @@ static void run_script(void)
         else if (0 == strcmp(e->cmd, "up")) script_mouse(e->a, e->b, e->c, 0);
         else if (0 == strcmp(e->cmd, "click")) { script_mouse(e->a, e->b, e->c, 1); script_mouse(e->a, e->b, e->c, 0); }
         else if (0 == strcmp(e->cmd, "quit")) { eprintf("input script: quit\n"); app_exit(0); }
-        else if ((0 == strcmp(e->cmd, "jbutton")) || (0 == strcmp(e->cmd, "jaxis"))) joystick_script(e->cmd, e->a, e->b);
+        else if ((0 == strcmp(e->cmd, "jbutton")) || (0 == strcmp(e->cmd, "jaxis")) || (0 == strcmp(e->cmd, "jreattach"))) joystick_script(e->cmd, e->a, e->b);
         else if (0 == strcmp(e->cmd, "mflood"))
         {
             // many mouse motion messages at once, like a high-rate mouse (tests message coalescing)

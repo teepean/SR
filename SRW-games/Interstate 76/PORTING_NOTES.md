@@ -319,3 +319,7 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   `jaxis N value`, `jbutton N 0|1` drive it. Verified with gdb on sub_450870 (the game's joystick read): stick up
   -> axis0 = -65532, stick right -> axis1 = +65532, buttons pass through. With a joystick present the game
   binds "joystick1" to Accelerate/Brake/Steer Left/Steer Right by default (Control Configuration).
+- Real Xbox controller didn't work: values frozen at their first reading and the device later "unplugged".
+  Likely SDL replacing the device (evdev -> HIDAPI driver switch). joystick.c now reopens the devices when the
+  eligible device count changes or a handle is detached (checked at most every 500 ms from joyGetNumDevs/
+  joyGetDevCapsA/joyGetPosEx). Script command `jreattach` simulates it with the virtual controller.
