@@ -8,6 +8,7 @@
 #define _MSVCRT_H_INCLUDED_
 
 #include <stdint.h>
+#include "ptr32.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,14 +17,14 @@ extern "C" {
 // FILE structure of MSVCRT (32 bytes) - the recompiled code may access it directly
 // (inline getc/putc macros, feof/ferror macros)
 typedef struct {
-    char *_ptr;
+    PTR32(char) _ptr;
     int32_t _cnt;
-    char *_base;
+    PTR32(char) _base;
     int32_t _flag;
     int32_t _file;
     int32_t _charbuf;
     int32_t _bufsiz;
-    char *_tmpfname;
+    PTR32(char) _tmpfname;
 } ms_FILE;
 
 void msvcrt_init(void);

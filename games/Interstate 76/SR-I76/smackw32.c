@@ -21,6 +21,8 @@
 #include "winapi.h"
 #include "winapi-gdi32.h"
 #include "mixer.h"
+#include "ptr32.h"
+#include "Game-Memory.h"
 
 EXTERN_C_BEGIN
 
@@ -94,7 +96,7 @@ typedef struct {
     uint32_t forceredraw;       // 1084
     uint32_t didapalette;       // 1088
     uint32_t reserved2;         // 1092
-    uint8_t *Buffer;            // 1096
+    PTR32(uint8_t) Buffer;      // 1096
     uint32_t reserved3[16];
 } rad_smackbuf;
 
@@ -272,14 +274,14 @@ rad_smack * CCALL SmackOpen_c(const char *name, uint32_t flags, uint32_t extrabu
     f = fopen(path, "rb");
     if (f == NULL) return NULL;
 
-    s = (rad_smack *) calloc(1, sizeof(rad_smack));
+    s = (rad_smack *) x86_calloc(1, sizeof(rad_smack));
     s->file = f;
     s->decoder = SmackOpen(f);
     if (s->decoder == NULL)
     {
         eprintf("SmackOpen: %s: error %d\n", path, SmackError());
         fclose(f);
-        free(s);
+        x86_free(s);
         return NULL;
     }
     smk_audio_open(s);
@@ -289,7 +291,7 @@ rad_smack * CCALL SmackOpen_c(const char *name, uint32_t flags, uint32_t extrabu
         smk_audio_close(s);
         SmackClose(s->decoder);
         fclose(f);
-        free(s);
+        x86_free(s);
         return NULL;
     }
 
@@ -320,7 +322,7 @@ void CCALL SmackClose_c(rad_smack *s)
     SmackDeallocateFrame(s->frame);
     SmackClose(s->decoder);
     fclose(s->file);
-    free(s);
+    x86_free(s);
 }
 
 void CCALL SmackToBuffer_c(rad_smack *s, uint32_t left, uint32_t top, uint32_t pitch, uint32_t destheight, void *buf, uint32_t flags)
@@ -416,7 +418,7 @@ rad_smackbuf * CCALL SmackBufferOpen_c(void *hwnd, uint32_t BlitType, uint32_t w
 {
     rad_smackbuf *b;
 
-    b = (rad_smackbuf *) calloc(1, sizeof(rad_smackbuf));
+    b = (rad_smackbuf *) x86_calloc(1, sizeof(rad_smackbuf));
     b->BlitType = BlitType;
     b->Width = width;
     b->Height = height;
@@ -424,7 +426,7 @@ rad_smackbuf * CCALL SmackBufferOpen_c(void *hwnd, uint32_t BlitType, uint32_t w
     b->PalColorsInUse = 256;
     b->StartPalColor = 0;
     b->EndPalColor = 255;
-    b->Buffer = (uint8_t *) calloc(1, (size_t)width * height);
+    b->Buffer = (uint8_t *) x86_calloc(1, (size_t)width * height);
     if (winapi_debug) eprintf("SmackBufferOpen: %ux%u blit type %u\n", width, height, BlitType);
     return b;
 }
@@ -432,8 +434,8 @@ rad_smackbuf * CCALL SmackBufferOpen_c(void *hwnd, uint32_t BlitType, uint32_t w
 void CCALL SmackBufferClose_c(rad_smackbuf *b)
 {
     if (b == NULL) return;
-    free(b->Buffer);
-    free(b);
+    x86_free(b->Buffer);
+    x86_free(b);
 }
 
 void CCALL SmackBufferNewPalette_c(rad_smackbuf *b, const uint8_t *pal, uint32_t paltype)

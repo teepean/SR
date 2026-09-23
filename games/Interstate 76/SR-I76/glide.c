@@ -19,6 +19,8 @@
 #include "winapi.h"
 #include "render.h"
 #include "display.h"
+#include "ptr32.h"
+#include "Game-Memory.h"
 
 EXTERN_C_BEGIN
 
@@ -48,12 +50,12 @@ typedef struct {
     int32_t largeLod;
     int32_t aspectRatio;
     int32_t format;
-    void *data;
+    PTR32(void) data;
 } GrTexInfo;
 
 typedef struct {
     int32_t size;
-    void *lfbPtr;
+    PTR32(void) lfbPtr;
     uint32_t strideInBytes;
     int32_t writeMode;
     int32_t origin;
@@ -402,7 +404,8 @@ static void begin_primitive(int primitive)
 void CCALL grGlideInit_c(void)
 {
     if (tmu_mem == NULL) tmu_mem = (uint8_t *)calloc(1, TMU_MEMORY + TMU_SLACK);
-    if (lfb == NULL) lfb = (uint16_t *)malloc(LFB_STRIDE_PIXELS * 1024 * 2);
+    // the game writes to the LFB buffer: low memory
+    if (lfb == NULL) lfb = (uint16_t *)x86_malloc(LFB_STRIDE_PIXELS * 1024 * 2);
     if (lfb_orig == NULL) lfb_orig = (uint16_t *)malloc(LFB_STRIDE_PIXELS * 1024 * 2);
     memset(&gs, 0, sizeof(gs));
     gs.rgb_src = 4; gs.rgb_dst = 0; gs.alpha_src = 4; gs.alpha_dst = 0;    // ONE, ZERO

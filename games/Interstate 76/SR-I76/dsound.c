@@ -18,6 +18,8 @@
 #include "platform.h"
 #include "winapi.h"
 #include "mixer.h"
+#include "ptr32.h"
+#include "Game-Memory.h"
 
 EXTERN_C_BEGIN
 
@@ -68,7 +70,7 @@ typedef struct {
     uint32_t dwFlags;
     uint32_t dwBufferBytes;
     uint32_t dwReserved;
-    wave_format *lpwfxFormat;
+    PTR32(wave_format) lpwfxFormat;
 } ds_buffer_desc;
 #pragma pack(pop)
 
@@ -83,19 +85,19 @@ typedef struct ds_data {
 struct ds_buffer;
 
 typedef struct {
-    void *lpVtbl;
+    PTR32(void) lpVtbl;
     struct ds_buffer *owner;
 } ds_3dbuffer;
 
 typedef struct {
-    void *lpVtbl;
+    PTR32(void) lpVtbl;
     struct ds_buffer *owner;    // primary buffer
     vec3 position, velocity, front, top;
     float distance_factor, rolloff_factor, doppler_factor;
 } ds_listener;
 
 typedef struct ds_buffer {
-    void *lpVtbl;
+    PTR32(void) lpVtbl;
     uint32_t refs;
     ds_3dbuffer i3d;
     ds_listener listener;
@@ -124,7 +126,7 @@ typedef struct ds_buffer {
 } ds_buffer;
 
 typedef struct ds_device {
-    void *lpVtbl;
+    PTR32(void) lpVtbl;
     uint32_t refs;
     ds_buffer *primary;
     ds_buffer *buffers;
@@ -308,7 +310,7 @@ static void ds_mix(mixer_source *source, float *out, int frames)
 /* ------------------------------------------------------------------ */
 /* IDirectSound                                                        */
 
-uint32_t CCALL DirectSoundCreate_c(void *lpGuid, ds_device **ppDS, void *pUnkOuter)
+uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(ds_device) *ppDS, void *pUnkOuter)
 {
     ds_device *dev;
 
@@ -321,7 +323,7 @@ uint32_t CCALL DirectSoundCreate_c(void *lpGuid, ds_device **ppDS, void *pUnkOut
         return DSERR_NODRIVER;
     }
 
-    dev = (ds_device *)calloc(1, sizeof(ds_device));
+    dev = (ds_device *)x86_calloc(1, sizeof(ds_device));
     if (dev == NULL) return DSERR_OUTOFMEMORY;
     dev->lpVtbl = &IDirectSoundVtbl_asm2c;
     dev->refs = 1;
@@ -335,7 +337,7 @@ uint32_t CCALL DirectSoundCreate_c(void *lpGuid, ds_device **ppDS, void *pUnkOut
     return DS_OK;
 }
 
-uint32_t CCALL IDirectSound_QueryInterface_c(ds_device *lpThis, uint32_t *riid, void **ppvObj)
+uint32_t CCALL IDirectSound_QueryInterface_c(ds_device *lpThis, uint32_t *riid, PTR32(void) *ppvObj)
 {
     if (ppvObj != NULL) *ppvObj = NULL;
     if (winapi_debug) eprintf("IDirectSound::QueryInterface %08x (not supported)\n", (riid != NULL) ? riid[0] : 0);
@@ -358,7 +360,7 @@ uint32_t CCALL IDirectSound_Release_c(ds_device *lpThis)
     while (lpThis->buffers != NULL) release_buffer_now(lpThis->buffers);
     if (the_device == lpThis) the_device = NULL;
     lpThis->lpVtbl = NULL;
-    free(lpThis);
+    x86_free(lpThis);
     return 0;
 }
 
@@ -375,7 +377,7 @@ static void link_buffer(ds_device *dev, ds_buffer *b)
 
 static ds_buffer *new_buffer(ds_device *dev, uint32_t flags)
 {
-    ds_buffer *b = (ds_buffer *)calloc(1, sizeof(ds_buffer));
+    ds_buffer *b = (ds_buffer *)x86_calloc(1, sizeof(ds_buffer));
     if (b == NULL) return NULL;
     b->lpVtbl = &IDirectSoundBufferVtbl_asm2c;
     b->refs = 1;
@@ -395,7 +397,7 @@ static ds_buffer *new_buffer(ds_device *dev, uint32_t flags)
     return b;
 }
 
-uint32_t CCALL IDirectSound_CreateSoundBuffer_c(ds_device *lpThis, const ds_buffer_desc *desc, ds_buffer **ppDSBuffer, void *pUnkOuter)
+uint32_t CCALL IDirectSound_CreateSoundBuffer_c(ds_device *lpThis, const ds_buffer_desc *desc, PTR32(ds_buffer) *ppDSBuffer, void *pUnkOuter)
 {
     ds_buffer *b;
 
@@ -442,7 +444,7 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(ds_device *lpThis, const ds_buff
     b->data = (ds_data *)calloc(1, sizeof(ds_data));
     b->data->refs = 1;
     b->data->size = desc->dwBufferBytes;
-    b->data->mem = (uint8_t *)malloc(desc->dwBufferBytes);
+    b->data->mem = (uint8_t *)x86_malloc(desc->dwBufferBytes);
     memset(b->data->mem, (b->format.wBitsPerSample == 8) ? 0x80 : 0, desc->dwBufferBytes);
     b->frames = desc->dwBufferBytes / b->format.nBlockAlign;
     b->frequency = b->format.nSamplesPerSec;
@@ -468,7 +470,7 @@ uint32_t CCALL IDirectSound_GetCaps_c(ds_device *lpThis, uint32_t *pDSCaps)
     return DS_OK;
 }
 
-uint32_t CCALL IDirectSound_DuplicateSoundBuffer_c(ds_device *lpThis, ds_buffer *orig, ds_buffer **ppDup)
+uint32_t CCALL IDirectSound_DuplicateSoundBuffer_c(ds_device *lpThis, ds_buffer *orig, PTR32(ds_buffer) *ppDup)
 {
     ds_buffer *b;
 
@@ -505,7 +507,7 @@ uint32_t CCALL IDirectSound_Initialize_c(ds_device *lpThis, void *pcGuidDevice) 
 /* ------------------------------------------------------------------ */
 /* IDirectSoundBuffer                                                  */
 
-uint32_t CCALL IDirectSoundBuffer_QueryInterface_c(ds_buffer *lpThis, uint32_t *riid, void **ppvObj)
+uint32_t CCALL IDirectSoundBuffer_QueryInterface_c(ds_buffer *lpThis, uint32_t *riid, PTR32(void) *ppvObj)
 {
     if (ppvObj == NULL) return DSERR_INVALIDPARAM;
     *ppvObj = NULL;
@@ -551,11 +553,11 @@ static void release_buffer_now(ds_buffer *b)
     if ((dev != NULL) && (dev->primary == b)) dev->primary = NULL;
     if ((b->data != NULL) && (--b->data->refs == 0))
     {
-        free(b->data->mem);
+        x86_free(b->data->mem);
         free(b->data);
     }
     b->lpVtbl = NULL;
-    free(b);
+    x86_free(b);
 }
 
 uint32_t CCALL IDirectSoundBuffer_Release_c(ds_buffer *lpThis)
@@ -650,7 +652,7 @@ uint32_t CCALL IDirectSoundBuffer_GetStatus_c(ds_buffer *lpThis, uint32_t *pdwSt
 
 uint32_t CCALL IDirectSoundBuffer_Initialize_c(ds_buffer *lpThis, void *pDirectSound, void *pcDSBufferDesc) { return DSERR_INVALIDCALL; }
 
-uint32_t CCALL IDirectSoundBuffer_Lock_c(ds_buffer *lpThis, uint32_t dwOffset, uint32_t dwBytes, void **ppv1, uint32_t *pb1, void **ppv2, uint32_t *pb2, uint32_t dwFlags)
+uint32_t CCALL IDirectSoundBuffer_Lock_c(ds_buffer *lpThis, uint32_t dwOffset, uint32_t dwBytes, PTR32(void) *ppv1, uint32_t *pb1, PTR32(void) *ppv2, uint32_t *pb2, uint32_t dwFlags)
 {
     uint32_t size;
 
@@ -767,7 +769,7 @@ uint32_t CCALL IDirectSoundBuffer_Restore_c(ds_buffer *lpThis) { return DS_OK; }
 
 #define LISTENER_BUFFER(l) ((l)->owner)
 
-uint32_t CCALL IDirectSound3DListener_QueryInterface_c(ds_listener *lpThis, uint32_t *riid, void **ppvObj) { return IDirectSoundBuffer_QueryInterface_c(LISTENER_BUFFER(lpThis), riid, ppvObj); }
+uint32_t CCALL IDirectSound3DListener_QueryInterface_c(ds_listener *lpThis, uint32_t *riid, PTR32(void) *ppvObj) { return IDirectSoundBuffer_QueryInterface_c(LISTENER_BUFFER(lpThis), riid, ppvObj); }
 uint32_t CCALL IDirectSound3DListener_AddRef_c(ds_listener *lpThis) { return IDirectSoundBuffer_AddRef_c(LISTENER_BUFFER(lpThis)); }
 uint32_t CCALL IDirectSound3DListener_Release_c(ds_listener *lpThis) { return IDirectSoundBuffer_Release_c(LISTENER_BUFFER(lpThis)); }
 
@@ -844,7 +846,7 @@ uint32_t CCALL IDirectSound3DListener_CommitDeferredSettings_c(ds_listener *lpTh
 
 #define BUF3D(i) ((i)->owner)
 
-uint32_t CCALL IDirectSound3DBuffer_QueryInterface_c(ds_3dbuffer *lpThis, uint32_t *riid, void **ppvObj) { return IDirectSoundBuffer_QueryInterface_c(BUF3D(lpThis), riid, ppvObj); }
+uint32_t CCALL IDirectSound3DBuffer_QueryInterface_c(ds_3dbuffer *lpThis, uint32_t *riid, PTR32(void) *ppvObj) { return IDirectSoundBuffer_QueryInterface_c(BUF3D(lpThis), riid, ppvObj); }
 uint32_t CCALL IDirectSound3DBuffer_AddRef_c(ds_3dbuffer *lpThis) { return IDirectSoundBuffer_AddRef_c(BUF3D(lpThis)); }
 uint32_t CCALL IDirectSound3DBuffer_Release_c(ds_3dbuffer *lpThis) { return IDirectSoundBuffer_Release_c(BUF3D(lpThis)); }
 

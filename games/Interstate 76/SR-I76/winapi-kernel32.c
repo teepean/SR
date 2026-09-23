@@ -19,6 +19,8 @@
 #include <fnmatch.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include "ptr32.h"
+#include "Game-Memory.h"
 #include "platform.h"
 #include "config.h"
 #include "vfs.h"
@@ -26,6 +28,20 @@
 #include "display.h"
 
 EXTERN_C_BEGIN
+
+// mappings the game can see: below 2 GB in the 64-bit build (reserve low address space, map over it)
+static void *low_mmap(size_t len, int fd, off_t offset)
+{
+#ifdef __cplusplus
+    void *base = map_memory_32bit((unsigned int) len, 1);
+    if (base == NULL) return MAP_FAILED;
+    if (fd >= 0) return mmap(base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED, fd, offset);
+    return mmap(base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+#else
+    if (fd >= 0) return mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, offset);
+    return mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#endif
+}
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -91,11 +107,11 @@ uint32_t CCALL CloseHandle_c(void *hObject)
     {
         case HT_FILE:
             close(((win_file *)hObject)->fd);
-            free(hObject);
+            x86_free(hObject);
             return 1;
         case HT_MAPPING:
             if (((mapping_handle *)hObject)->fd >= 0) close(((mapping_handle *)hObject)->fd);
-            free(hObject);
+            x86_free(hObject);
             return 1;
         case HT_PROCESS:
         case HT_THREAD:
@@ -156,7 +172,7 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
         return INVALID_HANDLE_VALUE;
     }
 
-    h = (win_file *) malloc(sizeof(win_file));
+    h = (win_file *) x86_malloc(sizeof(win_file));
     h->type = HT_FILE;
     h->fd = fd;
 
@@ -397,7 +413,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, win32_find_data *lpFindFil
         return INVALID_HANDLE_VALUE;
     }
 
-    h = (find_handle *) calloc(1, sizeof(find_handle));
+    h = (find_handle *) x86_calloc(1, sizeof(find_handle));
     h->type = HT_FIND;
 
     strncpy(spec, lpFileName, sizeof(spec) - 1);
@@ -422,7 +438,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, win32_find_data *lpFindFil
     {
         if (winapi_debug) eprintf("FindFirstFileA: %s -> not found\n", lpFileName);
         if (h->dir != NULL) closedir(h->dir);
-        free(h);
+        x86_free(h);
         last_error = ERROR_FILE_NOT_FOUND;
         return INVALID_HANDLE_VALUE;
     }
@@ -452,7 +468,7 @@ uint32_t CCALL FindClose_c(void *hFindFile)
 
     if (handle_type(hFindFile) != HT_FIND) return 0;
     if (h->dir != NULL) closedir(h->dir);
-    free(h);
+    x86_free(h);
     return 1;
 }
 
@@ -468,7 +484,7 @@ void * CCALL CreateFileMappingA_c(void *hFile, void *lpAttributes, uint32_t flPr
     mapping_handle *m;
     struct stat st;
 
-    m = (mapping_handle *) calloc(1, sizeof(mapping_handle));
+    m = (mapping_handle *) x86_calloc(1, sizeof(mapping_handle));
     m->type = HT_MAPPING;
     m->writable = (flProtect != PAGE_READONLY);
     m->fd = -1;
@@ -479,7 +495,7 @@ void * CCALL CreateFileMappingA_c(void *hFile, void *lpAttributes, uint32_t flPr
         if (fstat(m->fd, &st) != 0)
         {
             close(m->fd);
-            free(m);
+            x86_free(m);
             return NULL;
         }
         m->size = (dwMaximumSizeLow != 0) ? dwMaximumSizeLow : (uint32_t) st.st_size;
@@ -511,11 +527,11 @@ void * CCALL MapViewOfFile_c(void *hFileMappingObject, uint32_t dwDesiredAccess,
     if (m->fd >= 0)
     {
         // private mapping: changes are never written back to the file
-        addr = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE, m->fd, dwFileOffsetLow);
+        addr = low_mmap(len, m->fd, dwFileOffsetLow);
     }
     else
     {
-        addr = mmap(NULL, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        addr = low_mmap(len, -1, 0);
     }
     if (addr == MAP_FAILED) return NULL;
 
@@ -640,7 +656,7 @@ void * CCALL GetProcessHeap_c(void) { return &process_heap; }
 
 void * CCALL HeapCreate_c(uint32_t flOptions, uint32_t dwInitialSize, uint32_t dwMaximumSize)
 {
-    heap_obj *h = (heap_obj *) calloc(1, sizeof(heap_obj));
+    heap_obj *h = (heap_obj *) x86_calloc(1, sizeof(heap_obj));
     h->type = HT_HEAP;
     return h;
 }
@@ -655,10 +671,10 @@ uint32_t CCALL HeapDestroy_c(heap_obj *hHeap)
         next = b->next;
         live_remove(b);
         b->magic = 0;
-        free(b);
+        x86_free(b);
     }
     hHeap->first = NULL;
-    if (hHeap != &process_heap) free(hHeap);
+    if (hHeap != &process_heap) x86_free(hHeap);
     return 1;
 }
 
@@ -668,7 +684,7 @@ void * CCALL HeapAlloc_c(heap_obj *hHeap, uint32_t dwFlags, uint32_t dwBytes)
 
     if (handle_type(hHeap) != HT_HEAP) hHeap = &process_heap;
 
-    b = (heap_block *) malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
+    b = (heap_block *) x86_malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
     if (b == NULL) return NULL;
     // always zero: the game uses uninitialised fields of HeapAlloc'ed structs (e.g. texture
     // animation descriptors in sub_449xxx) which happen to be zero on a fresh Windows heap
@@ -705,7 +721,7 @@ uint32_t CCALL HeapFree_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem)
     b->magic = 0;
     live_remove(b);
     unlink_block(b);
-    free(b);
+    x86_free(b);
     return 1;
 }
 
@@ -729,7 +745,7 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     unlink_block(b);
     live_remove(b);
     b->magic = 0;
-    nb = (heap_block *) realloc(b, sizeof(heap_block) + dwBytes + HEAP_SLACK);
+    nb = (heap_block *) x86_realloc(b, sizeof(heap_block) + dwBytes + HEAP_SLACK);
     if (nb == NULL)
     {
         b->magic = HEAP_BLOCK_MAGIC;
@@ -796,7 +812,7 @@ void * CCALL VirtualAlloc_c(void *lpAddress, uint32_t dwSize, uint32_t flAllocat
     }
 
     size = (dwSize + 65535) & ~65535u;
-    addr = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    addr = low_mmap(size, -1, 0);
     if (addr == MAP_FAILED)
     {
         last_error = ERROR_NOT_ENOUGH_MEMORY;
@@ -1118,8 +1134,8 @@ extern "C" {
 // i76shell.dll
 extern void ShellMain(void);
 extern void ShellWindowProc(void);
-extern void (CCALL *i76shell_xc_a[])(void);
-extern void (CCALL *i76shell_xc_z[])(void);
+extern uint32_t i76shell_xc_a[];     // 32-bit entries (recompiled code), called through call_game
+extern uint32_t i76shell_xc_z[];
 // ZGLIDE.DLL
 extern void CheckFunc(void), FirstDevice(void), GetFuncDesc(void), GetNumDevice(void), GetSocketCaps(void),
             LastDevice(void), LockDisplay(void), LostDeviceDisplay(void), PreloadTexture(void), RefreshDisplay(void),
@@ -1138,8 +1154,8 @@ typedef struct {
     uint32_t type;      // not a handle type - modules are identified by address
     const char *name;
     const module_export *exports;
-    void (CCALL **xc_a)(void);
-    void (CCALL **xc_z)(void);
+    uint32_t *xc_a;
+    uint32_t *xc_z;
     int loaded;
 } module_info;
 
@@ -1213,10 +1229,10 @@ void * CCALL LoadLibraryA_c(const char *lpLibFileName)
         // DllMain equivalent: run the module's C++ static constructors
         if (m->xc_a != NULL)
         {
-            void (CCALL **p)(void);
+            uint32_t *p;
             for (p = m->xc_a; p < m->xc_z; p++)
             {
-                if (*p != NULL) (*p)();
+                if (*p != 0) call_game(*p, 0, NULL);
             }
         }
     }

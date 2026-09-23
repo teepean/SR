@@ -365,3 +365,13 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   explicit SysV stubs; x64/raw-asm.asm, x64/c2asm.asm (generic C -> game trampoline c_call_asm_n); scanf now
   translates the format (MS %ld = 32 bits) and passes explicit host arguments). The 32-bit build is unchanged
   in behaviour (mission test passes). Not yet runnable: trampolines not wired, memory not low, PTR32 fields.
+- x64 step 3: calls into game code go through call_game() (c2asm.c; x86/c2asm.asm and x64/c2asm.asm):
+  WinMain, static and DLL constructors (4-byte xc tables), WndProc, EnumDisplayModes callback, qsort/bsearch
+  comparators. Game-visible memory from x86_malloc/map_memory_32bit (Septerra Game-Memory.c): heaps, handles
+  (windows, files, finds, mappings, registry keys, GDI objects), DirectDraw/DirectSound objects and buffers,
+  DIB sections, LFB, Smacker objects, file views, VirtualAlloc, CREATESTRUCT, EnumDisplayModes desc, errno copy.
+  PTR32 fields: COM lpVtbl, out-params (PTR32(T) *), GrTexInfo.data, GrLfbInfo_t.lfbPtr, DSBUFFERDESC format,
+  ms_FILE (host FILE* moved behind the 32-byte struct / iob_host), _pctype, MSG.hwnd, WNDCLASSA, PAINTSTRUCT.hdc,
+  SmackBuf.Buffer. First x64 run: starts, loads the DLLs, opens Glide and DirectDraw (addresses 0x41xxxxxx).
+- GetKeyState: Windows returns 0xFF80|toggle for a pressed key; the game tests & 0x1000 for Ctrl/Shift/Alt, so
+  modifiers (and the Ctrl+Shift cheat codes like "getdown") never worked with 0x8000.

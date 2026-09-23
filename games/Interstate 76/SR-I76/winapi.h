@@ -35,6 +35,9 @@ uint32_t winapi_get_ticks(void);
 // processes pending SDL events (window messages, input)
 void winapi_process_events(void);
 
+// c2asm.c: calls recompiled game code (cdecl or stdcall) with 32-bit arguments
+uint32_t call_game(uint32_t func, uint32_t nargs, const uint32_t *args);
+
 // joystick.c
 void joystick_startup(void);
 void joystick_script(const char *cmd, int a, int b);
