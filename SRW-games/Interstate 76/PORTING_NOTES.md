@@ -248,3 +248,27 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   once per frame from the main loop) → `call i76_frame_tick`, a runtime function (imports.spec entry with dll
   "runtime") that waits for the next frame slot and returns GetTickCount. `I76_FPS=<n>` (default 20, 0 = off).
   `I76_DEBUG=1` prints the measured frame rate every 5 s.
+
+### 2026-09-23 — Glide (hardware renderer), part 1
+- Architecture: render.h = backend interface (render_gl.c: OpenGL 3.3 core, testable on Linux incl. the offscreen
+  SDL driver; a Direct3D 11 backend for Windows will implement the same interface). display.c presents the GDI
+  framebuffer through the backend (SDL_Renderer is gone: Glide needs the GL context of the same window).
+  glide.c = Glide 2.x semantics. I76_GLIDE_SCALE (default 2) = internal resolution multiplier, I76_VSYNC.
+- `/glide` selects ZGLIDE.DLL. /gdi must NOT be added then: with /gdi (dword_4F9F20 = 0) video playback takes a
+  DirectDraw path (sub_42E1D0) even in Glide mode.
+- ZGLIDE's Glide usage (survey of the DLL):
+  - grSstWinOpen(0, 640x480, 60Hz, ARGB, upper-left, 2, 1); GrHwConfiguration is 148 bytes (GLIDE_NUM_TMU = 2),
+    only nTexelfx (+0x10) is read -> report 1 TMU.
+  - vertices: x/y carry +786432.0 (3<<18) snap bias that is never removed (Voodoo fixed point drops it);
+    ooz and tmuvtx[0].oow are never written -> texture perspective and W-buffer depth from the vertex oow.
+    s/t are 0..255 along the long side.
+  - textures: P_8 (palette downloaded on every bind), RGB_565 or ARGB_1555; one TMU; bump allocator from
+    grTexMinAddress with grTexCalcMemRequired; buggy past 2 MB -> emulate a 2 MB TMU.
+  - 4 color combines (tex*iter, decal, flat constant, gouraud), alpha: tex / const / tex*iter / iter,
+    blends: alpha, opaque, (DST_COLOR, ONE) "brighten". Chroma key compares the combiner's "other" input.
+  - fog: GR_FOG_WITH_ITERATED_ALPHA only. No per-frame clear. grBufferSwap(1).
+  - LFB: write-only 565 lock of the back buffer every frame (cockpit, HUD, menus, text). Emulated by reading the
+    back buffer into the lock buffer and compositing only changed pixels on unlock (keeps the scaled 3D).
+  - GetState/SetState only in LostDevice/RestoreDevice (GrState = 312 bytes).
+- Glide mode switches between 2D screens (DirectDraw 8-bit, sub_434100(a1, 0) -> sub_431980(3, ...)) and Glide
+  (sub_434100(a1, 1) -> FirstDevice): DirectDraw emulation is needed next.
