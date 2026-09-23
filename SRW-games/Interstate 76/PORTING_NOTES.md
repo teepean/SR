@@ -327,3 +327,7 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   program (Wine's winedevice.exe of an unrelated Wine app) had the evdev device open - Wine's winebus grabs
   controllers. Diagnose with: for each /proc/*/fd, readlink to /dev/input/eventN. joystick_evdev.c (direct evdev
   reading) was added as an optional backend (joystick_backend = evdev); SDL stays the default.
+- Joystick works (user-verified with an Xbox One pad). Remaining gotcha was game-side: input.map had
+  `throttle { - joystick1 ----- }` / `steer { ... ----- }` (no axis) - saved while the controller was frozen.
+  Control Configuration -> RESTORE (defaults from JOYSTICK.MAP: throttle = joystick1 Down/Up, steer =
+  joystick1 Left/Right) or picking the axes in SELECT INPUT fixes it.
