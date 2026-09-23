@@ -178,7 +178,7 @@ uint32_t CCALL DirectDrawCreate_c(void *lpGUID, PTR32(dd_device) *lplpDD, void *
 {
     dd_device *dd;
     if (lplpDD == NULL) return DDERR_INVALIDPARAMS;
-    dd = (dd_device *)x86_calloc(1, sizeof(dd_device));
+    dd = (dd_device *)game_calloc(1, sizeof(dd_device));
     dd->lpVtbl = &IDirectDrawVtbl_asm2c;
     dd->refs = 1;
     dd->dd2.lpVtbl = &IDirectDraw2Vtbl_asm2c;
@@ -210,7 +210,7 @@ uint32_t CCALL IDirectDraw_Release_c(dd_device *lpThis)
     if (lpThis->refs > 1) return --lpThis->refs;
     if (the_dd == lpThis) the_dd = NULL;
     lpThis->lpVtbl = NULL;
-    x86_free(lpThis);
+    game_free(lpThis);
     return 0;
 }
 
@@ -220,7 +220,7 @@ uint32_t CCALL IDirectDraw_CreateClipper_c(dd_device *lpThis, uint32_t dwFlags, 
 {
     dd_clipper *c;
     if (lplpClipper == NULL) return DDERR_INVALIDPARAMS;
-    c = (dd_clipper *)x86_calloc(1, sizeof(dd_clipper));
+    c = (dd_clipper *)game_calloc(1, sizeof(dd_clipper));
     c->lpVtbl = &IDirectDrawClipperVtbl_asm2c;
     c->refs = 1;
     *lplpClipper = c;
@@ -231,7 +231,7 @@ uint32_t CCALL IDirectDraw_CreatePalette_c(dd_device *lpThis, uint32_t dwFlags, 
 {
     dd_palette *p;
     if (lplpPalette == NULL) return DDERR_INVALIDPARAMS;
-    p = (dd_palette *)x86_calloc(1, sizeof(dd_palette));
+    p = (dd_palette *)game_calloc(1, sizeof(dd_palette));
     p->lpVtbl = &IDirectDrawPaletteVtbl_asm2c;
     p->refs = 1;
     if (lpColorTable != NULL) memcpy(p->entries, lpColorTable, (dwFlags & DDPCAPS_8BIT) ? 1024 : 1024);
@@ -241,7 +241,7 @@ uint32_t CCALL IDirectDraw_CreatePalette_c(dd_device *lpThis, uint32_t dwFlags, 
 
 static dd_surface *new_surface(uint32_t caps, int width, int height, int bpp)
 {
-    dd_surface *s = (dd_surface *)x86_calloc(1, sizeof(dd_surface));
+    dd_surface *s = (dd_surface *)game_calloc(1, sizeof(dd_surface));
     s->lpVtbl = &IDirectDrawSurfaceVtbl_asm2c;
     s->refs = 1;
     s->caps = caps;
@@ -249,7 +249,7 @@ static dd_surface *new_surface(uint32_t caps, int width, int height, int bpp)
     s->height = height;
     s->bpp = bpp;
     s->pitch = ((width * bpp / 8) + 3) & ~3;
-    s->pixels = (uint8_t *)x86_calloc(1, (size_t)s->pitch * height + 16);
+    s->pixels = (uint8_t *)game_calloc(1, (size_t)s->pitch * height + 16);
     return s;
 }
 
@@ -451,9 +451,9 @@ uint32_t CCALL IDirectDrawSurface_AddRef_c(dd_surface *lpThis) { return ++lpThis
 static void free_surface(dd_surface *s)
 {
     if ((the_dd != NULL) && (the_dd->primary == s)) the_dd->primary = NULL;
-    x86_free(s->pixels);
+    game_free(s->pixels);
     s->lpVtbl = NULL;
-    x86_free(s);
+    game_free(s);
 }
 
 uint32_t CCALL IDirectDrawSurface_Release_c(dd_surface *lpThis)

@@ -844,7 +844,7 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
         return NULL;
     }
 
-    w = (window *) x86_calloc(1, sizeof(window));
+    w = (window *) game_calloc(1, sizeof(window));
     w->magic = WINDOW_MAGIC;
     w->cls = c;
     w->wndproc = c->wndproc;
@@ -864,7 +864,7 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
         focus_window = w;
         if (!display_create(w->title, w->width, w->height))
         {
-            x86_free(w);
+            game_free(w);
             main_window = NULL;
             return NULL;
         }
@@ -887,7 +887,7 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
     if ((int32_t)winapi_call_wndproc(w, WM_CREATE, 0, (uint32_t)(uintptr_t) cs) == -1)
     {
         if (main_window == w) main_window = NULL;
-        x86_free(w);
+        game_free(w);
         return NULL;
     }
     winapi_call_wndproc(w, WM_SIZE, 0, ((uint32_t)w->height << 16) | (uint32_t)w->width);

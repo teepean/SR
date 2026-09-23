@@ -195,7 +195,7 @@ ms_FILE * CCALL fopen_c(const char *filename, const char *mode)
 #endif
     if (hf == NULL) return NULL;
 
-    f = (ms_FILE *) x86_calloc(1, sizeof(ms_FILE_ext));
+    f = (ms_FILE *) game_calloc(1, sizeof(ms_FILE_ext));
     if (f == NULL)
     {
         fclose(hf);
@@ -217,7 +217,7 @@ int32_t CCALL fclose_c(ms_FILE *f)
     if (is_std_file(f)) return 0;
 
     res = fclose(HOSTFILE(f));
-    x86_free(f);
+    game_free(f);
     return res;
 }
 
@@ -997,7 +997,7 @@ int32_t CCALL _findfirst_c(const char *filespec, ms_finddata_t *data)
 
     if ((filespec == NULL) || (data == NULL)) return -1;
 
-    h = (find_handle *) x86_calloc(1, sizeof(find_handle));
+    h = (find_handle *) game_calloc(1, sizeof(find_handle));
     if (h == NULL) return -1;
 
     // resolve the directory part, keep the pattern part as given
@@ -1021,7 +1021,7 @@ int32_t CCALL _findfirst_c(const char *filespec, ms_finddata_t *data)
     if ((h->dir == NULL) || (find_next_entry(h, data) != 0))
     {
         if (h->dir != NULL) closedir(h->dir);
-        x86_free(h);
+        game_free(h);
         errno = ENOENT;
         return -1;
     }
@@ -1042,7 +1042,7 @@ int32_t CCALL _findclose_c(int32_t handle)
     if ((handle == -1) || (handle == 0)) return -1;
     h = (find_handle *)(uintptr_t) handle;
     if (h->dir != NULL) closedir(h->dir);
-    x86_free(h);
+    game_free(h);
     return 0;
 }
 

@@ -232,7 +232,7 @@ static int key_path(uint32_t hKey, const char *subkey, char *out, size_t size)
 
 static uint32_t new_handle(const char *path)
 {
-    key_handle *h = (key_handle *) x86_malloc(sizeof(key_handle));
+    key_handle *h = (key_handle *) game_malloc(sizeof(key_handle));
     h->magic = KEY_MAGIC;
     strncpy(h->path, path, sizeof(h->path) - 1);
     h->path[sizeof(h->path) - 1] = 0;
@@ -278,7 +278,7 @@ int32_t CCALL RegCloseKey_c(uint32_t hKey)
     if ((hKey != 0) && ((key_handle *)(uintptr_t)hKey)->magic == KEY_MAGIC)
     {
         ((key_handle *)(uintptr_t)hKey)->magic = 0;
-        x86_free((void *)(uintptr_t)hKey);
+        game_free((void *)(uintptr_t)hKey);
         return ERROR_SUCCESS;
     }
     return ERROR_INVALID_HANDLE;

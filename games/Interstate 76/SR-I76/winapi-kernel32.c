@@ -125,11 +125,11 @@ uint32_t CCALL CloseHandle_c(void *hObject)
     {
         case HT_FILE:
             close(((win_file *)hObject)->fd);
-            x86_free(hObject);
+            game_free(hObject);
             return 1;
         case HT_MAPPING:
             if (((mapping_handle *)hObject)->fd >= 0) close(((mapping_handle *)hObject)->fd);
-            x86_free(hObject);
+            game_free(hObject);
             return 1;
         case HT_PROCESS:
         case HT_THREAD:
@@ -190,7 +190,7 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
         return INVALID_HANDLE_VALUE;
     }
 
-    h = (win_file *) x86_malloc(sizeof(win_file));
+    h = (win_file *) game_malloc(sizeof(win_file));
     h->type = HT_FILE;
     h->fd = fd;
 
@@ -431,7 +431,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, win32_find_data *lpFindFil
         return INVALID_HANDLE_VALUE;
     }
 
-    h = (find_handle *) x86_calloc(1, sizeof(find_handle));
+    h = (find_handle *) game_calloc(1, sizeof(find_handle));
     h->type = HT_FIND;
 
     strncpy(spec, lpFileName, sizeof(spec) - 1);
@@ -456,7 +456,7 @@ void * CCALL FindFirstFileA_c(const char *lpFileName, win32_find_data *lpFindFil
     {
         if (winapi_debug) eprintf("FindFirstFileA: %s -> not found\n", lpFileName);
         if (h->dir != NULL) closedir(h->dir);
-        x86_free(h);
+        game_free(h);
         last_error = ERROR_FILE_NOT_FOUND;
         return INVALID_HANDLE_VALUE;
     }
@@ -486,7 +486,7 @@ uint32_t CCALL FindClose_c(void *hFindFile)
 
     if (handle_type(hFindFile) != HT_FIND) return 0;
     if (h->dir != NULL) closedir(h->dir);
-    x86_free(h);
+    game_free(h);
     return 1;
 }
 
@@ -502,7 +502,7 @@ void * CCALL CreateFileMappingA_c(void *hFile, void *lpAttributes, uint32_t flPr
     mapping_handle *m;
     struct stat st;
 
-    m = (mapping_handle *) x86_calloc(1, sizeof(mapping_handle));
+    m = (mapping_handle *) game_calloc(1, sizeof(mapping_handle));
     m->type = HT_MAPPING;
     m->writable = (flProtect != PAGE_READONLY);
     m->fd = -1;
@@ -513,7 +513,7 @@ void * CCALL CreateFileMappingA_c(void *hFile, void *lpAttributes, uint32_t flPr
         if (fstat(m->fd, &st) != 0)
         {
             close(m->fd);
-            x86_free(m);
+            game_free(m);
             return NULL;
         }
         m->size = (dwMaximumSizeLow != 0) ? dwMaximumSizeLow : (uint32_t) st.st_size;
@@ -952,6 +952,16 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     quarantine_free(b);
     return nb + 1;
 }
+
+/* Memory the runtime hands to the game (COM objects, surfaces, sound buffers, handles, Smacker objects...):
+ * allocated from a private emulated Win32 heap, so it gets the same protection as the game's own heap blocks
+ * (quarantine after free, overrun detection, I76_HEAPGUARD) - in the 32-bit build x86_malloc is glibc's malloc,
+ * and stray game writes into freed runtime memory corrupted glibc (crashes noticed later in the GL driver). */
+static heap_obj runtime_heap = { HT_HEAP, NULL };
+
+void *game_malloc(uint32_t size) { return HeapAlloc_c(&runtime_heap, 0, size); }     // HeapAlloc zeroes
+void *game_calloc(uint32_t n, uint32_t size) { return HeapAlloc_c(&runtime_heap, 0, n * size); }
+void game_free(void *p) { if (p != NULL) HeapFree_c(&runtime_heap, 0, p); }
 
 uint32_t CCALL HeapSize_c(heap_obj *hHeap, uint32_t dwFlags, const void *lpMem)
 {

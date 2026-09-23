@@ -323,7 +323,7 @@ uint32_t CCALL DirectSoundCreate_c(void *lpGuid, PTR32(ds_device) *ppDS, void *p
         return DSERR_NODRIVER;
     }
 
-    dev = (ds_device *)x86_calloc(1, sizeof(ds_device));
+    dev = (ds_device *)game_calloc(1, sizeof(ds_device));
     if (dev == NULL) return DSERR_OUTOFMEMORY;
     dev->lpVtbl = &IDirectSoundVtbl_asm2c;
     dev->refs = 1;
@@ -360,7 +360,7 @@ uint32_t CCALL IDirectSound_Release_c(ds_device *lpThis)
     while (lpThis->buffers != NULL) release_buffer_now(lpThis->buffers);
     if (the_device == lpThis) the_device = NULL;
     lpThis->lpVtbl = NULL;
-    x86_free(lpThis);
+    game_free(lpThis);
     return 0;
 }
 
@@ -377,7 +377,7 @@ static void link_buffer(ds_device *dev, ds_buffer *b)
 
 static ds_buffer *new_buffer(ds_device *dev, uint32_t flags)
 {
-    ds_buffer *b = (ds_buffer *)x86_calloc(1, sizeof(ds_buffer));
+    ds_buffer *b = (ds_buffer *)game_calloc(1, sizeof(ds_buffer));
     if (b == NULL) return NULL;
     b->lpVtbl = &IDirectSoundBufferVtbl_asm2c;
     b->refs = 1;
@@ -444,7 +444,7 @@ uint32_t CCALL IDirectSound_CreateSoundBuffer_c(ds_device *lpThis, const ds_buff
     b->data = (ds_data *)calloc(1, sizeof(ds_data));
     b->data->refs = 1;
     b->data->size = desc->dwBufferBytes;
-    b->data->mem = (uint8_t *)x86_malloc(desc->dwBufferBytes);
+    b->data->mem = (uint8_t *)game_malloc(desc->dwBufferBytes);
     memset(b->data->mem, (b->format.wBitsPerSample == 8) ? 0x80 : 0, desc->dwBufferBytes);
     b->frames = desc->dwBufferBytes / b->format.nBlockAlign;
     b->frequency = b->format.nSamplesPerSec;
@@ -553,11 +553,11 @@ static void release_buffer_now(ds_buffer *b)
     if ((dev != NULL) && (dev->primary == b)) dev->primary = NULL;
     if ((b->data != NULL) && (--b->data->refs == 0))
     {
-        x86_free(b->data->mem);
+        game_free(b->data->mem);
         free(b->data);
     }
     b->lpVtbl = NULL;
-    x86_free(b);
+    game_free(b);
 }
 
 uint32_t CCALL IDirectSoundBuffer_Release_c(ds_buffer *lpThis)

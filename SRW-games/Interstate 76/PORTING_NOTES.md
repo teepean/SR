@@ -394,3 +394,9 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
 - x64 milestone: SR-I76-x64 (`scons device=pc64-linux`) runs the full offscreen test: intro videos, menus,
   training mission in Glide mode (20 FPS) and GDI mode, in-game menu, Exit Game with a clean exit; sound
   (DirectSound buffers, CD music) works. No 32-bit libraries are needed.
+- Another 32-bit mission-start crash (t06, same glibc corruption seen in the GL driver) while the x64 build
+  played the same mission fine (user-verified): in the x64 build x86_malloc is Game-Memory.c's separate heap, in
+  the 32-bit build it was glibc's malloc - stray game writes into freed runtime memory (surfaces, sound buffers,
+  Smacker buffers...) corrupted glibc. Now all memory the runtime hands to the game comes from game_malloc/
+  game_calloc/game_free = a private emulated Win32 heap (quarantine, overrun check, I76_HEAPGUARD) in both builds.
+  User playtest: x64 build played missions 5-6 without problems.

@@ -448,15 +448,15 @@ void * CCALL CreateDIBSection_c(gdi_dc *hdc, const bitmapinfoheader *pbmi, uint3
     size_t size;
 
     if (pbmi == NULL) return NULL;
-    bm = (gdi_bitmap *) x86_calloc(1, sizeof(gdi_bitmap));
+    bm = (gdi_bitmap *) game_calloc(1, sizeof(gdi_bitmap));
     if (!bitmap_from_info(bm, pbmi, usage, (obj_type(hdc) == GDI_DC) ? hdc->palette : NULL))
     {
-        x86_free(bm);
+        game_free(bm);
         return NULL;
     }
 
     size = (size_t) bm->pitch * bm->height;
-    bm->alloc = (uint8_t *) x86_calloc(1, size ? size : 4);
+    bm->alloc = (uint8_t *) game_calloc(1, size ? size : 4);
     set_bits(bm, bm->alloc, pbmi->biHeight > 0);
     if (ppvBits != NULL) *ppvBits = bm->alloc;
 
@@ -508,7 +508,7 @@ void gdi_blit_rgb(void *hdc, int x, int y, int w, int h, const uint32_t *pixels,
 
 static gdi_dc *new_dc(void)
 {
-    gdi_dc *dc = (gdi_dc *) x86_calloc(1, sizeof(gdi_dc));
+    gdi_dc *dc = (gdi_dc *) game_calloc(1, sizeof(gdi_dc));
     dc->type = GDI_DC;
     dc->bitmap = &default_bitmap;
     dc->palette = &default_palette;
@@ -533,7 +533,7 @@ int32_t CCALL ReleaseDC_c(void *hWnd, void *hDC)
 {
     if (obj_type(hDC) != GDI_DC) return 0;
     ((gdi_dc *)hDC)->type = 0;
-    x86_free(hDC);
+    game_free(hDC);
     return 1;
 }
 
@@ -546,7 +546,7 @@ uint32_t CCALL DeleteDC_c(void *hdc)
 {
     if (obj_type(hdc) != GDI_DC) return 0;
     ((gdi_dc *)hdc)->type = 0;
-    x86_free(hdc);
+    game_free(hdc);
     return 1;
 }
 
@@ -586,20 +586,20 @@ uint32_t CCALL DeleteObject_c(void *h)
             gdi_bitmap *bm = (gdi_bitmap *) h;
             if ((bm == &default_bitmap) || bm->is_screen) return 1;
             bm->type = 0;
-            x86_free(bm->alloc);
-            x86_free(bm);
+            game_free(bm->alloc);
+            game_free(bm);
             return 1;
         }
         case GDI_PALETTE:
             if (h == &default_palette) return 1;
             if (h == system_palette) system_palette = NULL;
             ((gdi_palette *)h)->type = 0;
-            x86_free(h);
+            game_free(h);
             return 1;
         case GDI_FONT:
             if (h == &default_font) return 1;
             ((gdi_font *)h)->type = 0;
-            x86_free(h);
+            game_free(h);
             return 1;
         case GDI_BRUSH:
         case GDI_PEN:
@@ -661,7 +661,7 @@ void * CCALL CreatePalette_c(const logpalette *plpal)
     int n;
 
     if (plpal == NULL) return NULL;
-    p = (gdi_palette *) x86_calloc(1, sizeof(gdi_palette));
+    p = (gdi_palette *) game_calloc(1, sizeof(gdi_palette));
     p->type = GDI_PALETTE;
     n = plpal->palNumEntries;
     if (n > 256) n = 256;
@@ -908,7 +908,7 @@ void * CCALL CreateFontIndirectA_c(const logfonta *lplf)
     gdi_font *f;
 
     if (lplf == NULL) return NULL;
-    f = (gdi_font *) x86_calloc(1, sizeof(gdi_font));
+    f = (gdi_font *) game_calloc(1, sizeof(gdi_font));
     f->type = GDI_FONT;
     f->height = lplf->lfHeight;
     f->weight = lplf->lfWeight;

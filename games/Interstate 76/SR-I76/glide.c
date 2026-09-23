@@ -405,7 +405,7 @@ void CCALL grGlideInit_c(void)
 {
     if (tmu_mem == NULL) tmu_mem = (uint8_t *)calloc(1, TMU_MEMORY + TMU_SLACK);
     // the game writes to the LFB buffer: low memory
-    if (lfb == NULL) lfb = (uint16_t *)x86_malloc(LFB_STRIDE_PIXELS * 1024 * 2);
+    if (lfb == NULL) lfb = (uint16_t *)game_malloc(LFB_STRIDE_PIXELS * 1024 * 2);
     if (lfb_orig == NULL) lfb_orig = (uint16_t *)malloc(LFB_STRIDE_PIXELS * 1024 * 2);
     memset(&gs, 0, sizeof(gs));
     gs.rgb_src = 4; gs.rgb_dst = 0; gs.alpha_src = 4; gs.alpha_dst = 0;    // ONE, ZERO

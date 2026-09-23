@@ -35,6 +35,11 @@ uint32_t winapi_get_ticks(void);
 // processes pending SDL events (window messages, input)
 void winapi_process_events(void);
 
+// winapi-kernel32.c: memory the runtime hands to the game (protected emulated heap, zeroed, below 2 GB)
+void *game_malloc(uint32_t size);
+void *game_calloc(uint32_t n, uint32_t size);
+void game_free(void *p);
+
 // winapi-kernel32.c: checks all heap blocks for overruns (I76_HEAPCHECK=1)
 void heap_check_all(void);
 
