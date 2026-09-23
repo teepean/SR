@@ -482,54 +482,54 @@ char * CCALL setlocale_c(int32_t category, const char *locale)
 /* ------------------------------------------------------------------ */
 /* memory                                                              */
 
-// allocations carry a 16-byte header with the requested size, so that _msize is exact
-#define MEM_HEADER 16
+// the CRT heap uses the emulated Win32 heap (winapi-kernel32.c): exact _msize, zeroed blocks with slack, and
+// invalid/double frees are rejected instead of corrupting the host malloc (the game has some)
+void * CCALL HeapCreate_c(uint32_t flOptions, uint32_t dwInitialSize, uint32_t dwMaximumSize);
+void * CCALL HeapAlloc_c(void *hHeap, uint32_t dwFlags, uint32_t dwBytes);
+uint32_t CCALL HeapFree_c(void *hHeap, uint32_t dwFlags, void *lpMem);
+void * CCALL HeapReAlloc_c(void *hHeap, uint32_t dwFlags, void *lpMem, uint32_t dwBytes);
+uint32_t CCALL HeapSize_c(void *hHeap, uint32_t dwFlags, const void *lpMem);
+
+static void *crt_heap;
+
+static void *get_crt_heap(void)
+{
+    if (crt_heap == NULL) crt_heap = HeapCreate_c(0, 0, 0);
+    return crt_heap;
+}
 
 void * CCALL malloc_c(uint32_t size)
 {
-    uint8_t *p = (uint8_t *) malloc(size + MEM_HEADER);
-    if (p == NULL) return NULL;
-    *(uint32_t *)p = size;
-    return p + MEM_HEADER;
+    return HeapAlloc_c(get_crt_heap(), 0, size);
 }
 
 void CCALL free_c(void *ptr)
 {
-    if (ptr != NULL) free((uint8_t *)ptr - MEM_HEADER);
+    if (ptr != NULL) HeapFree_c(get_crt_heap(), 0, ptr);
 }
 
 void * CCALL calloc_c(uint32_t nmemb, uint32_t size)
 {
     uint64_t total = (uint64_t)nmemb * size;
-    void *p;
-
     if (total > 0x7fffffff) return NULL;
-    p = malloc_c((uint32_t) total);
-    if (p != NULL) memset(p, 0, (size_t) total);
-    return p;
+    return malloc_c((uint32_t) total);     // HeapAlloc zeroes
 }
 
 void * CCALL realloc_c(void *ptr, uint32_t size)
 {
-    uint8_t *p;
-
     if (ptr == NULL) return malloc_c(size);
     if (size == 0)
     {
         free_c(ptr);
         return NULL;
     }
-
-    p = (uint8_t *) realloc((uint8_t *)ptr - MEM_HEADER, size + MEM_HEADER);
-    if (p == NULL) return NULL;
-    *(uint32_t *)p = size;
-    return p + MEM_HEADER;
+    return HeapReAlloc_c(get_crt_heap(), 0, ptr, size);
 }
 
 uint32_t CCALL _msize_c(void *ptr)
 {
     if (ptr == NULL) return (uint32_t)-1;
-    return *(uint32_t *)((uint8_t *)ptr - MEM_HEADER);
+    return HeapSize_c(get_crt_heap(), 0, ptr);
 }
 
 void * CCALL operator_new_c(uint32_t size)

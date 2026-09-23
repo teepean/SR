@@ -338,3 +338,10 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   create dri2 screen"), rendering fell back to Mesa. No fd leak found (41 fds stable through a mission). The port
   now prefers X11/XWayland on Linux (SDL video driver hint "x11,wayland"; SR-I76.cfg video_driver = x11 |
   wayland | auto). I76_DEBUG=1 logs the GL renderer and SDL video driver.
+- Crash a few seconds into mission 2: glibc "double free or corruption (!prev)" detected inside the NVIDIA driver
+  (texture upload) = earlier host-heap corruption. The game frees invalid pointers (HeapFree log shows repeated
+  invalid blocks, e.g. a static address) and the CRT free()/delete went straight to glibc. Now the CRT heap
+  (malloc/free/realloc/_msize/new/delete) uses the emulated Win32 heap (live-block set rejects invalid frees),
+  and every heap block has 32 bytes of zeroed slack so small overruns don't hit glibc's chunk headers.
+  Septerra's runtime has no such protection (its 32-bit build uses plain malloc; Game-Memory.c is its low-4GB
+  allocator for 64-bit builds - to reuse for the I76 64-bit port).

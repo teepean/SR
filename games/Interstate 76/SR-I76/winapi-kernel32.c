@@ -561,6 +561,9 @@ typedef struct heap_block {
 } heap_block;   // 32 bytes (keeps 16-byte alignment)
 
 #define HEAP_BLOCK_MAGIC 0x48504C42
+// slack after every block: small overruns (the game has some) land here instead of in the host malloc's
+// metadata - Windows heaps round sizes up and are similarly tolerant
+#define HEAP_SLACK 32
 
 // Windows HeapFree/HeapReAlloc/HeapSize fail on invalid blocks instead of aborting;
 // the game frees a block twice at exit (WinMain cleanup, dword_504C0C). A magic value in the header isn't
@@ -663,11 +666,11 @@ void * CCALL HeapAlloc_c(heap_obj *hHeap, uint32_t dwFlags, uint32_t dwBytes)
 
     if (handle_type(hHeap) != HT_HEAP) hHeap = &process_heap;
 
-    b = (heap_block *) malloc(sizeof(heap_block) + (dwBytes ? dwBytes : 1));
+    b = (heap_block *) malloc(sizeof(heap_block) + dwBytes + HEAP_SLACK);
     if (b == NULL) return NULL;
     // always zero: the game uses uninitialised fields of HeapAlloc'ed structs (e.g. texture
     // animation descriptors in sub_449xxx) which happen to be zero on a fresh Windows heap
-    memset(b + 1, 0, dwBytes);
+    memset(b + 1, 0, dwBytes + HEAP_SLACK);
 
     b->size = dwBytes;
     b->magic = HEAP_BLOCK_MAGIC;
@@ -724,7 +727,7 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     unlink_block(b);
     live_remove(b);
     b->magic = 0;
-    nb = (heap_block *) realloc(b, sizeof(heap_block) + (dwBytes ? dwBytes : 1));
+    nb = (heap_block *) realloc(b, sizeof(heap_block) + dwBytes + HEAP_SLACK);
     if (nb == NULL)
     {
         b->magic = HEAP_BLOCK_MAGIC;
