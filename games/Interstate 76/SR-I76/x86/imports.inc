@@ -708,3 +708,5 @@ extern ungetc_asm2c
 %define ungetc ungetc_asm2c
 extern _filbuf_asm2c
 %define _filbuf _filbuf_asm2c
+extern i76_frame_tick_asm2c
+%define i76_frame_tick i76_frame_tick_asm2c

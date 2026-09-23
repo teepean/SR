@@ -349,6 +349,7 @@ extern memcpy_c
 extern printf_c
 extern ungetc_c
 extern _filbuf_c
+extern i76_frame_tick_c
 
 global operator_new_asm2c
 global operator_delete_asm2c
@@ -697,6 +698,7 @@ global memcpy_asm2c
 global printf_asm2c
 global ungetc_asm2c
 global _filbuf_asm2c
+global i76_frame_tick_asm2c
 
 %ifidn __OUTPUT_FORMAT__, elf32
 section .note.GNU-stack noalloc noexec nowrite progbits
@@ -2439,4 +2441,9 @@ align 16
 _filbuf_asm2c:
 ; _filbuf (c1, static)
         Call_Asm_Stack1 _filbuf_c
+
+align 16
+i76_frame_tick_asm2c:
+; i76_frame_tick (std0, runtime)
+        Call_Asm_Stack0 i76_frame_tick_c, 0
 

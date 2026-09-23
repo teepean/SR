@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <SDL.h>
 #include "display.h"
+#include "platform.h"
+#include "winapi.h"
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
@@ -120,6 +122,55 @@ void app_exit(int code)
     display_destroy();
     SDL_Quit();
     _exit(code);
+}
+
+// Frame limiter: called instead of GetTickCount by the game's per-frame timer (sub_49C920,
+// instruction_replacements.sci). The game logic is frame-rate dependent (physics, AI, weapons, sound)
+// and was tuned for ~20 FPS; I76_FPS=<n> sets the limit (default 20, 0 = unlimited).
+uint32_t CCALL i76_frame_tick_c(void)
+{
+    static int fps = -1;
+    static double period, last;
+    double now;
+
+    if (fps < 0)
+    {
+        fps = (getenv("I76_FPS") != NULL) ? atoi(getenv("I76_FPS")) : 20;
+        if (fps > 0) period = 1000.0 / fps;
+    }
+
+    if (fps > 0)
+    {
+        double target;
+
+        now = SDL_GetPerformanceCounter() * 1000.0 / SDL_GetPerformanceFrequency();
+        if (last == 0.0) last = now - period;
+        target = last + period;
+        if (now < target)
+        {
+            if (target - now >= 2.0) SDL_Delay((uint32_t)(target - now - 1.0));
+            do
+            {
+                now = SDL_GetPerformanceCounter() * 1000.0 / SDL_GetPerformanceFrequency();
+            } while (now < target);
+        }
+        // don't try to catch up after a stall (loading etc.)
+        last = (now - target > period) ? now : target;
+    }
+
+    if (winapi_debug)
+    {
+        static uint32_t count, start;
+        uint32_t t = SDL_GetTicks();
+        if (count++ == 0) start = t;
+        if (t - start >= 5000)
+        {
+            eprintf("frame rate: %.1f FPS\n", (count - 1) * 1000.0 / (t - start));
+            count = 0;
+        }
+    }
+
+    return winapi_get_ticks();
 }
 
 void display_set_title(const char *title)

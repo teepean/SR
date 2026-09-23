@@ -239,3 +239,12 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
 - smackw32.c: Smacker audio track 0 decoded (Albion's decoder) into a ring buffer played by a mixer source.
 - Test without speakers: `SDL_AUDIODRIVER=disk SDL_DISKAUDIOFILE=out.raw` (sdl2-compat also needs
   `SDL_AUDIO_DRIVER=disk SDL_AUDIO_DISK_OUTPUT_FILE=out.raw`).
+
+### 2026-09-23 — frame limiter
+- The game logic is frame-rate dependent (physics/jumps, flamethrower, AI steering, sound cut-offs; see
+  https://github.com/CahootsMalone/interstate-76-stuff, the community recommends 20 FPS). Uncapped the port ran
+  the training mission at ~900 FPS.
+- instruction_replacements.sci: `loc_49C929` (the GetTickCount call in the per-frame timer sub_49C920, called
+  once per frame from the main loop) → `call i76_frame_tick`, a runtime function (imports.spec entry with dll
+  "runtime") that waits for the next frame slot and returns GetTickCount. `I76_FPS=<n>` (default 20, 0 = off).
+  `I76_DEBUG=1` prints the measured frame rate every 5 s.

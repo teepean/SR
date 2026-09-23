@@ -364,3 +364,5 @@ memcpy                       c3     -     static         # zglide | void *memcpy
 printf                       v1     -     static         # zglide | int printf(const char *, ...)
 ungetc                       c2     -     static         # zglide | int ungetc(int, FILE *)
 _filbuf                      c1     -     static         # zglide | int _filbuf(FILE *) - called by inline getc macro
+# runtime hooks called from instruction_replacements.sci
+i76_frame_tick               std0   -     runtime        # exe | GetTickCount replacement in the per-frame timer sub_49C920 (frame limiter)
