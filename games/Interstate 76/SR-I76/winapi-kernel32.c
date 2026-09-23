@@ -562,10 +562,65 @@ typedef struct heap_block {
 #define HEAP_BLOCK_MAGIC 0x48504C42
 
 // Windows HeapFree/HeapReAlloc/HeapSize fail on invalid blocks instead of aborting;
-// the game frees a block twice at exit (WinMain cleanup, dword_504C0C)
+// the game frees a block twice at exit (WinMain cleanup, dword_504C0C). A magic value in the header isn't
+// enough (freed memory keeps it when it's reused without being overwritten), so live blocks are kept in a
+// hash set (open addressing, linear probing, tombstones).
+#define LIVE_EMPTY ((uintptr_t)0)
+#define LIVE_DELETED ((uintptr_t)1)
+static uintptr_t *live_set;
+static uint32_t live_capacity, live_used;   // used = live + tombstones
+
+static uint32_t live_hash(uintptr_t p)
+{
+    return (uint32_t)((p >> 4) * 2654435761u);
+}
+
+static void live_insert(const heap_block *b);
+
+static void live_grow(void)
+{
+    uintptr_t *old = live_set;
+    uint32_t old_capacity = live_capacity, i;
+
+    live_capacity = live_capacity ? live_capacity * 2 : 65536;
+    live_set = (uintptr_t *) calloc(live_capacity, sizeof(uintptr_t));
+    live_used = 0;
+    for (i = 0; i < old_capacity; i++)
+    {
+        if (old[i] > LIVE_DELETED) live_insert((const heap_block *) old[i]);
+    }
+    free(old);
+}
+
+static void live_insert(const heap_block *b)
+{
+    uint32_t i;
+    if ((live_used + 1) * 2 > live_capacity) live_grow();
+    for (i = live_hash((uintptr_t) b) & (live_capacity - 1); live_set[i] > LIVE_DELETED; i = (i + 1) & (live_capacity - 1)) ;
+    if (live_set[i] == LIVE_EMPTY) live_used++;
+    live_set[i] = (uintptr_t) b;
+}
+
+static int live_find(const heap_block *b)
+{
+    uint32_t i;
+    if (live_capacity == 0) return -1;
+    for (i = live_hash((uintptr_t) b) & (live_capacity - 1); live_set[i] != LIVE_EMPTY; i = (i + 1) & (live_capacity - 1))
+    {
+        if (live_set[i] == (uintptr_t) b) return (int) i;
+    }
+    return -1;
+}
+
+static void live_remove(const heap_block *b)
+{
+    int i = live_find(b);
+    if (i >= 0) live_set[i] = LIVE_DELETED;
+}
+
 static int valid_block(const heap_block *b)
 {
-    return b->magic == HEAP_BLOCK_MAGIC;
+    return (live_find(b) >= 0) && (b->magic == HEAP_BLOCK_MAGIC);
 }
 
 typedef struct heap_obj {
@@ -592,6 +647,8 @@ uint32_t CCALL HeapDestroy_c(heap_obj *hHeap)
     for (b = hHeap->first; b != NULL; b = next)
     {
         next = b->next;
+        live_remove(b);
+        b->magic = 0;
         free(b);
     }
     hHeap->first = NULL;
@@ -613,6 +670,7 @@ void * CCALL HeapAlloc_c(heap_obj *hHeap, uint32_t dwFlags, uint32_t dwBytes)
 
     b->size = dwBytes;
     b->magic = HEAP_BLOCK_MAGIC;
+    live_insert(b);
     b->heap = hHeap;
     b->prev = NULL;
     b->next = hHeap->first;
@@ -639,6 +697,7 @@ uint32_t CCALL HeapFree_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem)
         return 0;
     }
     b->magic = 0;
+    live_remove(b);
     unlink_block(b);
     free(b);
     return 1;
@@ -662,9 +721,13 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     }
 
     unlink_block(b);
+    live_remove(b);
+    b->magic = 0;
     nb = (heap_block *) realloc(b, sizeof(heap_block) + (dwBytes ? dwBytes : 1));
     if (nb == NULL)
     {
+        b->magic = HEAP_BLOCK_MAGIC;
+        live_insert(b);
         // re-link the old block
         b->prev = NULL;
         b->next = b->heap->first;
@@ -675,6 +738,8 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
     if (dwBytes > oldsize) memset((uint8_t *)(nb + 1) + oldsize, 0, dwBytes - oldsize);
 
     nb->size = dwBytes;
+    nb->magic = HEAP_BLOCK_MAGIC;
+    live_insert(nb);
     nb->prev = NULL;
     nb->next = nb->heap->first;
     if (nb->next != NULL) nb->next->prev = nb;
@@ -684,7 +749,7 @@ void * CCALL HeapReAlloc_c(heap_obj *hHeap, uint32_t dwFlags, void *lpMem, uint3
 
 uint32_t CCALL HeapSize_c(heap_obj *hHeap, uint32_t dwFlags, const void *lpMem)
 {
-    if ((lpMem == NULL) || !valid_block(((const heap_block *)lpMem) - 1)) return (uint32_t)-1;
+    if ((lpMem == NULL) || !valid_block(((const heap_block *)lpMem) - 1)) return (uint32_t)-1;  // valid_block checks the set first
     return (((const heap_block *)lpMem) - 1)->size;
 }
 

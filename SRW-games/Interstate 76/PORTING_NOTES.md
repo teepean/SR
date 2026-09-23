@@ -294,3 +294,7 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   new key messages were dropped until something drained the backlog (the menu then crawled through it).
   post_message now keeps at most one pending WM_MOUSEMOVE per window (latest position, not across clicks),
   like Windows. Script command `mflood N` posts N mouse moves (queue stays at 1).
+- Exit abort again ("double free or corruption (out)") in Glide mode: the magic value in the block header wasn't
+  reliable (HeapDestroy and a moving HeapReAlloc left it in freed memory, which can be reused without being
+  overwritten). Live heap blocks are now tracked in a hash set; HeapFree/HeapReAlloc/HeapSize of anything else
+  fails like on Windows. Verified: ESC -> Abort Mission -> Exit Game -> Yes exits cleanly in Glide mode.
