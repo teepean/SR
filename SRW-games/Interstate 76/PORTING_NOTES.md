@@ -174,3 +174,27 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
 - Hex-Rays decompilation of each module (tools/ida_decompile.py → i76work/*/out/decompiled.c) is the main
   reference; tools/getfunc.py extracts functions.
 - Result: the user saw the game's starting menu (shell) rendered in the SDL window.
+
+### 2026-09-23 — decisions (user)
+- Targets: Linux 32-bit x86 and Windows 32-bit.
+- 3D: own Glide 2.x implementation (replaces nGlide-style wrappers) with a Direct3D 11 backend; Linux will need
+  a second backend (OpenGL) - decide when starting 3D.
+- Order: Smacker video → play a mission in software mode → sound → Glide/D3D11.
+- Work committed on local branch `i76` (not pushed). User's fork: https://github.com/teepean/SR
+
+### 2026-09-23 — toward a mission
+- Smacker video works (smackw32.c on Albion's decoder; blit rect args are 16-bit with garbage high words).
+- `I76_INPUT_SCRIPT=<file>`: timed input (`<ms> click|down|up|move x y`, `key|keydown|keyup VK`, `quit`).
+  Menus poll the button state, so use separate down/up ~300 ms apart.
+- Relocation bugs found at runtime:
+  - `cmp ebx, 0x669fe0` (0x4B2E8A/0x4B2EFB) is the end pointer of the ZIX directory table (beyond .data
+    VirtualSize) → instruction_replacements.sci `cmp ebx, loc_6593E0 + 0x10C00`. Lesson: past-the-end pointers.
+  - unaligned candidates in data sections were all false positives in i76 (floats, chunk tags "SOBJ", strings
+    "rb") → `gen_relocs.py --aligned-data`; plus two UTF-16 table entries excluded.
+- The game's qsort/bsearch comparators return dword differences (overflow) → msvcrt.c reimplements MSVC's
+  exact qsort (median-of-middle quicksort, 8-element shortsort) and bsearch.
+- CD emulation (`I76_CD=1`) is off by default: GOG runs without CD; with a CD the shell behaves differently.
+- fopen/SmackOpen reject directories (Linux can fopen a directory, Windows can't).
+- Current blocker: TRIP→TRAINING loads a01.msn, then WinMain calls the state function pointer at 0x4C2720,
+  which is still NULL. Next: watch 0x4C2720 in the original exe under Wine (separate prefix
+  /home/teemu/sorsa/i76work/wineprefix, input via xdotool) to find the divergence.

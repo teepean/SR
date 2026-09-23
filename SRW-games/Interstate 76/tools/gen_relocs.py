@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # Build relocations.csv for a relocation-stripped PE from ida_export.py output.
-# usage: gen_relocs.py <ida_out_dir> <imagebase_hex> <out_csv> [include.csv|-] [exclude.txt|-] [bss_start_hex] [exe]
+# usage: gen_relocs.py [--aligned-data] <ida_out_dir> <imagebase_hex> <out_csv> [include.csv|-] [exclude.txt|-] [bss_start_hex] [exe]
 import sys, csv
+aligned='--aligned-data' in sys.argv
+sys.argv=[x for x in sys.argv if x!='--aligned-data']
 from classify import classify
 from blockstart import BS
 import pefile
@@ -13,7 +15,7 @@ bs=None
 if exe:
     pe=pefile.PE(exe)
     bs=BS(exe,d,[(ib+x.VirtualAddress,x.PointerToRawData,x.SizeOfRawData) for x in pe.sections])
-data,acc,rej,seg,heads=classify(d,bss,bs)
+data,acc,rej,seg,heads=classify(d,bss,bs,aligned)
 rel={}
 for r in csv.reader(open(d+'/code_refs.csv')):
     a=int(r[0],16); v=int(r[1],16)

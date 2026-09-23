@@ -6,7 +6,7 @@ def load(d):
     funcs={int(r[0],16) for r in csv.reader(open(d+'/funcs.csv'))}
     segs=[(r[0],int(r[1],16),int(r[2],16)) for r in csv.reader(open(d+'/segments.csv'))]
     return data,heads,funcs,segs
-def classify(d, bss_start=None, bs=None):
+def classify(d, bss_start=None, bs=None, aligned_data=False):
     data,heads,funcs,segs=load(d)
     def seg(a):
         for n,s,e in segs:
@@ -18,6 +18,7 @@ def classify(d, bss_start=None, bs=None):
         # (IDA's offset flag is not trusted: it marked the string "NEC" as an offset in i76.exe)
         if (v&0xffff)==0: why='low16zero'
         elif r[3]=='s': why='string'
+        elif aligned_data and ss!='.text' and a%4: why='unaligned-data'
         elif bss_start and v>=bss_start and v not in heads and all(0x20<=((v>>(8*k))&0xff)<0x7f for k in range(3)): why='bss-ascii'
         elif ss=='.text' and r[3]=='d' and r[5]=='-' and a%4: why='text-data-misaligned'
         elif all(0x20<=((v>>(8*k))&0xff)<0x7f for k in range(3)) and v not in heads and v not in funcs and (v&3)!=0: why='ascii'

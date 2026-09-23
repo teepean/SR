@@ -1,3 +1,5 @@
 0x4bcd5f # GUID bytes in .rdata
 0x4b2e8c # cmp ebx, 6725600 - integer constant, not pointer
 0x4b2efd # same constant
+0x4f4f24 # UTF-16 alphabet table "a\0b\0c\0..."
+0x4f4f28 # UTF-16 alphabet table

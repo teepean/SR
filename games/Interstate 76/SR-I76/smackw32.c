@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stddef.h>
+#include <sys/stat.h>
 #include <SDL.h>
 #include "platform.h"
 #include "smack.h"
@@ -148,6 +149,10 @@ rad_smack * CCALL SmackOpen_c(const char *name, uint32_t flags, uint32_t extrabu
     {
         if (winapi_debug) eprintf("SmackOpen: %s not found\n", name);
         return NULL;
+    }
+    {
+        struct stat st;
+        if ((stat(path, &st) != 0) || S_ISDIR(st.st_mode)) return NULL;
     }
     f = fopen(path, "rb");
     if (f == NULL) return NULL;

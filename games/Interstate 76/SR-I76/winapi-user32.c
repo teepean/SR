@@ -148,6 +148,10 @@ static void post_message(void *hwnd, uint32_t msg, uint32_t wparam, uint32_t lpa
 static uint8_t key_state[256];      // bit 7 = down, bit 0 = toggled
 static uint8_t key_pressed[256];    // pressed since last GetAsyncKeyState
 
+// scripted input state (see run_script)
+static int script_mouse_active, script_mouse_x, script_mouse_y;
+static uint32_t script_buttons;
+
 typedef struct { uint8_t vk, scan, ext; } key_map;
 static key_map sdl_keys[SDL_NUM_SCANCODES];
 
@@ -357,6 +361,8 @@ int16_t CCALL GetAsyncKeyState_c(int32_t nVirtKey)
     if (vk >= 1 && vk <= 4)
     {
         uint32_t b = SDL_GetMouseState(NULL, NULL);
+        if (script_buttons & MK_LBUTTON) b |= SDL_BUTTON_LMASK;
+        if (script_buttons & MK_RBUTTON) b |= SDL_BUTTON_RMASK;
         int down = (vk == 1) ? (b & SDL_BUTTON_LMASK) : (vk == 2) ? (b & SDL_BUTTON_RMASK) : (vk == 4) ? (b & SDL_BUTTON_MMASK) : 0;
         return down ? (int16_t)0x8000 : 0;
     }
@@ -416,10 +422,125 @@ int32_t CCALL GetKeyboardType_c(int32_t nTypeFlag)
 }
 
 
+
+/* ------------------------------------------------------------------ */
+/* scripted input (debugging): I76_INPUT_SCRIPT=<file>                 */
+/*   <ms> click <x> <y> [right]   <ms> down|up <x> <y> [right]         */
+/*   <ms> move <x> <y>            <ms> key|keydown|keyup <vk>          */
+/*   <ms> quit                                                        */
+/* <vk>: hex/decimal number, a letter/digit, or ESCAPE RETURN SPACE    */
+/* UP DOWN LEFT RIGHT TAB F1..F12                                      */
+
+typedef struct {
+    uint32_t time;
+    char cmd[16];
+    int32_t a, b, c;
+} script_event;
+
+static script_event *script;
+static int script_count, script_pos, script_loaded;
+
+static int parse_vk(const char *s)
+{
+    static const struct { const char *name; int vk; } names[] = {
+        {"ESCAPE",0x1B},{"ESC",0x1B},{"RETURN",0x0D},{"ENTER",0x0D},{"SPACE",0x20},{"TAB",0x09},
+        {"UP",0x26},{"DOWN",0x28},{"LEFT",0x25},{"RIGHT",0x27},{"SHIFT",0x10},{"CONTROL",0x11},{"CTRL",0x11},
+        {"ALT",0x12},{"BACK",0x08},{"PGUP",0x21},{"PGDN",0x22},{"HOME",0x24},{"END",0x23},{NULL,0}
+    };
+    int i;
+    if (s[0] == 'F' && s[1] >= '1' && s[1] <= '9') return 0x70 + atoi(s + 1) - 1;
+    for (i = 0; names[i].name != NULL; i++) if (0 == strcasecmp(s, names[i].name)) return names[i].vk;
+    if (s[1] == 0 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= '0' && s[0] <= '9'))) return s[0];
+    if (s[1] == 0 && (s[0] >= 'a' && s[0] <= 'z')) return s[0] - 32;
+    return (int) strtol(s, NULL, 0);
+}
+
+static void load_script(void)
+{
+    const char *name;
+    FILE *f;
+    char line[256], arg[64];
+
+    script_loaded = 1;
+    name = getenv("I76_INPUT_SCRIPT");
+    if (name == NULL) return;
+    f = fopen(name, "rt");
+    if (f == NULL) { eprintf("input script not found: %s\n", name); return; }
+    while (fgets(line, sizeof(line), f) != NULL)
+    {
+        script_event e;
+        int n;
+        memset(&e, 0, sizeof(e));
+        arg[0] = 0;
+        n = sscanf(line, "%u %15s %63s %d %d", &e.time, e.cmd, arg, &e.b, &e.c);
+        if (n < 2 || line[0] == '#') continue;
+        if (0 == strncmp(e.cmd, "key", 3)) e.a = parse_vk(arg);
+        else { e.a = atoi(arg); }
+        if ((0 == strcmp(e.cmd, "click") || 0 == strcmp(e.cmd, "down") || 0 == strcmp(e.cmd, "up")) && n >= 5) e.c = 1; else if (0 != strncmp(e.cmd, "key", 3)) e.c = 0;
+        script = (script_event *) realloc(script, (script_count + 1) * sizeof(script_event));
+        script[script_count++] = e;
+    }
+    fclose(f);
+    eprintf("input script: %d events\n", script_count);
+}
+
+static void script_key(int vk, int down)
+{
+    uint32_t scan = MapVirtualKeyA_c(vk, 0);
+    uint32_t lparam = 1 | (scan << 16);
+    if (down)
+    {
+        key_state[vk & 0xff] |= 0x80;
+        key_pressed[vk & 0xff] = 1;
+    }
+    else
+    {
+        key_state[vk & 0xff] &= ~0x80;
+        lparam |= (1u << 30) | (1u << 31);
+    }
+    if (focus_window != NULL) post_message(focus_window, down ? WM_KEYDOWN : WM_KEYUP, vk, lparam);
+}
+
+static void script_mouse(int x, int y, int button, int down)
+{
+    uint32_t lparam = ((uint32_t)(uint16_t)y << 16) | (uint16_t)x;
+    script_mouse_active = 1;
+    script_mouse_x = x;
+    script_mouse_y = y;
+    if (main_window == NULL) return;
+    post_message(main_window, WM_MOUSEMOVE, script_buttons, lparam);
+    if (button < 0) return;
+    if (down) script_buttons |= button ? MK_RBUTTON : MK_LBUTTON;
+    else script_buttons &= ~(button ? MK_RBUTTON : MK_LBUTTON);
+    post_message(main_window, button ? (down ? WM_RBUTTONDOWN : WM_RBUTTONUP) : (down ? WM_LBUTTONDOWN : WM_LBUTTONUP), script_buttons, lparam);
+}
+
+static void run_script(void)
+{
+    uint32_t now;
+
+    if (!script_loaded) load_script();
+    now = winapi_get_ticks();
+    while ((script_pos < script_count) && (script[script_pos].time <= now))
+    {
+        script_event *e = &script[script_pos++];
+        if (winapi_debug) eprintf("input script: %u %s %d %d %d\n", e->time, e->cmd, e->a, e->b, e->c);
+        if (0 == strcmp(e->cmd, "key")) { script_key(e->a, 1); script_key(e->a, 0); }
+        else if (0 == strcmp(e->cmd, "keydown")) script_key(e->a, 1);
+        else if (0 == strcmp(e->cmd, "keyup")) script_key(e->a, 0);
+        else if (0 == strcmp(e->cmd, "move")) script_mouse(e->a, e->b, -1, 0);
+        else if (0 == strcmp(e->cmd, "down")) script_mouse(e->a, e->b, e->c, 1);
+        else if (0 == strcmp(e->cmd, "up")) script_mouse(e->a, e->b, e->c, 0);
+        else if (0 == strcmp(e->cmd, "click")) { script_mouse(e->a, e->b, e->c, 1); script_mouse(e->a, e->b, e->c, 0); }
+        else if (0 == strcmp(e->cmd, "quit")) { eprintf("input script: quit\n"); fflush(NULL); exit(0); }
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* events                                                              */
 
 static int cursor_show_count;
+
 
 static void update_cursor_visibility(void)
 {
@@ -429,7 +550,7 @@ static void update_cursor_visibility(void)
 static uint32_t mouse_wparam(void)
 {
     uint32_t b = SDL_GetMouseState(NULL, NULL);
-    uint32_t w = 0;
+    uint32_t w = script_buttons;
     if (b & SDL_BUTTON_LMASK) w |= MK_LBUTTON;
     if (b & SDL_BUTTON_RMASK) w |= MK_RBUTTON;
     if (b & SDL_BUTTON_MMASK) w |= MK_MBUTTON;
@@ -499,6 +620,7 @@ void winapi_process_events(void)
         }
     }
 
+    run_script();
     display_present(0);
     display_idle();
 }
@@ -567,18 +689,20 @@ uint32_t CCALL DispatchMessageA_c(const win_msg *lpMsg)
 
 uint32_t CCALL SendMessageA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
 {
-    if (winapi_debug >= 2) eprintf("SendMessageA: 0x%x 0x%x 0x%x\n", Msg, wParam, lParam);
+    if ((winapi_debug >= 2) || (winapi_debug && Msg >= 0x400)) eprintf("SendMessageA: 0x%x 0x%x 0x%x\n", Msg, wParam, lParam);
     return winapi_call_wndproc(hWnd, Msg, wParam, lParam);
 }
 
 uint32_t CCALL PostMessageA_c(void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
 {
+    if (winapi_debug && Msg >= 0x400) eprintf("PostMessageA: 0x%x 0x%x 0x%x\n", Msg, wParam, lParam);
     post_message(hWnd, Msg, wParam, lParam);
     return 1;
 }
 
 void CCALL PostQuitMessage_c(int32_t nExitCode)
 {
+    if (winapi_debug) eprintf("PostQuitMessage: %d (0x%x)\n", nExitCode, nExitCode);
     post_message(NULL, WM_QUIT, (uint32_t) nExitCode, 0);
 }
 
@@ -922,6 +1046,12 @@ uint32_t CCALL GetCursorPos_c(win_point *lpPoint)
 
     if (lpPoint == NULL) return 0;
     winapi_process_events();
+    if (script_mouse_active)
+    {
+        lpPoint->x = script_mouse_x;
+        lpPoint->y = script_mouse_y;
+        return 1;
+    }
     SDL_GetMouseState(&x, &y);
     // SDL_GetMouseState returns window coordinates - convert via the renderer's logical size
     {

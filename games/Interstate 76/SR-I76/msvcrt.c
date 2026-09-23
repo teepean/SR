@@ -156,6 +156,11 @@ ms_FILE * CCALL fopen_c(const char *filename, const char *mode)
     if ((filename == NULL) || (mode == NULL)) return NULL;
 
     vfs_resolve(filename, path, sizeof(path));
+    {
+        // Windows can't open directories with fopen
+        struct stat st;
+        if ((stat(path, &st) == 0) && S_ISDIR(st.st_mode)) return NULL;
+    }
 
     text = 1;
     for (i = j = 0; mode[i] != 0 && j < 6; i++)
@@ -540,15 +545,168 @@ void CCALL operator_delete_c(void *ptr)
 
 /* ------------------------------------------------------------------ */
 /* sort/search (callbacks are recompiled cdecl functions)              */
+/*                                                                     */
+/* These reproduce the MSVC CRT algorithms exactly: the game's         */
+/* comparators return the difference of two dwords (which overflows),  */
+/* so the resulting order - and whether bsearch finds an element -     */
+/* depends on the algorithm (glibc's merge sort gives other results).  */
 
-void CCALL qsort_c(void *base, uint32_t nmemb, uint32_t size, int (CCALL *compar)(const void *, const void *))
+typedef int (CCALL *compare_func)(const void *, const void *);
+
+static void ms_swap(char *a, char *b, uint32_t width)
 {
-    qsort(base, nmemb, size, compar);
+    char tmp;
+    if (a != b)
+    {
+        while (width--)
+        {
+            tmp = *a;
+            *a++ = *b;
+            *b++ = tmp;
+        }
+    }
 }
 
-void * CCALL bsearch_c(const void *key, const void *base, uint32_t nmemb, uint32_t size, int (CCALL *compar)(const void *, const void *))
+static void ms_shortsort(char *lo, char *hi, uint32_t width, compare_func comp)
 {
-    return (void *) bsearch(key, base, nmemb, size, compar);
+    char *p, *max;
+
+    while (hi > lo)
+    {
+        max = lo;
+        for (p = lo + width; p <= hi; p += width)
+        {
+            if (comp(p, max) > 0) max = p;
+        }
+        ms_swap(max, hi, width);
+        hi -= width;
+    }
+}
+
+void CCALL qsort_c(void *base, uint32_t num, uint32_t width, compare_func comp)
+{
+    char *lo, *hi, *mid, *loguy, *higuy;
+    uint32_t size;
+    char *lostk[32], *histk[32];
+    int stkptr;
+
+    if ((num < 2) || (width == 0)) return;
+
+    stkptr = 0;
+    lo = (char *) base;
+    hi = (char *) base + width * (num - 1);
+
+recurse:
+    size = (uint32_t)((hi - lo) / width) + 1;
+
+    if (size <= 8)
+    {
+        ms_shortsort(lo, hi, width, comp);
+    }
+    else
+    {
+        mid = lo + (size / 2) * width;
+        ms_swap(mid, lo, width);
+
+        loguy = lo;
+        higuy = hi + width;
+
+        for (;;)
+        {
+            do
+            {
+                loguy += width;
+            } while ((loguy <= hi) && (comp(loguy, lo) <= 0));
+
+            do
+            {
+                higuy -= width;
+            } while ((higuy > lo) && (comp(higuy, lo) >= 0));
+
+            if (higuy < loguy) break;
+
+            ms_swap(loguy, higuy, width);
+        }
+
+        ms_swap(lo, higuy, width);
+
+        if (higuy - 1 - lo >= hi - loguy)
+        {
+            if (lo + width < higuy)
+            {
+                lostk[stkptr] = lo;
+                histk[stkptr] = higuy - width;
+                ++stkptr;
+            }
+            if (loguy < hi)
+            {
+                lo = loguy;
+                goto recurse;
+            }
+        }
+        else
+        {
+            if (loguy < hi)
+            {
+                lostk[stkptr] = loguy;
+                histk[stkptr] = hi;
+                ++stkptr;
+            }
+            if (lo + width < higuy)
+            {
+                hi = higuy - width;
+                goto recurse;
+            }
+        }
+    }
+
+    --stkptr;
+    if (stkptr >= 0)
+    {
+        lo = lostk[stkptr];
+        hi = histk[stkptr];
+        goto recurse;
+    }
+}
+
+void * CCALL bsearch_c(const void *key, const void *base, uint32_t num, uint32_t width, compare_func compare)
+{
+    char *lo = (char *) base;
+    char *hi = (char *) base + (num - 1) * width;
+    char *mid;
+    uint32_t half;
+    int result;
+
+    while (lo <= hi)
+    {
+        if ((half = num / 2) != 0)
+        {
+            mid = lo + ((num & 1) ? half : (half - 1)) * width;
+            if (!(result = compare(key, mid)))
+            {
+                return mid;
+            }
+            else if (result < 0)
+            {
+                hi = mid - width;
+                num = (num & 1) ? half : half - 1;
+            }
+            else
+            {
+                lo = mid + width;
+                num = half;
+            }
+        }
+        else if (num)
+        {
+            return compare(key, lo) ? NULL : lo;
+        }
+        else
+        {
+            break;
+        }
+    }
+    return NULL;
 }
 
 

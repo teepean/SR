@@ -884,35 +884,62 @@ uint32_t CCALL GetModuleFileNameA_c(void *hModule, char *lpFilename, uint32_t nS
     return strlen(lpFilename);
 }
 
-// drives: only C: (fixed disk)
-uint32_t CCALL GetLogicalDrives_c(void) { return 1u << 2; }
+// drives: C: = fixed disk; optionally (I76_CD=1) D: = emulated game CD (volume "I76_CD2").
+// Both map to the game directory. The GOG version runs without a CD (the ZFS archive is in the
+// game directory), and with a CD present the shell takes other code paths (e.g. TRAINING starts
+// the game directly), so the CD is not emulated by default.
+#define CD_LABEL "I76_CD2"
+
+static int cd_drive(void)
+{
+    static int drive = -1;
+    if (drive == -1) drive = (getenv("I76_CD") != NULL && atoi(getenv("I76_CD")) != 0) ? 'd' : 0;
+    return drive;
+}
+#define CD_DRIVE cd_drive()
+
+uint32_t CCALL GetLogicalDrives_c(void) { return (1u << 2) | (CD_DRIVE ? (1u << 3) : 0); }
 
 uint32_t CCALL GetLogicalDriveStringsA_c(uint32_t nBufferLength, char *lpBuffer)
 {
-    if ((lpBuffer == NULL) || (nBufferLength < 5)) return 5;
-    memcpy(lpBuffer, "C:\\\0\0", 5);
-    return 4;
+    if (!CD_DRIVE)
+    {
+        if ((lpBuffer == NULL) || (nBufferLength < 5)) return 5;
+        memcpy(lpBuffer, "C:\\\0\0", 5);
+        return 4;
+    }
+    if ((lpBuffer == NULL) || (nBufferLength < 9)) return 9;
+    memcpy(lpBuffer, "C:\\\0D:\\\0\0", 9);
+    return 8;
 }
 
 uint32_t CCALL GetDriveTypeA_c(const char *lpRootPathName)
 {
     // DRIVE_NO_ROOT_DIR 1, DRIVE_FIXED 3, DRIVE_CDROM 5
     if ((lpRootPathName == NULL) || ((lpRootPathName[0] | 0x20) == 'c')) return 3;
+    if (CD_DRIVE && ((lpRootPathName[0] | 0x20) == CD_DRIVE)) return 5;
     return 1;
 }
 
 uint32_t CCALL GetVolumeInformationA_c(const char *lpRootPathName, char *lpVolumeNameBuffer, uint32_t nVolumeNameSize, uint32_t *lpVolumeSerialNumber, uint32_t *lpMaximumComponentLength, uint32_t *lpFileSystemFlags, char *lpFileSystemNameBuffer, uint32_t nFileSystemNameSize)
 {
-    if ((lpRootPathName != NULL) && ((lpRootPathName[0] | 0x20) != 'c'))
+    int cd;
+
+    cd = CD_DRIVE && (lpRootPathName != NULL) && ((lpRootPathName[0] | 0x20) == CD_DRIVE);
+    if ((lpRootPathName != NULL) && ((lpRootPathName[0] | 0x20) != 'c') && !cd)
     {
         last_error = 21; // ERROR_NOT_READY
         return 0;
     }
-    if ((lpVolumeNameBuffer != NULL) && (nVolumeNameSize > 0)) lpVolumeNameBuffer[0] = 0;
-    if (lpVolumeSerialNumber != NULL) *lpVolumeSerialNumber = 0x12345678;
+    if ((lpVolumeNameBuffer != NULL) && (nVolumeNameSize > 0))
+    {
+        strncpy(lpVolumeNameBuffer, cd ? CD_LABEL : "", nVolumeNameSize - 1);
+        lpVolumeNameBuffer[nVolumeNameSize - 1] = 0;
+    }
+    if (lpVolumeSerialNumber != NULL) *lpVolumeSerialNumber = cd ? 0x07601998 : 0x12345678;
     if (lpMaximumComponentLength != NULL) *lpMaximumComponentLength = 255;
     if (lpFileSystemFlags != NULL) *lpFileSystemFlags = 0;
-    if ((lpFileSystemNameBuffer != NULL) && (nFileSystemNameSize >= 5)) strcpy(lpFileSystemNameBuffer, "FAT");
+    if ((lpFileSystemNameBuffer != NULL) && (nFileSystemNameSize >= 6)) strcpy(lpFileSystemNameBuffer, cd ? "CDFS" : "FAT");
     return 1;
 }
 
