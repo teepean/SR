@@ -34,6 +34,8 @@ void display_idle(void);
 void display_window_to_client(int wx, int wy, int *cx, int *cy);
 // moves the mouse cursor to client coordinates
 void display_warp_mouse(int cx, int cy);
+// moves the mouse cursor to window coordinates (input scripts)
+void display_warp_window(int wx, int wy);
 void display_set_title(const char *title);
 
 #ifdef __cplusplus

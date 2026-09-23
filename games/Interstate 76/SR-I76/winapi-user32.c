@@ -533,6 +533,18 @@ static void run_script(void)
         else if (0 == strcmp(e->cmd, "up")) script_mouse(e->a, e->b, e->c, 0);
         else if (0 == strcmp(e->cmd, "click")) { script_mouse(e->a, e->b, e->c, 1); script_mouse(e->a, e->b, e->c, 0); }
         else if (0 == strcmp(e->cmd, "quit")) { eprintf("input script: quit\n"); app_exit(0); }
+        // real SDL mouse in window coordinates (tests the window -> client mapping)
+        else if (0 == strcmp(e->cmd, "wmove")) { script_mouse_active = 0; display_warp_window(e->a, e->b); }
+        else if ((0 == strcmp(e->cmd, "wdown")) || (0 == strcmp(e->cmd, "wup")))
+        {
+            int x, y, wx, wy, down = (e->cmd[1] == 'd');
+            script_mouse_active = 0;
+            SDL_GetMouseState(&wx, &wy);
+            display_window_to_client(wx, wy, &x, &y);
+            if (down) script_buttons |= MK_LBUTTON; else script_buttons &= ~MK_LBUTTON;
+            if (main_window != NULL) post_message(main_window, down ? WM_LBUTTONDOWN : WM_LBUTTONUP, script_buttons, ((uint32_t)(uint16_t)y << 16) | (uint16_t)x);
+            if (winapi_debug) eprintf("input script: window %d,%d -> client %d,%d\n", wx, wy, x, y);
+        }
     }
 }
 
@@ -1053,18 +1065,8 @@ uint32_t CCALL GetCursorPos_c(win_point *lpPoint)
         return 1;
     }
     SDL_GetMouseState(&x, &y);
-    // SDL_GetMouseState returns window coordinates - convert via the renderer's logical size
-    {
-        SDL_Window *sw = SDL_GetMouseFocus();
-        SDL_Renderer *r = (sw != NULL) ? SDL_GetRenderer(sw) : NULL;
-        if (r != NULL)
-        {
-            float lx, ly;
-            SDL_RenderWindowToLogical(r, x, y, &lx, &ly);
-            x = (int) lx;
-            y = (int) ly;
-        }
-    }
+    // window coordinates -> client coordinates of the (letterboxed, scaled) picture
+    display_window_to_client(x, y, &x, &y);
     if (x < 0) x = 0;
     if (y < 0) y = 0;
     if (x >= display_width) x = display_width - 1;

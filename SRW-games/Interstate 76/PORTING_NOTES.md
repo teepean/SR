@@ -280,3 +280,7 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   i76shell.dll uses the same DD objects (passed via ShellMain) with the same pattern.
 - Result (offscreen test): /glide shows the shell via DirectDraw, videos, and the training mission rendered
   by Glide at 1280x960 (I76_GLIDE_SCALE=2) with the LFB cockpit composited on top, 20 FPS.
+- Mouse fix: GetCursorPos still converted through SDL_Renderer (gone since the GL backend) -> raw window pixels,
+  clamped at 639/479 in a 1280x960 window; the shell polls GetCursorPos + GetAsyncKeyState, so clicks missed.
+  Now uses display_window_to_client. Input scripts: `wmove X Y` (real SDL mouse warp, window pixels), `wdown`,
+  `wup` test the real mapping path.

@@ -247,6 +247,11 @@ void display_window_to_client(int wx, int wy, int *cx, int *cy)
     *cy = (int)((wy * sy - vy) * display_height / vh);
 }
 
+void display_warp_window(int wx, int wy)
+{
+    if (window != NULL) SDL_WarpMouseInWindow(window, wx, wy);
+}
+
 void display_warp_mouse(int cx, int cy)
 {
     int vx, vy, vw, vh;
