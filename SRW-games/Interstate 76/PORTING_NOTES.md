@@ -1,0 +1,176 @@
+# Interstate '76 — SRW porting notes
+
+Running log of the static-recompilation port of Interstate '76 (GOG release).
+Newest entries at the bottom of the log section.
+
+## Source files
+
+Game directory: `/home/teemu/.wine/drive_c/i76/`
+
+| file | size | md5 | notes |
+|---|---|---|---|
+| i76.exe | 1050624 | 9a232dcc2c164648cff20c414c1f9698 | main exe, linked 1998-02-20 (MSVC 5.10), relocations stripped |
+
+PE layout of i76.exe (image base 0x400000):
+
+| section | VA | raw size | notes |
+|---|---|---|---|
+| .text | 0x401000 | 0xbae55 | entry 0x4ba0e0 |
+| .rdata | 0x4bc000 | 0x5788 | IAT at 0x4bc000 (0x404) |
+| .data | 0x4c2000 | 0x3f800 in file | virtual size extends to 0x66a000 (bss) |
+| .rsrc | 0x66a000 | 0x398 | |
+
+Imports: Strlkup.dll, KERNEL32, USER32, GDI32, MSVCRT, anetdll.dll (network),
+ADVAPI32 (registry), WIN32.dll (GOG-renamed WINMM: timeGetTime, mci*, joy*, aux*),
+DSOUND, smackw32.DLL (by ordinal), DDRAW, IMM32, ole32.
+
+Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
+(ZDX5DRAW.DLL, ZGLIDE.DLL, ZREDLINE.DLL, zpowervr.dll).
+
+## Tooling
+
+- SRW built on Linux: `cd SRW && scons` (scons in `~/.local/share/sr-venv`).
+- nasm 2.16.03 in `~/.local/bin` (built from source; 2.15.03–2.15.05 are broken for SR).
+- IDA Pro 9.3 (`/home/teemu/ida-pro-9.3`), Ghidra.
+
+## Research summary
+
+- GitHub issue #70 (M-HT): process = OUT_ORIG test → SCI fixups → recompiled build → I/O
+  reimplementation. SRW only disassembles; all Win32/DirectX/etc. must be reimplemented
+  (Septerra does this in `games/Septerra Core/SR-Septerra/WinApi-*.c` on SDL2).
+- Issue #25: M-HT replaces libraries (C runtime, sound libs) with C, fixes NULL derefs via
+  instruction_replacements, patches crazy code (jumps into instructions, SMC).
+- Issue #67: rewritten parts can differ entirely from original code.
+- Issue #28: x64/arm64 builds exist via llasm / x64 output for Albion and Septerra.
+- SRW pipeline for PE files (see `SRW-games/Septerra Core/SRW`):
+  - `relocations.csv` required when relocations are stripped: `fixup_va,target_va[,i]`.
+    SRW verifies the dword at fixup_va equals target_va.
+  - `bssborder.csv`: `addr,align_minus` splits uninitialized tail of .data into .bss.
+  - `SR.cfg`: `esp_dword_aligned=yes`, `ebp_dword_aligned=no`.
+  - Imports become `extern Name`; the game runtime's `x86/extern.inc` maps
+    `%define Name Name_asm2c`; `Name_asm2c` stubs (`Call_Asm_StackN`) call C `Name_c`.
+- Baseline check: GOG `septerra.exe` (md5 3e51892504ba28125311ebd77ac7cd0c) runs through
+  SRW with the repo's SCI/CSV files without errors.
+
+## Log
+
+### 2026-09-22
+- Researched repo + GitHub issues; installed nasm/scons; built SRW; verified Septerra baseline.
+- Analysed i76.exe PE headers and imports (above).
+
+### 2026-09-23 — relocation reconstruction, first successful SRW run
+- IDAPython needed `idapyswitch --force-path /usr/lib/libpython3.14.so.1.0`. `-S` script paths must not contain spaces.
+- Tools in `tools/`: `ida_export.py` (IDA headless export), `classify.py` + `blockstart.py`
+  (data-pointer heuristics), `gen_relocs.py` (writes relocations.csv + `.rejected.txt`), `reloc_exclude.txt`.
+  Work dir outside the repo: `/home/teemu/sorsa/i76work` (IDA dbs, run-NNN dirs, one per SRW run).
+- Validation against Septerra's hand-made relocations.csv (21077 entries):
+  code refs 17929/17929 exact (only verify operand dword == decoded addr/value, otherwise
+  disp8+imm bytes create bogus refs); data refs → final total FP 21, FN 10.
+- Data-pointer rejection rules (classify.py): low 16 bits zero (float halves), inside IDA strings,
+  inside float/double items, misaligned in dword/word items, 3 printable bytes pointing into .bss w/o head
+  (short strings like "One\0" look like bss pointers because .bss reaches 0x66a000),
+  target in .text not an instruction head, target mid-block with no other xrefs, overlaps.
+  IDA's own offset flag is NOT trusted (it marked the string "NEC\0" as an offset → 0x43454e).
+- SRW change: added smackw32.dll ordinal→name table in `SRW/SRW_loader.c` (15 Smack* imports by ordinal).
+- Manual excludes: GUID bytes at 0x4bcd5f; `cmp ebx, 0x669fe0` integer constant (0x4b2e8c, 0x4b2efd).
+- bssborder.csv: `0x501800,0` (raw size of .data = 0x3f800).
+- Result: SRW run-007 finished (rc=0), 29497 relocations; output i76.asm + seg01/02/03/05.inc.
+
+### 2026-09-23 — first complete assembly (run-015)
+- In x86 output mode SRW does NOT use the PE entry point as a code root; the CRT startup is replaced
+  and C `main()` calls `WinMain_asm`. Root = `global_aliases.sci`: `loc_402B30,WinMain_` (IDA: `_WinMain@16`).
+- Callbacks (`push offset func`, WndProc, qsort comparators, EH funclets) come from
+  `SRW --list_invalid_code_fixups=...`; `tools/gen_code_fixups.py` keeps only candidates that IDA
+  sees as code heads (skips jump tables in .text). Converged after 1 iteration: 149 entries in
+  `x86/fixup_interpret_as_code.sci`. All 2002 IDA functions except the CRT startup are now emitted as code.
+- SRW change (`SRW/SR_basic.c`, SR_initial_disassembly): don't define the section-end sentinel label
+  when another section starts at that address. Otherwise a bss split exactly at the end of real data
+  (no unlabeled padding gap, unlike Septerra's `-24`) gives "label inconsistently redefined".
+  bssborder.csv back to `0x501800,0`.
+- `instruction_replacements.sci`: 0x499997 (53 bytes, cli..sti) CPU MHz measurement via PIT ports
+  0x42/0x43/0x61 → `mov word [ebp-0x4], 0`; function then returns -1 and caller 0x499B00 uses 200 MHz.
+  (Replacing only the function entry did not stop SRW from emitting the rest of the body.)
+- `ignored_areas.sci`: CRT startup `start` 0x4BA0E0 (430), thunks `_XcptFilter` 0x4BA30A, `_initterm` 0x4BA310,
+  `__setdefaultprecision` 0x4BA320, `_controlfp` 0x4BA340, and start's SEH scope table in .rdata 0x4BECA8 (12).
+- TODO: CRT startup called `_initterm` (C++ static constructors, `__xc_a..__xc_z`) → replacement main() must do that.
+- nasm: 0 errors, no short-jump repairs needed. `i76.o` 1.9 MB, 233 undefined externals
+  (Win32 API, MSVCRT, DirectDraw/DirectSound, Smack*, dp* (anetdll), StrLookup*, joy*/aux*/mci*, x86_read/write_fs_dword).
+- `build-x86.sh` added (no deletes).
+
+### 2026-09-23 — DLLs and runtime scoping
+- Dynamically loaded modules: `I76SHELL.DLL` → use `i76shell.dll` (PE timestamp Feb 1998, matches exe;
+  `I76SHELL_1083.DLL` is an older Jul 1997 build). Exports `ShellMain`, `ShellWindowProc`.
+  Renderers `ZGLIDE.DLL`/`ZDX5DRAW.DLL`/`ZREDLINE.DLL`/`zpowervr.dll` share one export interface
+  (CheckFunc, FirstDevice, GetFuncDesc, GetNumDevice, GetSocketCaps, LastDevice, LockDisplay, LostDeviceDisplay,
+  PreloadTexture, RefreshDisplay, Render, RenderNoClip, RenderRefresh, RestoreDevice, SetLumaTable, SetState,
+  SetTexturePalette, UnlockDisplay, UpdateTexture).
+- GOG setup is the Glide build (product.ini ProductID `I76GLDW95`, OpenGLide config) → DECISION: renderer =
+  recompiled ZGLIDE.DLL + own Glide 2.x implementation (39 functions) on OpenGL/SDL2.
+- All DLLs keep their relocation tables → SRW runs without relocations.csv. All share image base 0x10000000;
+  that's fine because `loc_` labels are local per nasm object (BI3 does the same).
+- SRW-i76shell: 88 fixup_interpret_as_code entries; the 131 unreferenced IDA functions are dead code.
+- SRW-zglide: 29 entries; ZGLIDE links the MSVC CRT statically (fopen/fseek/ftell/realloc/strncmp…);
+  its CRT init (DllMain→__cinit/__heap_init/__ioinit) is not run → map the CRT functions it uses to runtime
+  implementations via external_procedures.sci (as Septerra's CLIB does).
+- Tools: `tools/check_coverage.py` (IDA funcs not emitted as code), `tools/ida_xrefs.py` (callers per function).
+- Runtime scope: 233 distinct imports across exe+shell+zglide; Septerra's runtime already provides 55.
+  Missing: MSVCRT (forward most to host libc: same i386 cdecl ABI; emulate FILE internals, _stat, _open
+  flags, _pctype/_mbctype, errno), Heap*/Virtual*/Reg*/GDI extras, Smack* (Smacker video), dp*
+  (anetdll networking → stub, single player first), StrLookup* (STRLKUP.DLL, small; recompile or rewrite),
+  joy*/aux*/mci* (GOG WIN32.dll = winmm + CD-audio emulation via audiere from music/ dir), C++ EH
+  (`__CxxFrameHandler`, `_except_handler3`, fs:[0] via x86_read/write_fs_dword like Septerra).
+
+## Plan
+1. [done] SRW + nasm for i76.exe; SRW for i76shell.dll and ZGLIDE.DLL.
+2. Runtime skeleton `games/Interstate 76/SR-I76` (copied from Septerra): SConstruct, main (+ C++ static ctors),
+   extern.inc/asm2c stubs for every import (unimplemented ones log + abort) → first link.
+3. Get WinMain running: file I/O (ZFS archive via CreateFileMapping/MapViewOfFile), registry, window/input (SDL2).
+4. LoadLibrary/GetProcAddress emulation: table of recompiled modules (i76shell, zglide) and their exports.
+5. Glide 2.x on OpenGL; ZGLIDE external CRT mapping.
+6. Shell UI (GDI/DIB → SDL surface), Smacker videos, sound (DirectSound → SDL audio), CD music.
+7. Networking stubs, force feedback stubs, polish.
+
+### 2026-09-23 — runtime skeleton, first link and first run
+- `SRW-games/Interstate 76/gen_all.sh` regenerates all 4 modules (i76, i76shell, zglide, strlkup) into a new
+  `/home/teemu/sorsa/i76work/gen-NNN` dir, runs compact_source, `fix_import_names.py`, nasm + repair_short_jumps
+  loop, and copies the `.asm`/`seg*.inc` into `games/Interstate 76/SR-I76/x86/<module>/`.
+- `fix_import_names.py`: MSVCRT import `div` collides with the x86 `div` mnemonic (a `%define div ...` rewrites
+  instructions) → import references renamed to `msvcrt_div`.
+- DLL CRT: `external_procedures.sci` redirects CRT entry points used by game code (ZGLIDE 23, STRLKUP 21) to the
+  shared runtime CRT; `tools/gen_ignored.py` writes `ignored_areas.sci` for dead functions (fixpoint over IDA xrefs;
+  a missing loc_ label does NOT mean dead - fall-through code has none; areas extend to the next function start
+  so trailing jump tables go too). `tools/crt_boundary.py` lists CRT functions called from game code.
+- Runtime `games/Interstate 76/SR-I76`: `imports.spec` (359 imports: conv/args from IDA prototypes, dp* from call
+  sites, Smack* from decorated DLL exports) → `gen_imports.py` → `x86/imports.inc` (%define name → name_asm2c),
+  `x86/imports-asm.asm` (Call_Asm_StackN stubs, 16-byte stack alignment), `imports-stubs.c` (weak "unimplemented").
+  Added macros Call_Asm_Stack10/11 and Call_Asm_VariableStack1 (reserve 12 bytes, otherwise the saved-esp slot can
+  overwrite the return address).
+- `x86/raw-asm.asm`: `_ftol` (truncating fistp → edx:eax), traps for `__CxxFrameHandler`/`_except_handler3`.
+- `msvcrt.c`: MS-layout FILE (host FILE* in _tmpfname, _cnt kept 0 so inline getc → _filbuf, _IOEOF/_IOERR flags
+  maintained for inline feof/ferror), text-mode CRLF, MS rand (RAND_MAX 0x7fff), exact _msize (16-byte header),
+  _stat/_finddata_t MS layouts, _open flag translation, ctype tables (_pctype/_mbctype/__mb_cur_max), printf via
+  printf_x86 (from Septerra), scanf via host v*scanf with the x86 arg area as va_list (i386 only).
+  `div` returns div_t in edx:eax → implemented as uint64_t return.
+- `vfs.c`: Windows path → host path, case-insensitive per component, `..`, drive letters, fake install dir `C:\I76`.
+- `main.c`: runs i76.exe's C++ static constructors (`__xc_a..__xc_z` = 0x4C2000..0x4C2010, exported via
+  global_aliases `i76_xc_a/i76_xc_z`) then `WinMain_`.
+- Build: `cd "games/Interstate 76/SR-I76" && ~/.local/share/sr-venv/bin/scons` → `SR-I76` (4.9 MB, -m32).
+- Test data copy: `/home/teemu/sorsa/i76work/gamedata` (don't write into the Wine install).
+- First run: WinMain executes: FindWindowA, Reg*, FindFirstFileA, GetSystemInfo, GetProcessHeap, then LoadLibraryA
+  (stub) → exits 1. Next: kernel32/advapi32/user32 implementations and LoadLibrary emulation.
+
+### 2026-09-23 — main menu visible
+- Renderer path: no renderer flag → built-in software renderer; runtime passes `/gdi` so the exe presents its
+  8-bit framebuffer with SetDIBitsToDevice (DIB_PAL_COLORS through the realized logical palette). The shell
+  (i76shell) is GDI-only (DIB sections, BitBlt/StretchBlt). DirectDraw/DirectSound creation fail for now.
+- Win95 quirk: i76shell treats `BitBlt(...) == height` as success (Win95 returned the scan-line count) →
+  BitBlt/StretchBlt return the line count.
+- New runtime files: display.c (SDL window/texture, `I76_SCALE`, `I76_DUMP_FRAMES`), winapi-user32.c
+  (windows, message queue, SDL key → VK/scan code, WM_CHAR via TranslateMessage), winapi-gdi32.c (DCs, DIB
+  sections, palettes, blits, FreeType text: Lee from game dir, Arial → Liberation Sans, courier → Liberation
+  Mono), winapi-kernel32.c (files, finds, mmap file mappings, per-heap tracked HeapAlloc, VirtualAlloc, module
+  table for LoadLibrary/GetProcAddress + DLL static ctors), winapi-advapi32.c (registry in `SR-I76.reg`),
+  winapi-misc.c (winmm/ole32/DirectX stubs). Env: `I76_DEBUG=1|2`, `I76_NO_MESSAGEBOX`.
+- Hex-Rays decompilation of each module (tools/ida_decompile.py → i76work/*/out/decompiled.c) is the main
+  reference; tools/getfunc.py extracts functions.
+- Result: the user saw the game's starting menu (shell) rendered in the SDL window.

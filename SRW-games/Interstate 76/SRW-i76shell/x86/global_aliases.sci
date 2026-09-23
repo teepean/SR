@@ -1,0 +1,2 @@
+loc_10043000,i76shell_xc_a
+loc_10043008,i76shell_xc_z

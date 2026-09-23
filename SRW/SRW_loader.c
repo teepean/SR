@@ -1125,6 +1125,28 @@ int SRW_LoadFile(const char *fname)
                         }
                     }
 
+                    if (strcasecmp(DllName, "smackw32.dll") == 0)
+                    {
+                        switch(*LookupTable & 0xffff)
+                        {
+                            case  2: ProcName = "SmackBufferOpen"; break;
+                            case  3: ProcName = "SmackBufferBlit"; break;
+                            case  5: ProcName = "SmackBufferNewPalette"; break;
+                            case  6: ProcName = "SmackBufferClose"; break;
+                            case  7: ProcName = "SmackBufferSetPalette"; break;
+                            case 14: ProcName = "SmackOpen"; break;
+                            case 17: ProcName = "SmackSoundOnOff"; break;
+                            case 18: ProcName = "SmackClose"; break;
+                            case 19: ProcName = "SmackDoFrame"; break;
+                            case 21: ProcName = "SmackNextFrame"; break;
+                            case 23: ProcName = "SmackToBuffer"; break;
+                            case 25: ProcName = "SmackColorRemap"; break;
+                            case 28: ProcName = "SmackToBufferRect"; break;
+                            case 32: ProcName = "SmackWait"; break;
+                            case 38: ProcName = "SmackSoundUseDirectSound"; break;
+                        }
+                    }
+
                     if (strcasecmp(DllName, "WSOCK32.dll") == 0)
                     {
                         switch(*LookupTable & 0xffff)

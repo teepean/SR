@@ -67,9 +67,21 @@ int SR_initial_disassembly(void)
         }
         else
         {
+            uint_fast32_t Entry2;
+
             output->type = OT_NONE;
             output->has_label = 1;
             output->len = (uint_fast32_t) -1;
+
+            // don't define the end label if another section starts at the same address (e.g. bss split from the end of data section)
+            for (Entry2 = 0; Entry2 < num_sections; Entry2++)
+            {
+                if ((Entry2 != Entry) && (section[Entry2].start == section[Entry].start + section[Entry].size))
+                {
+                    output->has_label = 0;
+                    break;
+                }
+            }
         }
     }
 

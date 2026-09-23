@@ -1,0 +1,8 @@
+Import('env2')
+
+env3 = env2.Clone()
+env3.Append(ASFLAGS = ' -ix86/zglide/')
+
+obj = env3.Object('zglide.asm')
+
+Return('obj')

@@ -1,0 +1,3 @@
+loc_402B30,WinMain_
+loc_4C2000,i76_xc_a
+loc_4C2010,i76_xc_z

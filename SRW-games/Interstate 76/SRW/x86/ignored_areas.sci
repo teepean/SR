@@ -1,0 +1,6 @@
+loc_4BA0E0,430
+loc_4BA30A,6
+loc_4BA310,6
+loc_4BA320,19
+loc_4BA340,6
+loc_4BECA8,12

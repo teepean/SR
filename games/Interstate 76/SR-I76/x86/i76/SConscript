@@ -1,0 +1,8 @@
+Import('env2')
+
+env3 = env2.Clone()
+env3.Append(ASFLAGS = ' -ix86/i76/')
+
+obj = env3.Object('i76.asm')
+
+Return('obj')

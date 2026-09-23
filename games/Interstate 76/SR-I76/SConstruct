@@ -1,0 +1,40 @@
+import os
+import subprocess
+
+# set help text
+vars = Variables('custom.py')
+vars.Add(EnumVariable('debug', 'Debug level (0 = release version)', '1',
+                                 allowed_values=('0', '1', '2'),
+                                 ignorecase=2))
+vars.Add(EnumVariable('device', 'Target device', 'pc-linux',
+                                 allowed_values=('pc-linux',),
+                                 ignorecase=2))
+env = Environment(variables = vars)
+
+debug = int(env['debug'])
+device = env['device']
+
+Help(vars.GenerateHelpText(env))
+
+env.Append(CCFLAGS = '-O2 -Wall -m32 -fno-PIE',
+           LINKFLAGS = '-m32 -no-pie -Wl,-z,noexecstack',
+           CPPPATH = ['/usr/include/SDL2', '/usr/local/include/SDL2', '/usr/include/freetype2', '/usr/local/include'],
+           LIBPATH = ['/usr/local/lib'],
+           LIBS = ['SDL2', 'freetype', 'pthread', 'm']
+          )
+
+if debug <= 0:
+    env.Append(LINKFLAGS = '-s')
+elif debug == 1:
+    env.Append(CCFLAGS = '-g')
+else:
+    env.Append(CCFLAGS = '-g -D__DEBUG__')
+
+if 'PATH_INC' in os.environ:
+    env.Append(CPPPATH = os.environ['PATH_INC'].split(os.pathsep))
+if 'PATH_LIB' in os.environ:
+    env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
+
+arch_objs = SConscript('x86/SConscript', exports='device env')
+
+env.Program('SR-I76', Glob('*.c') + arch_objs)
