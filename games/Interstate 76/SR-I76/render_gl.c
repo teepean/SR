@@ -739,7 +739,7 @@ static void gl_glide_draw(const render_glide_state *st, const render_glide_verte
         GLint mag = (st->filter_mag == 1) ? GL_LINEAR : GL_NEAREST;     // GR_TEXTUREFILTER_BILINEAR = 1
         GLint min;
         if (st->mipmap == 0) min = (st->filter_min == 1) ? GL_LINEAR : GL_NEAREST;
-        else min = (st->filter_min == 1) ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST;
+        else min = (st->filter_min == 1) ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST_MIPMAP_NEAREST;
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, (GLuint)st->texture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min);
