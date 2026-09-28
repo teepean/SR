@@ -49,7 +49,13 @@ static const char default_config[] =
     "# joystick / gamepad (1 = on, 0 = off)\n"
     "joystick = 1\n"
     "# joystick backend: sdl, or evdev (Linux: read /dev/input directly)\n"
-    "joystick_backend = sdl\n";
+    "joystick_backend = sdl\n"
+    "# joystick device: a name substring (e.g. T150) or an SDL device index; only matching devices\n"
+    "# are exposed. Empty = all devices, wheels/gamepads first (the game binds its controls to joystick 1).\n"
+    "joystick_device = \n"
+    "# merge all devices into joystick 1 (buttons and axes), so the game's \"Press any key or button...\"\n"
+    "# control mapping reacts to a press/movement on any pad/wheel; 0 = one device per joystick\n"
+    "joystick_merge = 1\n";
 
 static void trim(char *s)
 {

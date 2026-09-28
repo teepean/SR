@@ -161,6 +161,25 @@ static void load_registry(void)
     // keys that exist on every installation
     add_key("HKLM\\SOFTWARE\\Activision");
     add_key("HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion");
+    // legacy joystick registry: the shell (i76shell) opens these to load the joystick configuration; without
+    // them every device is treated as "not configured properly" (see joystick.c)
+    {
+        static const char cur[] = "HKLM\\System\\CurrentControlSet\\Control\\MediaResources\\Joystick\\DINPUT.DLL\\CurrentJoystickSettings";
+        char oem[64], name[48], oemkey[256], disp[48];
+        int i;
+        add_key(cur);
+        add_key("HKLM\\System\\CurrentControlSet\\Control\\MediaProperties\\PrivateProperties\\Joystick\\OEM");
+        for (i = 1; i <= 4; i++)         // JOY_MAX_DEVICES (joystick_backend.h)
+        {
+            snprintf(oem, sizeof(oem), "SR-JOYSTICK-%d", i);
+            snprintf(name, sizeof(name), "Joystick%dOEMName", i);
+            set_value(cur, name, 1, (const uint8_t *)oem, (uint32_t)strlen(oem) + 1);   // REG_SZ
+            snprintf(oemkey, sizeof(oemkey), "HKLM\\System\\CurrentControlSet\\Control\\MediaProperties\\PrivateProperties\\Joystick\\OEM\\%s", oem);
+            add_key(oemkey);
+            snprintf(disp, sizeof(disp), "SDL Joystick %d", i);
+            set_value(oemkey, "OEMName", 1, (const uint8_t *)disp, (uint32_t)strlen(disp) + 1);
+        }
+    }
 
     f = fopen(REGISTRY_FILE, "rt");
     if (f == NULL) return;
