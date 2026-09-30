@@ -8,7 +8,8 @@
  *  first hat = POV. The game lets the player bind axes and buttons in its controls screen.
  *
  *  Backends: SDL (below, default) or on Linux optionally evdev (joystick_evdev.c, reads /dev/input/event*
- *  directly). SR-I76.cfg: joystick_backend = sdl | evdev.
+ *  directly). SR-I76.cfg: joystick_backend = sdl | evdev. joystick_device = <name substring|SDL index>
+ *  exposes only matching devices; without it wheels/gamepads are listed first (the game reads joystick 0).
  *  Note: if another program grabs the device (e.g. Wine's winedevice.exe with a controller), neither backend
  *  gets any input beyond the initial state.
  *
@@ -16,8 +17,10 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <ctype.h>
 #include <SDL.h>
 #include "platform.h"
 #include "winapi.h"
@@ -47,6 +50,7 @@ EXTERN_C_BEGIN
 
 int joy_debug;
 static int use_evdev;
+static int merge_devices = 1;       // config "joystick_merge": joystick 0 reports all devices combined
 
 #pragma pack(push, 1)
 typedef struct {
@@ -74,6 +78,7 @@ typedef struct {
 typedef struct {
     SDL_Joystick *joystick;
     SDL_GameController *controller;
+    SDL_JoystickType type;
     int axes, buttons, hats;
 } device;
 
@@ -89,6 +94,7 @@ void joystick_startup(void)
     const char *backend;
 
     joy_debug = winapi_debug;
+    merge_devices = config_get_int("joystick_merge", 1);
     if (!config_get_int("joystick", 1)) return;
 #if defined(__linux__)
     backend = config_get("joystick_backend");
@@ -124,19 +130,121 @@ static void close_devices(void)
     num_devices = 0;
 }
 
+static const char *joystick_type_name(SDL_JoystickType type)
+{
+    switch (type)
+    {
+        case SDL_JOYSTICK_TYPE_GAMECONTROLLER: return "game controller";
+        case SDL_JOYSTICK_TYPE_WHEEL: return "wheel";
+        case SDL_JOYSTICK_TYPE_ARCADE_STICK: return "arcade stick";
+        case SDL_JOYSTICK_TYPE_FLIGHT_STICK: return "flight stick";
+        case SDL_JOYSTICK_TYPE_DANCE_PAD: return "dance pad";
+        case SDL_JOYSTICK_TYPE_GUITAR: return "guitar";
+        case SDL_JOYSTICK_TYPE_DRUM_KIT: return "drum kit";
+        case SDL_JOYSTICK_TYPE_ARCADE_PAD: return "arcade pad";
+        case SDL_JOYSTICK_TYPE_THROTTLE: return "throttle";
+        default: return "joystick";
+    }
+}
+
+// devices usable for driving come first, so a wheel/gamepad ends up as winmm joystick 0: the game
+// binds its default controls to the first joystick and reads that one in the Control Configuration screen
+static int joystick_type_priority(SDL_JoystickType type)
+{
+    switch (type)
+    {
+        case SDL_JOYSTICK_TYPE_WHEEL: return 0;
+        case SDL_JOYSTICK_TYPE_GAMECONTROLLER: return 1;
+        case SDL_JOYSTICK_TYPE_FLIGHT_STICK: return 2;
+        case SDL_JOYSTICK_TYPE_ARCADE_STICK: return 3;
+        case SDL_JOYSTICK_TYPE_ARCADE_PAD: return 4;
+        default: return 5;
+    }
+}
+
+static int contains_ci(const char *haystack, const char *needle)
+{
+    size_t n = strlen(needle);
+    size_t i;
+
+    if (n == 0) return 1;
+    for (; *haystack != 0; haystack++)
+    {
+        for (i = 0; i < n; i++)
+        {
+            if (haystack[i] == 0) return 0;
+            if (tolower((unsigned char)haystack[i]) != tolower((unsigned char)needle[i])) break;
+        }
+        if (i == n) return 1;
+    }
+    return 0;
+}
+
+// fills order[] with the SDL device indices to expose; joystick_device (name substring or SDL index)
+// filters the list (no match = all devices). Returns the count.
+static int build_selection(int *order)
+{
+    const char *sel = config_get("joystick_device");
+    int i, n = SDL_NumJoysticks(), count = 0;
+
+    if (n > 64) n = 64;
+    for (i = 0; i < n; i++)
+    {
+        const char *name;
+        if (!eligible(i)) continue;
+        if ((sel != NULL) && (*sel != 0))
+        {
+            if (strspn(sel, "0123456789") == strlen(sel)) { if (atoi(sel) != i) continue; }
+            else
+            {
+                name = SDL_JoystickNameForIndex(i);
+                if ((name == NULL) || !contains_ci(name, sel)) continue;
+            }
+        }
+        order[count++] = i;
+    }
+    if ((count == 0) && (sel != NULL) && (*sel != 0))
+    {
+        if (winapi_debug) eprintf("joystick: joystick_device '%s' matched no device, using all of them\n", sel);
+        for (i = 0; (i < n) && (count < 64); i++) if (eligible(i)) order[count++] = i;
+    }
+    return count;
+}
+
 static void open_devices(void)
 {
-    int i, n;
+    int order[64], i, j, count;
 
     close_devices();
-    n = SDL_NumJoysticks();
-    for (i = 0; (i < n) && (num_devices < MAX_DEVICES); i++)
+    count = build_selection(order);
+
+    // stable sort by type priority (same type keeps the SDL order)
+    for (i = 1; i < count; i++)
     {
+        int key = order[i];
+        int kp = joystick_type_priority(SDL_JoystickGetDeviceType(key));
+        for (j = i - 1; (j >= 0) && (joystick_type_priority(SDL_JoystickGetDeviceType(order[j])) > kp); j--)
+            order[j + 1] = order[j];
+        order[j + 1] = key;
+    }
+
+    if (winapi_debug)
+    {
+        int n = SDL_NumJoysticks();
+        for (i = 0; i < n; i++)
+            eprintf("joystick: SDL device %d: %s [%s]\n", i,
+                    SDL_JoystickNameForIndex(i) ? SDL_JoystickNameForIndex(i) : "?",
+                    joystick_type_name(SDL_JoystickGetDeviceType(i)));
+    }
+
+    for (i = 0; (i < count) && (num_devices < MAX_DEVICES); i++)
+    {
+        int index = order[i];
         device *d = &devices[num_devices];
-        if (!eligible(i)) continue;
-        if (SDL_IsGameController(i))
+        d->type = SDL_JoystickGetDeviceType(index);
+        if (SDL_IsGameController(index))
         {
-            d->controller = SDL_GameControllerOpen(i);
+            d->controller = SDL_GameControllerOpen(index);
             if (d->controller == NULL) continue;
             d->joystick = SDL_GameControllerGetJoystick(d->controller);
             d->axes = 5;
@@ -145,7 +253,7 @@ static void open_devices(void)
         }
         else
         {
-            d->joystick = SDL_JoystickOpen(i);
+            d->joystick = SDL_JoystickOpen(index);
             if (d->joystick == NULL) continue;
             d->axes = SDL_JoystickNumAxes(d->joystick);
             if (d->axes > 6) d->axes = 6;
@@ -155,7 +263,7 @@ static void open_devices(void)
         }
         if (winapi_debug) eprintf("joystick %d: %s (%s, %d axes, %d buttons, %d hats)\n", num_devices,
                                   d->controller ? SDL_GameControllerName(d->controller) : SDL_JoystickName(d->joystick),
-                                  d->controller ? "game controller" : "joystick", d->axes, d->buttons, d->hats);
+                                  d->controller ? "game controller" : joystick_type_name(d->type), d->axes, d->buttons, d->hats);
         num_devices++;
     }
     if (winapi_debug) eprintf("joystick: %d device(s)\n", num_devices);
@@ -184,7 +292,7 @@ static void check_devices(void)
 {
     static uint32_t last;
     uint32_t now;
-    int i, n, eligible_count = 0, stale = 0;
+    int i, order[64], expected, stale = 0;
 
     init_joysticks();
     if (!subsystem_ok) return;
@@ -193,14 +301,13 @@ static void check_devices(void)
     last = now;
 
     SDL_PumpEvents();
-    n = SDL_NumJoysticks();
-    for (i = 0; i < n; i++) if (eligible(i)) eligible_count++;
-    if (eligible_count > MAX_DEVICES) eligible_count = MAX_DEVICES;
+    expected = build_selection(order);
+    if (expected > MAX_DEVICES) expected = MAX_DEVICES;
     for (i = 0; i < num_devices; i++)
     {
         if ((devices[i].joystick == NULL) || !SDL_JoystickGetAttached(devices[i].joystick)) stale = 1;
     }
-    if (stale || (eligible_count != num_devices))
+    if (stale || (expected != num_devices))
     {
         if (winapi_debug) eprintf("joystick: device list changed, reopening\n");
         open_devices();
@@ -252,6 +359,19 @@ uint32_t CCALL joyGetDevCapsA_c(uint32_t uJoyID, joycaps_a *pjc, uint32_t cbjc)
         axes = d->axes;
         buttons = d->buttons;
         hats = d->hats;
+    }
+
+    // merged joystick 0: report the widest capabilities so the game offers all merged axes/buttons
+    if (merge_devices && (uJoyID == 0))
+    {
+        int k;
+        for (k = 1; k < num_devices; k++)
+        {
+            if (devices[k].joystick == NULL) continue;
+            if (devices[k].axes > axes) axes = devices[k].axes;
+            if (devices[k].buttons > buttons) buttons = devices[k].buttons;
+            if (devices[k].hats > hats) hats = devices[k].hats;
+        }
     }
 
     memset(pjc, 0, sizeof(joycaps_a));
@@ -360,6 +480,36 @@ static void read_device(device *d, joyinfoex *ji)
     }
 }
 
+// when merging, an axis reports the value that deviates most from the center, so moving any device is visible
+static uint32_t merge_axis(uint32_t a, uint32_t b)
+{
+    int da = (int)a - 32768, db = (int)b - 32768;
+    return ((db < 0 ? -db : db) > (da < 0 ? -da : da)) ? b : a;
+}
+
+// winmm joystick 0 = all devices combined: the game detects a button/axis only on the configured joystick,
+// so a press on any pad/wheel has to show up there (Control Configuration "Press any key or button...")
+static void merge_devices_into(joyinfoex *pji, uint32_t uJoyID)
+{
+    joyinfoex other;
+    int i;
+
+    if (!merge_devices || (uJoyID != 0) || (num_devices < 2)) return;
+    for (i = 1; i < num_devices; i++)
+    {
+        if (devices[i].joystick == NULL) continue;
+        read_device(&devices[i], &other);
+        pji->dwButtons |= other.dwButtons;
+        if (pji->dwPOV == JOY_POVCENTERED) pji->dwPOV = other.dwPOV;
+        pji->dwXpos = merge_axis(pji->dwXpos, other.dwXpos);
+        pji->dwYpos = merge_axis(pji->dwYpos, other.dwYpos);
+        pji->dwZpos = merge_axis(pji->dwZpos, other.dwZpos);
+        pji->dwRpos = merge_axis(pji->dwRpos, other.dwRpos);
+        pji->dwUpos = merge_axis(pji->dwUpos, other.dwUpos);
+        pji->dwVpos = merge_axis(pji->dwVpos, other.dwVpos);
+    }
+}
+
 uint32_t CCALL joyGetPosEx_c(uint32_t uJoyID, joyinfoex *pji)
 {
     uint32_t size, flags;
@@ -386,6 +536,7 @@ uint32_t CCALL joyGetPosEx_c(uint32_t uJoyID, joyinfoex *pji)
     {
         if (!SDL_JoystickGetAttached(devices[uJoyID].joystick)) return JOYERR_UNPLUGGED;
         read_device(&devices[uJoyID], pji);
+        merge_devices_into(pji, uJoyID);
     }
     pji->dwSize = size;
     pji->dwFlags = flags;

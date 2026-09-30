@@ -31,6 +31,10 @@ vsync             1 = vertical sync
 sound             0 = no sound
 cd                2 = audio CD with music from the music\*.mp3 files (GOG), 1 = game CD, 0 = no CD drive
 joystick          0 = don't use joysticks / gamepads
+joystick_device   name substring (e.g. T150) or SDL device index; only matching devices are exposed
+                  (empty = all devices, wheels/gamepads first: the game binds to joystick 1)
+joystick_merge    1 = joystick 1 combines all devices (buttons/axes), so the "Press any key or button..."
+                  control mapping reacts to any pad/wheel; 0 = one device per joystick
 
 Command line parameters /glide or /gdi select the renderer (overriding the configuration).
 
