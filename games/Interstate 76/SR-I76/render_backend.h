@@ -34,6 +34,10 @@ typedef struct {
     void (*glide_write_argb)(int buffer, const uint32_t *src);
 } render_backend;
 
+// shared helpers (render.c)
+int render_glide_target_auto(void);
+void render_glide_target_size(int glide_w, int glide_h, int *tw, int *th);
+
 extern const render_backend render_backend_gl;
 #ifdef _WIN32
 extern const render_backend render_backend_d3d11;

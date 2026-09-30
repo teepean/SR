@@ -1,0 +1,1 @@
+loc_10001C26,10,mov dword [loc_1001F898], 0x400 ; FirstDevice: first 2 MB texture boundary at 1 GB = never. ZGLIDE jumps to the next 2 MB region when a texture would cross the boundary but always jumps to 0x200000 (overwriting textures in use past 4 MB); the emulated TMU has no boundaries, so more than 2 MB can be used

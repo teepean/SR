@@ -86,7 +86,15 @@ extern "C" {
     X(PFNGLBINDFRAMEBUFFERPROC, glBindFramebuffer) \
     X(PFNGLFRAMEBUFFERTEXTURE2DPROC, glFramebufferTexture2D) \
     X(PFNGLCHECKFRAMEBUFFERSTATUSPROC, glCheckFramebufferStatus) \
-    X(PFNGLBLITFRAMEBUFFERPROC, glBlitFramebuffer)
+    X(PFNGLBLITFRAMEBUFFERPROC, glBlitFramebuffer) \
+    X(PFNGLGENRENDERBUFFERSPROC, glGenRenderbuffers) \
+    X(PFNGLDELETERENDERBUFFERSPROC, glDeleteRenderbuffers) \
+    X(PFNGLBINDRENDERBUFFERPROC, glBindRenderbuffer) \
+    X(PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC, glRenderbufferStorageMultisample) \
+    X(PFNGLFRAMEBUFFERRENDERBUFFERPROC, glFramebufferRenderbuffer) \
+    X(PFNGLGETINTEGERVPROC, glGetIntegerv) \
+    X(PFNGLGETFLOATVPROC, glGetFloatv) \
+    X(PFNGLTEXPARAMETERFPROC, glTexParameterf)
 
 #define X(type, name) static type p_##name;
 GL_FUNCTIONS
@@ -160,6 +168,18 @@ static int load_gl(void)
 #define glFramebufferTexture2D p_glFramebufferTexture2D
 #define glCheckFramebufferStatus p_glCheckFramebufferStatus
 #define glBlitFramebuffer p_glBlitFramebuffer
+#define glGenRenderbuffers p_glGenRenderbuffers
+#define glDeleteRenderbuffers p_glDeleteRenderbuffers
+#define glBindRenderbuffer p_glBindRenderbuffer
+#define glRenderbufferStorageMultisample p_glRenderbufferStorageMultisample
+#define glFramebufferRenderbuffer p_glFramebufferRenderbuffer
+#define glGetIntegerv p_glGetIntegerv
+#define glGetFloatv p_glGetFloatv
+#define glTexParameterf p_glTexParameterf
+
+// GL_EXT_texture_filter_anisotropic (core in 4.6)
+#define GL_TEXTURE_MAX_ANISOTROPY 0x84FE
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY 0x84FF
 
 
 /* ------------------------------------------------------------------ */
@@ -380,9 +400,14 @@ static struct {
     GLint screen, texscale, tex, textured, cc, ac, tc, inv, constant, chroma, chroma_color, fog, fog_color, fog_table, depth_mode;
 } u;
 
-static int glide_open, glide_w, glide_h, glide_scale;
-static GLuint fbo[2], fbo_color[2], fbo_depth;  // fbo[back], fbo[front]
-static int back_index;                          // index of the back buffer in fbo[]
+// Glide buffers (index back_index = back buffer): fbo[] with the color textures fbo_color[] (+ fbo_depth without
+// MSAA) are what gets presented/read; with MSAA (SR-I76.cfg antialiasing = 2/4/8) drawing goes to the
+// multisampled fbo_draw[] (ms_color[], ms_depth), resolved into fbo[] on swap, before LFB reads and after LFB writes
+static int glide_open, glide_w, glide_h, target_w, target_h, msaa;
+static float anisotropy = 1.0f;     // SR-I76.cfg anisotropy (1 = off), limited to what the driver supports
+static GLuint fbo[2], fbo_color[2], fbo_depth;
+static GLuint fbo_draw[2], ms_color[2], ms_depth;
+static int back_index;
 static GLuint lfb_tex;
 
 // last presented picture for frame dumps
@@ -453,6 +478,18 @@ static int gl_init(SDL_Window *w)
     glEnableVertexAttribArray(2);
     glEnableVertexAttribArray(3);
     glBindVertexArray(0);
+
+    {
+        float max_aniso = 0.0f;
+        glGetError();
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &max_aniso);
+        if ((glGetError() == GL_NO_ERROR) && (max_aniso >= 1.0f))
+        {
+            anisotropy = (float)config_get_int("anisotropy", 8);
+            if (anisotropy > max_aniso) anisotropy = max_aniso;
+            if (anisotropy < 1.0f) anisotropy = 1.0f;
+        }
+    }
 
     glGenTextures(1, &tex_2d);
     glGenTextures(1, &lfb_tex);
@@ -554,7 +591,7 @@ static uint32_t *gl_read_last(int *w, int *h)
     }
     if (glide_open)
     {
-        int fw = glide_w * glide_scale, fh = glide_h * glide_scale;
+        int fw = target_w, fh = target_h;
         uint32_t *tmp = (uint32_t *)malloc((size_t)fw * fh * 4);
         p = (uint32_t *)malloc((size_t)fw * fh * 4);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[back_index ^ 1]);
@@ -578,32 +615,44 @@ static uint32_t *gl_read_last(int *w, int *h)
 /* ------------------------------------------------------------------ */
 /* Glide                                                               */
 
-static int gl_glide_open(int width, int height)
+static void delete_targets(void)
 {
-    int i, fw, fh;
-    const char *s;
+    glDeleteFramebuffers(2, fbo);
+    glDeleteTextures(2, fbo_color);
+    glDeleteTextures(1, &fbo_depth);
+    if (msaa > 1)
+    {
+        glDeleteFramebuffers(2, fbo_draw);
+        glDeleteRenderbuffers(2, ms_color);
+        glDeleteRenderbuffers(1, &ms_depth);
+    }
+    memset(fbo, 0, sizeof(fbo));
+    memset(fbo_draw, 0, sizeof(fbo_draw));
+}
 
-    if (context == NULL) return 0;
-    if (glide_open) gl_glide_close();
-
-    s = config_get("glide_scale");
-    glide_scale = (s != NULL) ? atoi(s) : 2;
-    if (glide_scale < 1) glide_scale = 1;
-    if (glide_scale > 8) glide_scale = 8;
-
-    glide_w = width;
-    glide_h = height;
-    fw = width * glide_scale;
-    fh = height * glide_scale;
+static int create_targets(int fw, int fh)
+{
+    int i;
 
     glGenTextures(2, fbo_color);
-    glGenTextures(1, &fbo_depth);
     glGenFramebuffers(2, fbo);
-
-    glBindTexture(GL_TEXTURE_2D, fbo_depth);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, fw, fh, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    if (msaa > 1)
+    {
+        glGenFramebuffers(2, fbo_draw);
+        glGenRenderbuffers(2, ms_color);
+        glGenRenderbuffers(1, &ms_depth);
+        glBindRenderbuffer(GL_RENDERBUFFER, ms_depth);
+        glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaa, GL_DEPTH_COMPONENT32F, fw, fh);
+        fbo_depth = 0;
+    }
+    else
+    {
+        glGenTextures(1, &fbo_depth);
+        glBindTexture(GL_TEXTURE_2D, fbo_depth);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, fw, fh, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
 
     for (i = 0; i < 2; i++)
     {
@@ -613,7 +662,11 @@ static int gl_glide_open(int width, int height)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo[i]);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo_color[i], 0);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, fbo_depth, 0);
+        if (msaa <= 1)
+        {
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, fbo_depth, 0);
+            fbo_draw[i] = fbo[i];
+        }
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         {
             eprintf("render_gl: incomplete framebuffer\n");
@@ -623,22 +676,66 @@ static int gl_glide_open(int width, int height)
         glClearColor(0, 0, 0, 0);
         glClearDepth(1.0);
         glDepthMask(GL_TRUE);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | ((msaa <= 1) ? GL_DEPTH_BUFFER_BIT : 0));
+        if (msaa > 1)
+        {
+            glBindRenderbuffer(GL_RENDERBUFFER, ms_color[i]);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, msaa, GL_RGBA8, fw, fh);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo_draw[i]);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, ms_color[i]);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, ms_depth);
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            {
+                eprintf("render_gl: incomplete multisampled framebuffer\n");
+                return 0;
+            }
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        }
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    target_w = fw;
+    target_h = fh;
+    return 1;
+}
+
+// multisampled drawing buffer -> presented/read texture
+static void resolve(int i)
+{
+    if (msaa <= 1) return;
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo_draw[i]);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo[i]);
+    glBlitFramebuffer(0, 0, target_w, target_h, 0, 0, target_w, target_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+static int gl_glide_open(int width, int height)
+{
+    int fw, fh, max_samples = 0;
+
+    if (context == NULL) return 0;
+    if (glide_open) gl_glide_close();
+
+    glide_w = width;
+    glide_h = height;
+    render_glide_target_size(width, height, &fw, &fh);
+
+    msaa = config_get_int("antialiasing", 4);
+    glGetIntegerv(GL_MAX_SAMPLES, &max_samples);
+    if (msaa > max_samples) msaa = max_samples;
+    if (msaa < 2) msaa = 0;
+
+    if (!create_targets(fw, fh)) return 0;
     back_index = 0;
     glide_open = 1;
 
-    if (winapi_debug) eprintf("render_gl: Glide screen %dx%d, scale %d\n", width, height, glide_scale);
+    if (winapi_debug) eprintf("render_gl: Glide screen %dx%d, render target %dx%d, MSAA %d, anisotropy %.0f\n", width, height, fw, fh, msaa, anisotropy);
     return 1;
 }
 
 static void gl_glide_close(void)
 {
     if (!glide_open) return;
-    glDeleteFramebuffers(2, fbo);
-    glDeleteTextures(2, fbo_color);
-    glDeleteTextures(1, &fbo_depth);
+    delete_targets();
     glide_open = 0;
 }
 
@@ -683,8 +780,8 @@ static GLenum blend_factor(int f, int is_src)
 
 static void bind_back_buffer(void)
 {
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo[back_index]);
-    glViewport(0, 0, glide_w * glide_scale, glide_h * glide_scale);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_draw[back_index]);
+    glViewport(0, 0, target_w, target_h);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_CULL_FACE);
 }
@@ -744,6 +841,7 @@ static void gl_glide_draw(const render_glide_state *st, const render_glide_verte
         glBindTexture(GL_TEXTURE_2D, (GLuint)st->texture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag);
+        if (anisotropy > 1.0f) glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, ((st->mipmap != 0) && (st->filter_min == 1)) ? anisotropy : 1.0f);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (st->clamp_s == 1) ? GL_CLAMP_TO_EDGE : GL_REPEAT);   // GR_TEXTURECLAMP_CLAMP = 1
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (st->clamp_t == 1) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
     }
@@ -793,7 +891,7 @@ static void present_front(void)
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[back_index ^ 1]);
-    glBlitFramebuffer(0, 0, glide_w * glide_scale, glide_h * glide_scale, vx, wh - vy - vh, vx + vw, wh - vy, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBlitFramebuffer(0, 0, target_w, target_h, vx, wh - vy - vh, vx + vw, wh - vy, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     if (getenv("I76_DUMP_FRAMES") != NULL)
     {
@@ -814,11 +912,45 @@ static void present_front(void)
     SDL_GL_SwapWindow(window);
 }
 
+// glide_scale = auto: new render targets when the window size changed (after a swap, keeping the picture)
+static void check_target_size(void)
+{
+    int fw, fh;
+    GLuint old_fbo, old_color, old_depth;
+
+    if (!render_glide_target_auto()) return;
+    render_glide_target_size(glide_w, glide_h, &fw, &fh);
+    if ((fw == target_w) && (fh == target_h)) return;
+
+    // keep the front buffer's picture: move it out of the way before the targets are recreated
+    old_fbo = fbo[back_index ^ 1];
+    old_color = fbo_color[back_index ^ 1];
+    old_depth = fbo_depth;
+    fbo[back_index ^ 1] = 0;
+    fbo_color[back_index ^ 1] = 0;
+    if (msaa <= 1) fbo_depth = 0;
+    {
+        int ow = target_w, oh = target_h;
+        delete_targets();
+        if (!create_targets(fw, fh)) return;
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, old_fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo[back_index ^ 1]);
+        glBlitFramebuffer(0, 0, ow, oh, 0, 0, fw, fh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+    glDeleteFramebuffers(1, &old_fbo);
+    glDeleteTextures(1, &old_color);
+    if (old_depth != 0) glDeleteTextures(1, &old_depth);
+    if (winapi_debug) eprintf("render_gl: render target %dx%d\n", fw, fh);
+}
+
 static void gl_glide_swap(void)
 {
     if (!glide_open) return;
+    resolve(back_index);
     back_index ^= 1;
     present_front();
+    check_target_size();
 }
 
 static void gl_glide_refresh(int force)
@@ -835,18 +967,19 @@ static void gl_glide_read_565(int buffer, uint16_t *dst, int stride_pixels)
     uint8_t *tmp;
 
     if (!glide_open) return;
-    fw = glide_w * glide_scale;
-    fh = glide_h * glide_scale;
+    fw = target_w;
+    fh = target_h;
+    resolve((buffer == 1) ? back_index : (back_index ^ 1));
     tmp = (uint8_t *)malloc((size_t)fw * fh * 4);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[(buffer == 1) ? back_index : (back_index ^ 1)]);
     glReadPixels(0, 0, fw, fh, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     for (y = 0; y < glide_h; y++)
     {
-        const uint8_t *row = tmp + (size_t)(fh - 1 - y * glide_scale) * fw * 4;
+        const uint8_t *row = tmp + (size_t)(fh - 1 - (int)((int64_t)y * fh / glide_h)) * fw * 4;
         for (x = 0; x < glide_w; x++)
         {
-            const uint8_t *p = row + (size_t)x * glide_scale * 4;
+            const uint8_t *p = row + (size_t)((int64_t)x * fw / glide_w) * 4;
             dst[(size_t)y * stride_pixels + x] = (uint16_t)(((p[0] >> 3) << 11) | ((p[1] >> 2) << 5) | (p[2] >> 3));
         }
     }
@@ -858,14 +991,15 @@ static void gl_glide_write_argb(int buffer, const uint32_t *src)
     static int lfb_w, lfb_h;
     if (!glide_open) return;
     upload_texture(lfb_tex, &lfb_w, &lfb_h, glide_w, glide_h, GL_BGRA, src, GL_NEAREST);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo[(buffer == 1) ? back_index : (back_index ^ 1)]);
-    glViewport(0, 0, glide_w * glide_scale, glide_h * glide_scale);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_draw[(buffer == 1) ? back_index : (back_index ^ 1)]);
+    glViewport(0, 0, target_w, target_h);
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_BLEND);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     draw_quad(lfb_tex, 1);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (buffer != 1) resolve(back_index ^ 1);  // the front buffer is presented from the resolved texture
 }
 
 const render_backend render_backend_gl = {

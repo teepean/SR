@@ -3,7 +3,7 @@
  *  Rendering backend: Direct3D 11 (Windows).
  *
  *  Same design as render_gl.c: 2D pictures are uploaded to a texture and drawn letterboxed into the window;
- *  Glide draws into front/back render targets at (Glide resolution * glide_scale) with a 32-bit float depth
+ *  Glide draws into front/back render targets (glide_scale: N x the Glide resolution or auto) with a 32-bit float depth
  *  buffer, one pixel shader implements the Glide pixel pipeline (texture combine, color/alpha combine, chroma
  *  key, fog, Z/W depth) from a constant buffer. The shaders are compiled at startup with d3dcompiler_47.dll.
  *
@@ -231,10 +231,16 @@ typedef struct {
 static dyn_texture tex_2d, tex_lfb;
 
 // Glide
-static int glide_is_open_flag, glide_w, glide_h, glide_scale;
+// color_tex[] (+ RTV/SRV) is what gets presented/read; with MSAA (antialiasing = 2/4/8) drawing goes to the
+// multisampled ms_tex[]/ms_rtv[] (+ multisampled depth), resolved into color_tex[] on swap, before LFB reads
+// and after LFB writes. draw_rtv[] = the render target views drawn to.
+static int glide_is_open_flag, glide_w, glide_h, target_w, target_h, msaa;
 static ID3D11Texture2D *color_tex[2];
 static ID3D11RenderTargetView *color_rtv[2];
 static ID3D11ShaderResourceView *color_srv[2];
+static ID3D11Texture2D *ms_tex[2];
+static ID3D11RenderTargetView *ms_rtv[2];
+static ID3D11RenderTargetView *draw_rtv[2];
 static ID3D11Texture2D *depth_tex;
 static ID3D11DepthStencilView *depth_dsv;
 static int back_index;
@@ -678,27 +684,28 @@ static uint32_t *d3d_read_last(int *w, int *h)
 /* ------------------------------------------------------------------ */
 /* Glide                                                               */
 
-static void d3d_glide_close(void);
+static void release_targets(void)
+{
+    int i;
+    ctx->OMSetRenderTargets(0, NULL, NULL);
+    for (i = 0; i < 2; i++)
+    {
+        RELEASE(color_srv[i]);
+        RELEASE(color_rtv[i]);
+        RELEASE(color_tex[i]);
+        RELEASE(ms_rtv[i]);
+        RELEASE(ms_tex[i]);
+        draw_rtv[i] = NULL;
+    }
+    RELEASE(depth_dsv);
+    RELEASE(depth_tex);
+}
 
-static int d3d_glide_open(int width, int height)
+static int create_targets(int fw, int fh)
 {
     static const float clear0[4] = { 0, 0, 0, 0 };
     D3D11_TEXTURE2D_DESC d;
-    const char *s;
-    int i, fw, fh;
-
-    if (device == NULL) return 0;
-    if (glide_is_open_flag) d3d_glide_close();
-
-    s = config_get("glide_scale");
-    glide_scale = (s != NULL) ? atoi(s) : 2;
-    if (glide_scale < 1) glide_scale = 1;
-    if (glide_scale > 8) glide_scale = 8;
-
-    glide_w = width;
-    glide_h = height;
-    fw = width * glide_scale;
-    fh = height * glide_scale;
+    int i;
 
     memset(&d, 0, sizeof(d));
     d.Width = fw;
@@ -719,6 +726,22 @@ static int d3d_glide_open(int width, int height)
             return 0;
         }
         ctx->ClearRenderTargetView(color_rtv[i], clear0);
+        draw_rtv[i] = color_rtv[i];
+    }
+    if (msaa > 1)
+    {
+        d.SampleDesc.Count = msaa;
+        d.BindFlags = D3D11_BIND_RENDER_TARGET;
+        for (i = 0; i < 2; i++)
+        {
+            if (FAILED(device->CreateTexture2D(&d, NULL, &ms_tex[i])) || FAILED(device->CreateRenderTargetView(ms_tex[i], NULL, &ms_rtv[i])))
+            {
+                eprintf("render_d3d11: can't create the multisampled buffers\n");
+                return 0;
+            }
+            ctx->ClearRenderTargetView(ms_rtv[i], clear0);
+            draw_rtv[i] = ms_rtv[i];
+        }
     }
     d.Format = DXGI_FORMAT_D32_FLOAT;
     d.BindFlags = D3D11_BIND_DEPTH_STENCIL;
@@ -728,27 +751,52 @@ static int d3d_glide_open(int width, int height)
         return 0;
     }
     ctx->ClearDepthStencilView(depth_dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
+    target_w = fw;
+    target_h = fh;
+    return 1;
+}
 
+// multisampled drawing buffer -> presented/read texture
+static void resolve(int i)
+{
+    if (msaa > 1) ctx->ResolveSubresource(color_tex[i], 0, ms_tex[i], 0, DXGI_FORMAT_R8G8B8A8_UNORM);
+}
+
+static void d3d_glide_close(void);
+
+static int d3d_glide_open(int width, int height)
+{
+    int fw, fh;
+
+    if (device == NULL) return 0;
+    if (glide_is_open_flag) d3d_glide_close();
+
+    glide_w = width;
+    glide_h = height;
+    render_glide_target_size(width, height, &fw, &fh);
+
+    msaa = config_get_int("antialiasing", 4);
+    if (msaa > 8) msaa = 8;
+    while (msaa > 1)
+    {
+        UINT quality = 0;
+        if (SUCCEEDED(device->CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM, msaa, &quality)) && (quality > 0)) break;
+        msaa /= 2;
+    }
+    if (msaa < 2) msaa = 0;
+
+    if (!create_targets(fw, fh)) return 0;
     back_index = 0;
     glide_is_open_flag = 1;
     glide_cb_valid = 0;
-    if (winapi_debug) eprintf("render_d3d11: Glide screen %dx%d, scale %d\n", width, height, glide_scale);
+    if (winapi_debug) eprintf("render_d3d11: Glide screen %dx%d, render target %dx%d, MSAA %d\n", width, height, fw, fh, msaa);
     return 1;
 }
 
 static void d3d_glide_close(void)
 {
-    int i;
     if (!glide_is_open_flag) return;
-    ctx->OMSetRenderTargets(0, NULL, NULL);
-    for (i = 0; i < 2; i++)
-    {
-        RELEASE(color_srv[i]);
-        RELEASE(color_rtv[i]);
-        RELEASE(color_tex[i]);
-    }
-    RELEASE(depth_dsv);
-    RELEASE(depth_tex);
+    release_targets();
     glide_is_open_flag = 0;
 }
 
@@ -915,8 +963,8 @@ static ID3D11SamplerState *get_sampler(const render_glide_state *st)
 
 static void bind_back_buffer(void)
 {
-    ctx->OMSetRenderTargets(1, &color_rtv[back_index], depth_dsv);
-    set_viewport(0.0f, 0.0f, (float)(glide_w * glide_scale), (float)(glide_h * glide_scale));
+    ctx->OMSetRenderTargets(1, &draw_rtv[back_index], depth_dsv);
+    set_viewport(0.0f, 0.0f, (float)target_w, (float)target_h);
 }
 
 static void d3d_glide_draw(const render_glide_state *st, const render_glide_vertex *vertices, int count, int primitive)
@@ -1023,7 +1071,7 @@ static void d3d_glide_clear(uint32_t color, uint8_t alpha, uint16_t depth, int c
         c[1] = ((color >> 8) & 0xFF) / 255.0f;
         c[2] = (color & 0xFF) / 255.0f;
         c[3] = alpha / 255.0f;
-        ctx->ClearRenderTargetView(color_rtv[back_index], c);
+        ctx->ClearRenderTargetView(draw_rtv[back_index], c);
     }
     if (depth_mask) ctx->ClearDepthStencilView(depth_dsv, D3D11_CLEAR_DEPTH, depth / 65535.0f, 0);
 }
@@ -1064,11 +1112,41 @@ static void present_front(void)
     swapchain->Present(vsync ? 1 : 0, 0);
 }
 
+// glide_scale = auto: new render targets when the window size changed (after a swap, keeping the picture)
+static void check_target_size(void)
+{
+    int fw, fh, front = back_index ^ 1;
+    ID3D11Texture2D *old_tex;
+    ID3D11ShaderResourceView *old_srv, *none = NULL;
+
+    if (!render_glide_target_auto()) return;
+    render_glide_target_size(glide_w, glide_h, &fw, &fh);
+    if ((fw == target_w) && (fh == target_h)) return;
+
+    old_tex = color_tex[front];
+    old_srv = color_srv[front];
+    color_tex[front] = NULL;
+    color_srv[front] = NULL;
+    release_targets();
+    if (create_targets(fw, fh))
+    {
+        ctx->OMSetRenderTargets(1, &color_rtv[front], NULL);
+        set_viewport(0.0f, 0.0f, (float)fw, (float)fh);
+        draw_quad(old_srv, sampler_linear, 0);
+        ctx->PSSetShaderResources(0, 1, &none);
+    }
+    RELEASE(old_srv);
+    RELEASE(old_tex);
+    if (winapi_debug) eprintf("render_d3d11: render target %dx%d\n", fw, fh);
+}
+
 static void d3d_glide_swap(void)
 {
     if (!glide_is_open_flag) return;
+    resolve(back_index);
     back_index ^= 1;
     present_front();
+    check_target_size();
 }
 
 static void d3d_glide_refresh(int force)
@@ -1083,17 +1161,18 @@ static void d3d_glide_read_565(int buffer, uint16_t *dst, int stride_pixels)
     uint8_t *tmp;
 
     if (!glide_is_open_flag) return;
-    fw = glide_w * glide_scale;
-    fh = glide_h * glide_scale;
+    fw = target_w;
+    fh = target_h;
+    resolve((buffer == 1) ? back_index : (back_index ^ 1));
     tmp = (uint8_t *)malloc((size_t)fw * fh * 4);
     if (read_texture(color_tex[(buffer == 1) ? back_index : (back_index ^ 1)], fw, fh, tmp))
     {
         for (y = 0; y < glide_h; y++)
         {
-            const uint8_t *row = tmp + (size_t)y * glide_scale * fw * 4;
+            const uint8_t *row = tmp + (size_t)((int64_t)y * fh / glide_h) * fw * 4;
             for (x = 0; x < glide_w; x++)
             {
-                const uint8_t *p = row + (size_t)x * glide_scale * 4;      // R, G, B, A
+                const uint8_t *p = row + (size_t)((int64_t)x * fw / glide_w) * 4;      // R, G, B, A
                 dst[(size_t)y * stride_pixels + x] = (uint16_t)(((p[0] >> 3) << 11) | ((p[1] >> 2) << 5) | (p[2] >> 3));
             }
         }
@@ -1106,10 +1185,11 @@ static void d3d_glide_write_argb(int buffer, const uint32_t *src)
     ID3D11ShaderResourceView *none = NULL;
     if (!glide_is_open_flag) return;
     upload_dyn_texture(&tex_lfb, glide_w, glide_h, src);
-    ctx->OMSetRenderTargets(1, &color_rtv[(buffer == 1) ? back_index : (back_index ^ 1)], NULL);
-    set_viewport(0.0f, 0.0f, (float)(glide_w * glide_scale), (float)(glide_h * glide_scale));
+    ctx->OMSetRenderTargets(1, &draw_rtv[(buffer == 1) ? back_index : (back_index ^ 1)], NULL);
+    set_viewport(0.0f, 0.0f, (float)target_w, (float)target_h);
     draw_quad(tex_lfb.srv, sampler_point, 1);
     ctx->PSSetShaderResources(0, 1, &none);
+    if (buffer != 1) resolve(back_index ^ 1);  // the front buffer is presented from the resolved texture
 }
 
 const render_backend render_backend_d3d11 = {

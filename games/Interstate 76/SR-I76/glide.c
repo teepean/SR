@@ -18,6 +18,7 @@
 #include "platform.h"
 #include "winapi.h"
 #include "render.h"
+#include "config.h"
 #include "display.h"
 #include "ptr32.h"
 #include "Game-Memory.h"
@@ -29,8 +30,12 @@ EXTERN_C_BEGIN
 #define FXTRUE 1
 #define FXFALSE 0
 
-// 2 MB like a Voodoo 1: ZGLIDE's allocator has a bug past 2 MB (it records the wrong start address)
-#define TMU_MEMORY (2 * 1024 * 1024)
+// texture memory: SR-I76.cfg texture_memory (MB, default 64). The original Voodoo 1 had 2 MB; ZGLIDE's
+// allocator skips to the next 2 MB region when a texture would cross a boundary, but always to 2 MB, which
+// broke with more than 4 MB - patched in instruction_replacements.sci (no boundaries). texture_memory = 2
+// reproduces the original behaviour (textures are reloaded more often).
+static uint32_t tmu_memory = 64 * 1024 * 1024;
+#define TMU_MEMORY tmu_memory
 #define TMU_SLACK (512 * 1024)             // writes past the reported end don't corrupt anything
 #define LFB_STRIDE_PIXELS 1024              // like a Voodoo: 2048 bytes per line
 #define SNAP_BIAS 786432.0f                 // (3 << 18): ZGLIDE adds it to x/y for the Voodoo's fixed-point vertex snapping
@@ -403,7 +408,15 @@ static void begin_primitive(int primitive)
 
 void CCALL grGlideInit_c(void)
 {
-    if (tmu_mem == NULL) tmu_mem = (uint8_t *)calloc(1, TMU_MEMORY + TMU_SLACK);
+    if (tmu_mem == NULL)
+    {
+        int mb = config_get_int("texture_memory", 64);
+        if (mb < 2) mb = 2;
+        if (mb > 512) mb = 512;
+        tmu_memory = (uint32_t)mb * 1024 * 1024;
+        tmu_mem = (uint8_t *)calloc(1, TMU_MEMORY + TMU_SLACK);
+        if (winapi_debug) eprintf("glide: %d MB texture memory\n", mb);
+    }
     // the game writes to the LFB buffer: low memory
     if (lfb == NULL) lfb = (uint16_t *)game_malloc(LFB_STRIDE_PIXELS * 1024 * 2);
     if (lfb_orig == NULL) lfb_orig = (uint16_t *)malloc(LFB_STRIDE_PIXELS * 1024 * 2);

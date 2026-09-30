@@ -504,3 +504,20 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   (sub_454E40: lowest player id among players with a measured ping; the host's ping is still -1.0) and spawns
   locally (sub_456100 -> sub_451030: rand() % spawn point count = 0, no arena loaded) -> SIGFPE. Next: the
   game's ping exchange / why the joiner hasn't measured the host yet (timing, lost packets?).
+
+### 2026-09-30 — graphics overhaul, step 1 (branch I76_graphics; Linux is the main target)
+- Decision: keep the recompiled ZGLIDE (the game hands it screen-space polygons + 8-bit palettized textures;
+  ZGLIDE only clips and maps them to Glide) and modernize the layer below it (glide.c + backends).
+  Widescreen needs game-side camera changes (projection is in i76.exe: sub_474620 projects with
+  camera +0/+4 center, +8/+12 focal x/y; sub_472530 derives the frustum from the viewport rect
+  +28..+40, center and focal -> widening the viewport + keeping fy should give Hor+).
+- Texture memory: ZGLIDE's allocator jumps to the next 2 MB region when a texture would cross a 2 MB
+  boundary (Voodoo rule), but always to 0x200000 -> past 4 MB it overwrote live textures (why we emulated a
+  2 MB TMU). Patch (SRW-zglide instruction_replacements.sci): FirstDevice initializes the boundary counter
+  dword_1001F898 with 0x400 (1 GB) instead of 2. SR-I76.cfg texture_memory (MB, default 64; mission 12 uses
+  ~4.7 MB -> no texture reloads).
+- Render targets: glide_scale = auto (new default: the window's drawable height, 4:3; targets are recreated
+  after a swap when the window size changes, the front picture is copied) or N; antialiasing = 0/2/4/8
+  (default 4): multisampled draw targets resolved on swap, before LFB reads, after LFB writes (GL: renderbuffers
+  + glBlitFramebuffer, D3D11: ResolveSubresource). LFB reads sample the target at x*tw/640, y*th/480.
+- OpenGL anisotropic filtering (GL_EXT_texture_filter_anisotropic), same anisotropy setting as D3D11 (PR #1).

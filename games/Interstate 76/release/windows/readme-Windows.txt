@@ -20,9 +20,12 @@ Every setting can also be given as an environment variable I76_<SETTING>.
 renderer          glide = hardware 3D (Glide emulated), software = the game's software renderer
 graphics_api      d3d11 (default) = Direct3D 11, opengl = OpenGL 3.3
                   (if Direct3D 11 isn't available, OpenGL is used)
-glide_scale       Glide internal resolution = 640x480 * glide_scale (1-8)
-anisotropy        Direct3D 11: anisotropic texture filtering (1 = off, 2-16), sharpens textures
-                  seen at a grazing angle (roads, walls); trilinear mipmaps are always used
+glide_scale       3D render resolution: auto (default) = the window's height, keeping 4:3;
+                  1-8 = 640x480 * glide_scale
+antialiasing      multisample anti-aliasing: 0 = off, 2, 4 (default), 8
+texture_memory    texture memory of the emulated 3Dfx card in MB (default 64; the original had 2)
+anisotropy        anisotropic texture filtering (1 = off, 2-16, default 8), sharpens textures seen
+                  at a grazing angle (roads, walls)
 window_scale      initial window size = game resolution * window_scale
 fullscreen        1 = start in fullscreen
 fps               frame rate limit (default 20; the game's physics, AI and weapons were made for ~20 FPS,

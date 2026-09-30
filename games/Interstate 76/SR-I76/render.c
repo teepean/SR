@@ -75,6 +75,36 @@ void render_viewport(int w, int h, int *vx, int *vy, int *vw, int *vh)
     *vy = (wh - *vh) / 2;
 }
 
+// Glide render target size: glide_scale = N (integer multiple of the Glide resolution) or auto (the window's
+// drawable height, keeping the Glide aspect ratio; at least 1x)
+int render_glide_target_auto(void)
+{
+    const char *s = config_get("glide_scale");
+    return (s == NULL) || (strcasecmp(s, "auto") == 0) || (strcmp(s, "0") == 0);   // default: auto
+}
+
+void render_glide_target_size(int glide_w, int glide_h, int *tw, int *th)
+{
+    const char *s = config_get("glide_scale");
+    int scale;
+
+    if (render_glide_target_auto())
+    {
+        int dw, dh;
+        get()->drawable_size(&dw, &dh);
+        if (dh < glide_h) dh = glide_h;
+        if (dh > 4320) dh = 4320;
+        *th = dh;
+        *tw = (int)(((int64_t)dh * glide_w + glide_h / 2) / glide_h);
+        return;
+    }
+    scale = (s != NULL) ? atoi(s) : 2;
+    if (scale < 1) scale = 1;
+    if (scale > 8) scale = 8;
+    *tw = glide_w * scale;
+    *th = glide_h * scale;
+}
+
 void render_present_2d(const uint32_t *pixels, int w, int h) { get()->present_2d(pixels, w, h); }
 uint32_t *render_read_last(int *w, int *h) { return get()->read_last(w, h); }
 int render_glide_open(int width, int height) { return get()->glide_open(width, height); }
