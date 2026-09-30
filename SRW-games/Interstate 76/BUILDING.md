@@ -96,3 +96,54 @@ input), `I76_DUMP_FRAMES=dir` (existing directory), `SDL_VIDEODRIVER=offscreen` 
 | `SRW-games/Interstate 76/PORTING_NOTES.md` | the porting log: problems, causes and fixes |
 | `games/Interstate 76/SR-I76` | runtime sources |
 | `games/Interstate 76/release/linux`, `windows` | start script, example configuration, readme, packaging scripts |
+
+## Building on Windows (WSL2)
+
+Windows has no gcc/nasm/scons/MinGW, but the build runs unchanged inside WSL2: the same tools
+cross-compile the Windows x64 binary (`scons device=pc64-windows`).
+
+One-time setup in WSL (Ubuntu):
+
+```sh
+sudo apt-get install -y build-essential nasm scons mingw-w64 python3 zip
+
+mkdir -p ~/i76/deps/include ~/i76/deps/lib && cd ~/i76
+# SDL2 for MinGW (official development package)
+curl -LO https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-mingw.tar.gz
+tar xzf SDL2-devel-2.32.10-mingw.tar.gz
+cp -r SDL2-2.32.10/x86_64-w64-mingw32/include/SDL2 deps/include/
+cp SDL2-2.32.10/x86_64-w64-mingw32/lib/libSDL2*.a deps/lib/
+cp SDL2-2.32.10/x86_64-w64-mingw32/bin/SDL2.dll deps/
+# freetype: static library without optional dependencies
+curl -LO https://download.savannah.gnu.org/releases/freetype/freetype-2.14.3.tar.xz
+tar xJf freetype-2.14.3.tar.xz && cd freetype-2.14.3
+./configure --host=x86_64-w64-mingw32 --prefix="$HOME/i76/ft" --enable-static --disable-shared \
+    --without-zlib --without-png --without-bzip2 --without-brotli --without-harfbuzz
+make -j"$(nproc)" && make install
+cp -r "$HOME/i76/ft/include/freetype2" "$HOME/i76/deps/include/"
+cp "$HOME/i76/ft/lib/libfreetype.a" "$HOME/i76/deps/lib/"
+```
+
+Then, from the checkout (reached from WSL as `/mnt/<drive>/...`):
+
+```sh
+cd "SRW-games/Interstate 76"
+./build_srw64.sh "$HOME/i76/srw64-build"
+ARCH=x64 SRW64="$HOME/i76/srw64-build/SRW64.exe" \
+    GAME="/mnt/d/GOG Galaxy/Games/Interstate 76" WORK="$HOME/i76/work" ./gen_all.sh
+cd "../../games/Interstate 76/SR-I76"
+WIN_DEPS="$HOME/i76/deps" scons device=pc64-windows
+```
+
+Copy `SR-I76.exe` and `SDL2.dll` into the game directory (next to the GOG files) and run `SR-I76.exe`
+there.
+
+Notes:
+
+- A Windows checkout with `core.autocrlf=true` writes the shell/Python/SRW input files with CRLF and
+  `./gen_all.sh` fails with `/bin/sh^M: bad interpreter`. Clone with `git config core.autocrlf false`,
+  or normalize the text files first, e.g.:
+  `find . -type f \( -name '*.sh' -o -name '*.py' -o -name '*.sci' -o -name '*.cfg' -o -name '*.csv' -o -name '*.inc' -o -name '*.asm' -o -name '*.c' -o -name '*.h' -o -name '*.cpp' \) -exec sed -i 's/\r$//' {} +`
+- The game reads its files from the current directory; here the GOG install is on `D:`, i.e. `/mnt/d/...`
+  from WSL.
+

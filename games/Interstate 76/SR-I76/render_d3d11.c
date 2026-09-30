@@ -218,6 +218,7 @@ static ID3D11SamplerState *sampler_linear, *sampler_point;
 static ID3D11BlendState *blend_off;
 static ID3D11DepthStencilState *depth_off;
 static int quad_keyed = -1;
+static int anisotropy = 1;              // config "anisotropy": 1 = off, up to 16
 static glide_cb glide_cb_last;
 static int glide_cb_valid;
 
@@ -490,6 +491,9 @@ static int d3d_init(SDL_Window *w)
 
     s = config_get("vsync");
     vsync = (s != NULL) ? atoi(s) : 1;
+    anisotropy = config_get_int("anisotropy", 8);
+    if (anisotropy < 1) anisotropy = 1;
+    if (anisotropy > 16) anisotropy = 16;
 
     {
         IDXGIDevice *dxgi_device = NULL;
@@ -891,14 +895,16 @@ static ID3D11SamplerState *get_sampler(const render_glide_state *st)
         if (sampler_cache[i].key == key) return sampler_cache[i].state;
     }
     memset(&sd, 0, sizeof(sd));
-    // mipmaps: nearest level (like GL_*_MIPMAP_NEAREST in render_gl.c)
-    sd.Filter = (D3D11_FILTER)((min_linear ? 0x10 : 0) | (mag_linear ? 0x04 : 0));
+    // an anisotropic filter gives sharp textures on surfaces seen at a grazing angle (roads, walls);
+    // otherwise bilinear + trilinear mipmaps (smoother transitions than the Voodoo's nearest level)
+    if (min_linear && mag_linear && (anisotropy > 1)) sd.Filter = D3D11_FILTER_ANISOTROPIC;
+    else sd.Filter = (D3D11_FILTER)((min_linear ? 0x10 : 0) | (mag_linear ? 0x04 : 0) | ((st->mipmap != 0) && min_linear ? 0x01 : 0));
     sd.AddressU = (st->clamp_s == 1) ? D3D11_TEXTURE_ADDRESS_CLAMP : D3D11_TEXTURE_ADDRESS_WRAP;   // GR_TEXTURECLAMP_CLAMP = 1
     sd.AddressV = (st->clamp_t == 1) ? D3D11_TEXTURE_ADDRESS_CLAMP : D3D11_TEXTURE_ADDRESS_WRAP;
     sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
     sd.MinLOD = 0.0f;
     sd.MaxLOD = (st->mipmap != 0) ? D3D11_FLOAT32_MAX : 0.0f;
-    sd.MaxAnisotropy = 1;
+    sd.MaxAnisotropy = (sd.Filter == D3D11_FILTER_ANISOTROPIC) ? (UINT)anisotropy : 1;
     sd.ComparisonFunc = D3D11_COMPARISON_NEVER;
     if (num_sampler == MAX_CACHE) return sampler_linear;
     sampler_cache[num_sampler].key = key;

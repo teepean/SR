@@ -21,6 +21,8 @@ renderer          glide = hardware 3D (Glide emulated), software = the game's so
 graphics_api      d3d11 (default) = Direct3D 11, opengl = OpenGL 3.3
                   (if Direct3D 11 isn't available, OpenGL is used)
 glide_scale       Glide internal resolution = 640x480 * glide_scale (1-8)
+anisotropy        Direct3D 11: anisotropic texture filtering (1 = off, 2-16), sharpens textures
+                  seen at a grazing angle (roads, walls); trilinear mipmaps are always used
 window_scale      initial window size = game resolution * window_scale
 fullscreen        1 = start in fullscreen
 fps               frame rate limit (default 20; the game's physics, AI and weapons were made for ~20 FPS,
