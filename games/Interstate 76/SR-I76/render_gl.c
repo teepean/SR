@@ -206,6 +206,51 @@ static const char *quad_fs =
     "    o_color = vec4(c.rgb, 1.0);\n"
     "}\n";
 
+
+// post-processing of the presented 3D picture: FXAA (after Timothy Lottes' FXAA, the compact variant),
+// sharpening (unsharp mask against the 4 neighbours), gamma
+static const char *post_fs =
+    "#version 330 core\n"
+    "in vec2 v_uv;\n"
+    "uniform sampler2D u_tex;\n"
+    "uniform vec2 u_texel;\n"
+    "uniform int u_flip;\n"
+    "uniform int u_fxaa;\n"
+    "uniform float u_sharpen;\n"
+    "uniform float u_gamma;\n"
+    "out vec4 o_color;\n"
+    "vec3 fetch(vec2 uv) { return texture(u_tex, uv).rgb; }\n"
+    "vec3 fxaa(vec2 uv) {\n"
+    "    vec2 t = u_texel;\n"
+    "    vec3 luma = vec3(0.299, 0.587, 0.114);\n"
+    "    vec3 rgbM = fetch(uv);\n"
+    "    float lNW = dot(fetch(uv + vec2(-1.0, -1.0) * t), luma);\n"
+    "    float lNE = dot(fetch(uv + vec2(1.0, -1.0) * t), luma);\n"
+    "    float lSW = dot(fetch(uv + vec2(-1.0, 1.0) * t), luma);\n"
+    "    float lSE = dot(fetch(uv + vec2(1.0, 1.0) * t), luma);\n"
+    "    float lM = dot(rgbM, luma);\n"
+    "    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));\n"
+    "    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));\n"
+    "    vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));\n"
+    "    float reduce = max((lNW + lNE + lSW + lSE) * (0.25 / 8.0), 1.0 / 128.0);\n"
+    "    float rcpMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);\n"
+    "    dir = clamp(dir * rcpMin, vec2(-8.0), vec2(8.0)) * t;\n"
+    "    vec3 rgbA = 0.5 * (fetch(uv + dir * (1.0 / 3.0 - 0.5)) + fetch(uv + dir * (2.0 / 3.0 - 0.5)));\n"
+    "    vec3 rgbB = rgbA * 0.5 + 0.25 * (fetch(uv - dir * 0.5) + fetch(uv + dir * 0.5));\n"
+    "    float lB = dot(rgbB, luma);\n"
+    "    return ((lB < lMin) || (lB > lMax)) ? rgbA : rgbB;\n"
+    "}\n"
+    "void main() {\n"
+    "    vec2 uv = (u_flip != 0) ? vec2(v_uv.x, 1.0 - v_uv.y) : v_uv;\n"
+    "    vec3 c = (u_fxaa != 0) ? fxaa(uv) : fetch(uv);\n"
+    "    if (u_sharpen > 0.0) {\n"
+    "        vec3 blur = 0.25 * (fetch(uv + vec2(u_texel.x, 0.0)) + fetch(uv - vec2(u_texel.x, 0.0)) + fetch(uv + vec2(0.0, u_texel.y)) + fetch(uv - vec2(0.0, u_texel.y)));\n"
+    "        c = clamp(c + (c - blur) * u_sharpen * 2.0, 0.0, 1.0);\n"
+    "    }\n"
+    "    if (u_gamma != 1.0) c = pow(c, vec3(1.0 / u_gamma));\n"
+    "    o_color = vec4(c, 1.0);\n"
+    "}\n";
+
 static const char *glide_vs =
     "#version 330 core\n"
     "layout(location = 0) in vec3 a_xyz;\n"
@@ -392,6 +437,10 @@ static GLuint link_program(const char *vs, const char *fs)
 static SDL_Window *window;
 static SDL_GLContext context;
 static GLuint quad_prog, quad_vao, quad_vbo, tex_2d;
+static GLuint post_prog;
+static GLint u_post_tex, u_post_texel, u_post_flip, u_post_fxaa, u_post_sharpen, u_post_gamma;
+static int post_fxaa;
+static float post_sharpen, post_gamma = 1.0f;
 static int tex_2d_w, tex_2d_h;
 static GLint u_quad_tex, u_quad_keyed;
 
@@ -444,6 +493,15 @@ static int gl_init(SDL_Window *w)
     if (winapi_debug) eprintf("render_gl: %s / %s / %s (SDL video driver %s)\n", glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_VERSION), SDL_GetCurrentVideoDriver());
 
     quad_prog = link_program(quad_vs, quad_fs);
+    post_prog = link_program(quad_vs, post_fs);
+    if (post_prog == 0) return 0;
+    u_post_tex = glGetUniformLocation(post_prog, "u_tex");
+    u_post_texel = glGetUniformLocation(post_prog, "u_texel");
+    u_post_flip = glGetUniformLocation(post_prog, "u_flip");
+    u_post_fxaa = glGetUniformLocation(post_prog, "u_fxaa");
+    u_post_sharpen = glGetUniformLocation(post_prog, "u_sharpen");
+    u_post_gamma = glGetUniformLocation(post_prog, "u_gamma");
+    render_post_settings(&post_fxaa, &post_sharpen, &post_gamma);
     glide_prog = link_program(glide_vs, glide_fs);
     if (!quad_prog || !glide_prog) return 0;
 
@@ -890,9 +948,31 @@ static void present_front(void)
     glViewport(0, 0, ww, wh);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[back_index ^ 1]);
-    glBlitFramebuffer(0, 0, target_w, target_h, vx, wh - vy - vh, vx + vw, wh - vy, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    if (post_fxaa || (post_sharpen > 0.0f) || (post_gamma != 1.0f))
+    {
+        glViewport(vx, wh - vy - vh, vw, vh);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        glUseProgram(post_prog);
+        glUniform1i(u_post_tex, 0);
+        glUniform2f(u_post_texel, 1.0f / target_w, 1.0f / target_h);
+        glUniform1i(u_post_flip, 1);        // framebuffer textures: row 0 = bottom
+        glUniform1i(u_post_fxaa, post_fxaa);
+        glUniform1f(u_post_sharpen, post_sharpen);
+        glUniform1f(u_post_gamma, post_gamma);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, fbo_color[back_index ^ 1]);
+        glBindVertexArray(quad_vao);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
+        glViewport(0, 0, ww, wh);
+    }
+    else
+    {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo[back_index ^ 1]);
+        glBlitFramebuffer(0, 0, target_w, target_h, vx, wh - vy - vh, vx + vw, wh - vy, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    }
     if (getenv("I76_DUMP_FRAMES") != NULL)
     {
         // debugging: keep what is actually shown in the window

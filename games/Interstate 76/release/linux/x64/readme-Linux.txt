@@ -26,6 +26,9 @@ glide_scale       3D render resolution: auto (default) = the window's height, ke
 antialiasing      multisample anti-aliasing: 0 = off, 2, 4 (default), 8
 anisotropy        anisotropic texture filtering (1 = off, 2-16, default 8), sharpens textures seen
                   at a grazing angle (roads, walls)
+gamma             brightness of the 3D picture (0.5-2.5, default 1.0 = unchanged)
+sharpen           sharpening of the 3D picture (0.0-1.0, default 0)
+fxaa              1 = FXAA edge smoothing of the 3D picture (default 0)
 texture_pack      directory with replacement textures (default "textures"); see "Texture packs" below
 texture_dump      1 = write every texture the game uses to textures_dump\ as PNG
 texture_memory    texture memory of the emulated 3Dfx card in MB (default 64; the original had 2)

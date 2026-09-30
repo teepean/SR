@@ -37,6 +37,7 @@ typedef struct {
 // shared helpers (render.c)
 int render_glide_target_auto(void);
 void render_glide_target_size(int glide_w, int glide_h, int *tw, int *th);
+void render_post_settings(int *fxaa, float *sharpen, float *gamma);
 
 extern const render_backend render_backend_gl;
 #ifdef _WIN32

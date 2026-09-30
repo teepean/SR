@@ -55,6 +55,40 @@ static const char shader_source[] =
     "    return float4(c.rgb, 1.0);\n"
     "}\n"
     "\n"
+    // post-processing of the presented 3D picture: FXAA (compact variant of Timothy Lottes' FXAA),
+    // sharpening (unsharp mask against the 4 neighbours), gamma
+    "cbuffer PostCB : register(b2) { float2 p_texel; int p_fxaa; float p_sharpen; float p_gamma; float3 p_pad; };\n"
+    "float3 pfetch(float2 uv) { return tex0.Sample(smp0, uv).rgb; }\n"
+    "float3 fxaa(float2 uv) {\n"
+    "    float2 t = p_texel;\n"
+    "    float3 luma = float3(0.299, 0.587, 0.114);\n"
+    "    float3 rgbM = pfetch(uv);\n"
+    "    float lNW = dot(pfetch(uv + float2(-1.0, -1.0) * t), luma);\n"
+    "    float lNE = dot(pfetch(uv + float2(1.0, -1.0) * t), luma);\n"
+    "    float lSW = dot(pfetch(uv + float2(-1.0, 1.0) * t), luma);\n"
+    "    float lSE = dot(pfetch(uv + float2(1.0, 1.0) * t), luma);\n"
+    "    float lM = dot(rgbM, luma);\n"
+    "    float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));\n"
+    "    float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));\n"
+    "    float2 dir = float2(-((lNW + lNE) - (lSW + lSE)), (lNW + lSW) - (lNE + lSE));\n"
+    "    float reduce = max((lNW + lNE + lSW + lSE) * (0.25 / 8.0), 1.0 / 128.0);\n"
+    "    float rcpMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);\n"
+    "    dir = clamp(dir * rcpMin, float2(-8.0, -8.0), float2(8.0, 8.0)) * t;\n"
+    "    float3 rgbA = 0.5 * (pfetch(uv + dir * (1.0 / 3.0 - 0.5)) + pfetch(uv + dir * (2.0 / 3.0 - 0.5)));\n"
+    "    float3 rgbB = rgbA * 0.5 + 0.25 * (pfetch(uv - dir * 0.5) + pfetch(uv + dir * 0.5));\n"
+    "    float lB = dot(rgbB, luma);\n"
+    "    return ((lB < lMin) || (lB > lMax)) ? rgbA : rgbB;\n"
+    "}\n"
+    "float4 post_ps(QuadV i) : SV_Target {\n"
+    "    float3 c = (p_fxaa != 0) ? fxaa(i.uv) : pfetch(i.uv);\n"
+    "    if (p_sharpen > 0.0) {\n"
+    "        float3 blur = 0.25 * (pfetch(i.uv + float2(p_texel.x, 0.0)) + pfetch(i.uv - float2(p_texel.x, 0.0)) + pfetch(i.uv + float2(0.0, p_texel.y)) + pfetch(i.uv - float2(0.0, p_texel.y)));\n"
+    "        c = saturate(c + (c - blur) * p_sharpen * 2.0);\n"
+    "    }\n"
+    "    if (p_gamma != 1.0) c = pow(abs(c), 1.0 / p_gamma);\n"
+    "    return float4(c, 1.0);\n"
+    "}\n"
+    "\n"
     "cbuffer GlideCB : register(b1) {\n"
     "    float2 screen; float2 texscale;\n"
     "    int4 cc; int4 ac; int4 tc; int4 inv;\n"
@@ -195,6 +229,14 @@ typedef struct {
     int32_t keyed, pad[3];
 } quad_cb;
 
+typedef struct {
+    float texel[2];
+    int32_t fxaa;
+    float sharpen;
+    float gamma;
+    float pad[3];
+} post_cb;
+
 
 /* ------------------------------------------------------------------ */
 /* state                                                               */
@@ -209,7 +251,10 @@ static int swap_w, swap_h;
 static int vsync;
 
 static ID3D11VertexShader *quad_vs, *glide_vs;
-static ID3D11PixelShader *quad_ps, *glide_ps;
+static ID3D11PixelShader *quad_ps, *glide_ps, *post_ps;
+static ID3D11Buffer *post_cbuf;
+static int post_fxaa;
+static float post_sharpen, post_gamma = 1.0f;
 static ID3D11InputLayout *quad_layout, *glide_layout;
 static ID3D11Buffer *quad_vb, *quad_cbuf, *glide_cbuf, *glide_vb;
 static UINT glide_vb_size, glide_vb_pos;
@@ -519,6 +564,13 @@ static int d3d_init(SDL_Window *w)
     ps1 = compile("quad_ps", "ps_4_0");
     vs2 = compile("glide_vs", "vs_4_0");
     ps2 = compile("glide_ps", "ps_4_0");
+    {
+        ID3DBlob *ps3 = compile("post_ps", "ps_4_0");
+        if (ps3 == NULL) return 0;
+        device->CreatePixelShader(ps3->GetBufferPointer(), ps3->GetBufferSize(), NULL, &post_ps);
+        ps3->Release();
+        render_post_settings(&post_fxaa, &post_sharpen, &post_gamma);
+    }
     if ((vs1 == NULL) || (ps1 == NULL) || (vs2 == NULL) || (ps2 == NULL)) return 0;
 
     device->CreateVertexShader(vs1->GetBufferPointer(), vs1->GetBufferSize(), NULL, &quad_vs);
@@ -569,6 +621,8 @@ static int d3d_init(SDL_Window *w)
         device->CreateBuffer(&bd, NULL, &quad_cbuf);
         bd.ByteWidth = sizeof(glide_cb);
         device->CreateBuffer(&bd, NULL, &glide_cbuf);
+        bd.ByteWidth = sizeof(post_cb);
+        device->CreateBuffer(&bd, NULL, &post_cbuf);
 
         glide_vb_size = 1024 * 1024;
         memset(&bd, 0, sizeof(bd));
@@ -1090,6 +1144,25 @@ static void present_front(void)
     render_viewport(glide_w, glide_h, &vx, &vy, &vw, &vh);
     set_viewport((float)vx, (float)vy, (float)vw, (float)vh);
     draw_quad(color_srv[back_index ^ 1], sampler_linear, 0);
+    if (post_fxaa || (post_sharpen > 0.0f) || (post_gamma != 1.0f))
+    {
+        D3D11_MAPPED_SUBRESOURCE m;
+        if (SUCCEEDED(ctx->Map(post_cbuf, 0, D3D11_MAP_WRITE_DISCARD, 0, &m)))
+        {
+            post_cb cb;
+            memset(&cb, 0, sizeof(cb));
+            cb.texel[0] = 1.0f / target_w;
+            cb.texel[1] = 1.0f / target_h;
+            cb.fxaa = post_fxaa;
+            cb.sharpen = post_sharpen;
+            cb.gamma = post_gamma;
+            memcpy(m.pData, &cb, sizeof(cb));
+            ctx->Unmap(post_cbuf, 0);
+        }
+        ctx->PSSetShader(post_ps, NULL, 0);
+        ctx->PSSetConstantBuffers(2, 1, &post_cbuf);
+        ctx->Draw(6, 0);    // same quad, input layout and texture as draw_quad above
+    }
     ctx->PSSetShaderResources(0, 1, &none);
 
     if (getenv("I76_DUMP_FRAMES") != NULL)

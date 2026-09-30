@@ -6,6 +6,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <SDL.h>
@@ -103,6 +104,21 @@ void render_glide_target_size(int glide_w, int glide_h, int *tw, int *th)
     if (scale > 8) scale = 8;
     *tw = glide_w * scale;
     *th = glide_h * scale;
+}
+
+// post-processing of the 3D picture: fxaa = 0|1, sharpen = 0.0-1.0, gamma = 0.5-2.5 (1.0 = unchanged)
+void render_post_settings(int *fxaa, float *sharpen, float *gamma)
+{
+    const char *s;
+    *fxaa = config_get_int("fxaa", 0) != 0;
+    s = config_get("sharpen");
+    *sharpen = (s != NULL) ? (float)atof(s) : 0.0f;
+    if (*sharpen < 0.0f) *sharpen = 0.0f;
+    if (*sharpen > 1.0f) *sharpen = 1.0f;
+    s = config_get("gamma");
+    *gamma = (s != NULL) ? (float)atof(s) : 1.0f;
+    if (*gamma < 0.5f) *gamma = 0.5f;
+    if (*gamma > 2.5f) *gamma = 2.5f;
 }
 
 void render_present_2d(const uint32_t *pixels, int w, int h) { get()->present_2d(pixels, w, h); }

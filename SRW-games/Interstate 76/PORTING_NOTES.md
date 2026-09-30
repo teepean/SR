@@ -527,3 +527,6 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   key texel fetch uses the replacement's size). Results are cached per hash (animated textures are
   recreated every frame). Mission 12 scene: 158 textures (sky, dashboard, radar frames, terrain);
   a 4x sky replacement renders correctly.
+- Post-processing of the presented 3D picture (render.c render_post_settings; GL post_fs / D3D11 post_ps):
+  gamma, sharpen (unsharp mask vs. 4 neighbours), fxaa (compact FXAA); off by default. GL samples the FBO
+  texture flipped (row 0 = bottom). Checked: GL and D3D11 give the same picture.

@@ -23,6 +23,9 @@ graphics_api      d3d11 (default) = Direct3D 11, opengl = OpenGL 3.3
 glide_scale       3D render resolution: auto (default) = the window's height, keeping 4:3;
                   1-8 = 640x480 * glide_scale
 antialiasing      multisample anti-aliasing: 0 = off, 2, 4 (default), 8
+gamma             brightness of the 3D picture (0.5-2.5, default 1.0 = unchanged)
+sharpen           sharpening of the 3D picture (0.0-1.0, default 0)
+fxaa              1 = FXAA edge smoothing of the 3D picture (default 0)
 texture_pack      directory with replacement textures (default "textures"); see "Texture packs" below
 texture_dump      1 = write every texture the game uses to textures_dump\ as PNG
 texture_memory    texture memory of the emulated 3Dfx card in MB (default 64; the original had 2)
