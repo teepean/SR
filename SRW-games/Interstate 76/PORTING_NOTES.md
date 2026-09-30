@@ -527,6 +527,20 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   key texel fetch uses the replacement's size). Results are cached per hash (animated textures are
   recreated every frame). Mission 12 scene: 158 textures (sky, dashboard, radar frames, terrain);
   a 4x sky replacement renders correctly.
+- Texture extraction (games/Interstate 76/tools/i76extract.py, Python 3, no other modules; in both release
+  packages): reads I76.ZFS (28-byte header, directory blocks of files_per_directory 36-byte entries, the
+  last dword = compression method (low byte: 0 raw, 2 LZO1X, 4 LZO1Y) + decompressed size; ~4100 files are
+  LZO1Y, which differs from LZO1X only in M2 matches: offset (t>>2)&3 + next<<2, length (t>>4)-3, M2 max
+  offset 0x400) and the pak/pix pairs (pix = text index of the pak). Hardware mode's 3D textures are .m16:
+  u32 w, u24 h + u8 flags (0x80), w*h indices, u32 n, n RGB565 colors, index 255 = transparent. ZGLIDE
+  (sub_10001090, dword_1001FD24 path) converts the palette to 8 bits per channel (sub_10001000) and the pixels
+  to ARGB1555 (index 255 -> 0 when the texture uses the chroma key, the game decides that per draw), so the
+  texpack hash is reproducible offline: `textures OUTDIR` writes each .m16 once as OUTDIR/<pak>/<NAME>.png
+  (5455 images, 189 duplicates) and OUTDIR/texpack.txt with both hashes (keyed/unkeyed) of each. texpack.c
+  reads <texture_pack>/texpack.txt (<w>x<h>_<hash> <path>) and tries its path before <name>.png.
+  Mission 12 scene: 100 of the 158 dumped textures are .m16 textures (28 need the keyed hash, 30 the unkeyed
+  one); the other 58 are cockpit textures the game redraws every frame (radar sweep, damage panel, weapon
+  list, gear indicator, mirror), so they have a new hash per frame and can't be replaced.
 - Post-processing of the presented 3D picture (render.c render_post_settings; GL post_fs / D3D11 post_ps):
   gamma, sharpen (unsharp mask vs. 4 neighbours), fxaa (compact FXAA); off by default. GL samples the FBO
   texture flipped (row 0 = bottom). Checked: GL and D3D11 give the same picture.

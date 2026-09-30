@@ -8,6 +8,9 @@
  *    texture_dump = 0 | 1       writes every texture the game uses to textures_dump/ (as PNG)
  *  Palette variants of a texture have different hashes. Replacements keep the original's chroma key color
  *  where the game makes pixels transparent (the key is compared with the nearest texel).
+ *  <texture_pack>/texpack.txt (written by tools/i76extract.py) maps texture names to image files:
+ *    <w>x<h>_<hash> <path relative to the pack directory>
+ *  so the extracted textures keep their original names (e.g. vfcoupe6/FC11BKU1.png).
  *
  */
 
@@ -51,6 +54,15 @@ static int initialized, dump;
 static char pack_dir[256];
 static texpack_entry *table;
 static uint32_t table_size, table_count;
+
+typedef struct {
+    uint64_t key;           // hash (0 = empty slot)
+    int w, h;               // texture size
+    char *path;             // image file relative to pack_dir
+} index_entry;
+
+static index_entry *index_table;
+static uint32_t index_size;
 static uint32_t replaced_count, dumped_count;
 
 static uint64_t hash_pixels(int w, int h, const uint32_t *rgba)
@@ -104,6 +116,57 @@ static int file_exists(const char *path)
     return stat(path, &st) == 0;
 }
 
+static index_entry *index_find(uint64_t key, int w, int h)
+{
+    uint32_t i = (uint32_t)(key ^ (key >> 32)) & (index_size - 1);
+    while ((index_table[i].key != 0) && ((index_table[i].key != key) || (index_table[i].w != w) || (index_table[i].h != h)))
+        i = (i + 1) & (index_size - 1);
+    return &index_table[i];
+}
+
+static void load_index(void)
+{
+    char path[512], line[1024];
+    FILE *f;
+    uint32_t lines = 0, count = 0;
+
+    snprintf(path, sizeof(path), "%s/texpack.txt", pack_dir);
+    f = fopen(path, "rt");
+    if (f == NULL) return;
+    while (fgets(line, sizeof(line), f) != NULL) lines++;
+    for (index_size = 1024; index_size < lines * 2; index_size *= 2);
+    index_table = (index_entry *)calloc(index_size, sizeof(index_entry));
+
+    rewind(f);
+    while (fgets(line, sizeof(line), f) != NULL)
+    {
+        char *name = line, *file, *end;
+        index_entry *e;
+        int w, h;
+        unsigned long long key;
+        while ((*name == ' ') || (*name == '\t')) name++;
+        if ((*name == '#') || (*name == 0)) continue;
+        file = name;
+        while ((*file != 0) && (*file != ' ') && (*file != '\t')) file++;
+        if (*file == 0) continue;
+        *file++ = 0;
+        while ((*file == ' ') || (*file == '\t')) file++;
+        end = file + strlen(file);
+        while ((end > file) && ((end[-1] == '\n') || (end[-1] == '\r') || (end[-1] == ' '))) *--end = 0;
+        if (*file == 0) continue;
+        if ((sscanf(name, "%dx%d_%llx", &w, &h, &key) != 3) || (key == 0)) continue;
+        e = index_find(key, w, h);
+        if (e->key != 0) continue;              // first entry wins
+        e->key = key;
+        e->w = w;
+        e->h = h;
+        e->path = strdup(file);
+        count++;
+    }
+    fclose(f);
+    if (winapi_debug) eprintf("texpack: %s: %u textures\n", path, count);
+}
+
 void texpack_init(void)
 {
     const char *s;
@@ -114,6 +177,28 @@ void texpack_init(void)
     dump = config_get_int("texture_dump", 0);
     if (dump) make_dir("textures_dump");
     if (winapi_debug) eprintf("texpack: replacements from %s/%s\n", pack_dir, file_exists(pack_dir) ? "" : " (not found)");
+    load_index();
+}
+
+static uint32_t *load_image(const char *path, int *w, int *h)
+{
+    int iw, ih, comp;
+    unsigned char *data;
+    uint32_t *pixels;
+
+    if (!file_exists(path)) return NULL;
+    data = stbi_load(path, &iw, &ih, &comp, 4);
+    if (data == NULL)
+    {
+        eprintf("texpack: can't load %s: %s\n", path, stbi_failure_reason());
+        return NULL;
+    }
+    pixels = (uint32_t *)malloc((size_t)iw * ih * 4);
+    memcpy(pixels, data, (size_t)iw * ih * 4);          // RGBA bytes = r in the lowest byte
+    stbi_image_free(data);
+    *w = iw;
+    *h = ih;
+    return pixels;
 }
 
 const uint32_t *texpack_lookup(int w, int h, const uint32_t *rgba, int *out_w, int *out_h)
@@ -148,26 +233,24 @@ const uint32_t *texpack_lookup(int w, int h, const uint32_t *rgba, int *out_w, i
         if (!file_exists(path) && stbi_write_png(path, w, h, 4, rgba, w * 4)) dumped_count++;
     }
 
-    for (k = 0; k < sizeof(exts) / sizeof(exts[0]); k++)
+    if (index_table != NULL)
     {
-        int iw, ih, comp;
-        unsigned char *data;
-        snprintf(path, sizeof(path), "%s/%s.%s", pack_dir, name, exts[k]);
-        if (!file_exists(path)) continue;
-        data = stbi_load(path, &iw, &ih, &comp, 4);
-        if (data == NULL)
+        index_entry *ie = index_find(key, w, h);
+        if (ie->key != 0)
         {
-            eprintf("texpack: can't load %s: %s\n", path, stbi_failure_reason());
-            continue;
+            snprintf(path, sizeof(path), "%s/%s", pack_dir, ie->path);
+            e->pixels = load_image(path, &e->w, &e->h);
         }
-        e->pixels = (uint32_t *)malloc((size_t)iw * ih * 4);
-        memcpy(e->pixels, data, (size_t)iw * ih * 4);       // RGBA bytes = r in the lowest byte
-        stbi_image_free(data);
-        e->w = iw;
-        e->h = ih;
+    }
+    for (k = 0; (e->pixels == NULL) && (k < sizeof(exts) / sizeof(exts[0])); k++)
+    {
+        snprintf(path, sizeof(path), "%s/%s.%s", pack_dir, name, exts[k]);
+        e->pixels = load_image(path, &e->w, &e->h);
+    }
+    if (e->pixels != NULL)
+    {
         replaced_count++;
-        if (winapi_debug) eprintf("texpack: %s -> %dx%d replacement\n", name, iw, ih);
-        break;
+        if (winapi_debug) eprintf("texpack: %s -> %s (%dx%d)\n", name, path, e->w, e->h);
     }
     if (e->pixels == NULL) return NULL;
     *out_w = e->w;

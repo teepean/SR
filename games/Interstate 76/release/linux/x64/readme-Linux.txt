@@ -32,7 +32,7 @@ gamma             brightness of the 3D picture (0.5-2.5, default 1.0 = unchanged
 sharpen           sharpening of the 3D picture (0.0-1.0, default 0)
 fxaa              1 = FXAA edge smoothing of the 3D picture (default 0)
 texture_pack      directory with replacement textures (default "textures"); see "Texture packs" below
-texture_dump      1 = write every texture the game uses to textures_dump\ as PNG
+texture_dump      1 = write every texture the game uses to textures_dump/ as PNG
 texture_memory    texture memory of the emulated 3Dfx card in MB (default 64; the original had 2)
 window_scale      initial window size = game resolution * window_scale
 fullscreen        1 = start in fullscreen
@@ -53,12 +53,22 @@ Texture packs
 -------------
 
 The game's textures can be replaced with images of any resolution (PNG, TGA, BMP or JPG).
+
+Extracting all textures (needs Python 3): run i76extract.py in the game directory
+   python3 i76extract.py textures textures
+It writes every 3D texture of I76.ZFS as a PNG with its original name (e.g. textures/vfcoupe6/FC11BKU1.png,
+about 5500 images) and textures/texpack.txt, which tells the game which image replaces which texture.
+Edit or upscale the images you want to change and delete the others (the game loads only images that
+exist; keep texpack.txt). "i76extract.py extract <dir> [pattern]" extracts the archive's other files.
+
+Textures the game uses (also those not in I76.ZFS):
 1. Set texture_dump = 1 and play: every texture the game uses is written to textures_dump/ as
    <width>x<height>_<hash>.png (palette variants and animation frames are separate files).
 2. Edit or upscale the images and put them into the texture pack directory (textures/) with the same names.
-   Keep the exact transparent (chroma key) color where the original has it; use nearest-neighbour
-   scaling for those edges.
 3. Set texture_dump = 0 again. The textures are replaced when the game loads them.
+
+Transparent pixels: keep them transparent (alpha 0) and use nearest-neighbour scaling for those edges.
+The cockpit's radar, damage panel and gauges are redrawn by the game every frame and can't be replaced.
 
 
 Controls

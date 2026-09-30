@@ -13,7 +13,7 @@ if [ -z "$SDL2DLL" ] || [ ! -f "$SDL2DLL" ]; then echo "set SDL2DLL to the path 
 TMP="$(mktemp -d)"
 mkdir "$TMP/$NAME"
 x86_64-w64-mingw32-strip -o "$TMP/$NAME/SR-I76.exe" "$SRC/SR-I76.exe"
-cp "$SDL2DLL" "$HERE/SR-I76.cfg" "$TMP/$NAME/"
+cp "$SDL2DLL" "$HERE/SR-I76.cfg" "$HERE/../../tools/i76extract.py" "$TMP/$NAME/"
 sed 's/$/\r/' "$HERE/readme-Windows.txt" > "$TMP/$NAME/readme-Windows.txt"
 (cd "$TMP" && zip -q -r "$OUT/$NAME.zip" "$NAME")
 echo "$OUT/$NAME.zip"
