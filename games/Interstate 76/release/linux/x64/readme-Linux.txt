@@ -26,6 +26,8 @@ glide_scale       3D render resolution: auto (default) = the window's height, ke
 antialiasing      multisample anti-aliasing: 0 = off, 2, 4 (default), 8
 anisotropy        anisotropic texture filtering (1 = off, 2-16, default 8), sharpens textures seen
                   at a grazing angle (roads, walls)
+texture_pack      directory with replacement textures (default "textures"); see "Texture packs" below
+texture_dump      1 = write every texture the game uses to textures_dump\ as PNG
 texture_memory    texture memory of the emulated 3Dfx card in MB (default 64; the original had 2)
 window_scale      initial window size = game resolution * window_scale
 fullscreen        1 = start in fullscreen
@@ -39,6 +41,18 @@ joystick          0 = don't use joysticks / gamepads
 joystick_backend  sdl (default) or evdev (reads /dev/input directly)
 
 Command line parameters /glide or /gdi select the renderer (overriding the configuration).
+
+
+Texture packs
+-------------
+
+The game's textures can be replaced with images of any resolution (PNG, TGA, BMP or JPG).
+1. Set texture_dump = 1 and play: every texture the game uses is written to textures_dump/ as
+   <width>x<height>_<hash>.png (palette variants and animation frames are separate files).
+2. Edit or upscale the images and put them into the texture pack directory (textures/) with the same names.
+   Keep the exact transparent (chroma key) color where the original has it; use nearest-neighbour
+   scaling for those edges.
+3. Set texture_dump = 0 again. The textures are replaced when the game loads them.
 
 
 Controls

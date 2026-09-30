@@ -521,3 +521,9 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   (default 4): multisampled draw targets resolved on swap, before LFB reads, after LFB writes (GL: renderbuffers
   + glBlitFramebuffer, D3D11: ResolveSubresource). LFB reads sample the target at x*tw/640, y*th/480.
 - OpenGL anisotropic filtering (GL_EXT_texture_filter_anisotropic), same anisotropy setting as D3D11 (PR #1).
+- Texture packs (texpack.c, stb_image/stb_image_write): textures are identified by size + FNV-1a 64 hash of the
+  decoded RGBA pixels -> <w>x<h>_<hash>.png; texture_dump = 1 writes them to textures_dump/, texture_pack
+  (default textures/) holds replacements of any size (the shaders sample normalized coordinates, the chroma
+  key texel fetch uses the replacement's size). Results are cached per hash (animated textures are
+  recreated every frame). Mission 12 scene: 158 textures (sky, dashboard, radar frames, terrain);
+  a 4x sky replacement renders correctly.

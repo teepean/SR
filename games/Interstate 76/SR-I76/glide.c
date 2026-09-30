@@ -19,6 +19,7 @@
 #include "winapi.h"
 #include "render.h"
 #include "config.h"
+#include "texpack.h"
 #include "display.h"
 #include "ptr32.h"
 #include "Game-Memory.h"
@@ -312,7 +313,12 @@ static void select_texture(void)
         e->small_lod = gs.tex_small_lod;
         e->aspect = gs.tex_aspect;
         e->palette_hash = ph;
-        e->texture = render_glide_texture_create(w, h, pixels);
+        {
+            // texture packs: a replacement image (any size) for this texture?
+            int rw, rh;
+            const uint32_t *rep = texpack_lookup(w, h, pixels, &rw, &rh);
+            e->texture = (rep != NULL) ? render_glide_texture_create(rw, rh, rep) : render_glide_texture_create(w, h, pixels);
+        }
         e->next = tex_cache;
         tex_cache = e;
         free(pixels);
