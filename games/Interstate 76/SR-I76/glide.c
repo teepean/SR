@@ -38,7 +38,7 @@ EXTERN_C_BEGIN
 static uint32_t tmu_memory = 64 * 1024 * 1024;
 #define TMU_MEMORY tmu_memory
 #define TMU_SLACK (512 * 1024)             // writes past the reported end don't corrupt anything
-#define LFB_STRIDE_PIXELS 1024              // like a Voodoo: 2048 bytes per line
+#define LFB_STRIDE_PIXELS 2048              // a Voodoo had 2048 bytes per line; wider for widescreen screens
 #define SNAP_BIAS 786432.0f                 // (3 << 18): ZGLIDE adds it to x/y for the Voodoo's fixed-point vertex snapping
 
 #pragma pack(push, 4)
@@ -335,10 +335,34 @@ static void select_texture(void)
 /* ------------------------------------------------------------------ */
 /* batching                                                            */
 
+// debugging: I76_GLIDE_TRACE=<n> logs every draw of the n-th swapped frame (state, screen extent, oow range)
+static int trace_frame = -1, frame_number;
+
+static void trace_batch(void)
+{
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, w0 = 1e9f, w1 = -1e9f;
+    int i;
+    for (i = 0; i < batch_count; i++)
+    {
+        const render_glide_vertex *v = &batch[i];
+        if (v->x < x0) x0 = v->x;
+        if (v->x > x1) x1 = v->x;
+        if (v->y < y0) y0 = v->y;
+        if (v->y > y1) y1 = v->y;
+        if (v->oow < w0) w0 = v->oow;
+        if (v->oow > w1) w1 = v->oow;
+    }
+    eprintf("trace: prim %d n %3d depth %d/%d/%d blend %d,%d tex %3d cc %d/%d/%d/%d chroma %d x %7.1f..%7.1f y %6.1f..%6.1f oow %.5f..%.5f\n",
+            batch_primitive, batch_count, rstate.depth_mode, rstate.depth_func, rstate.depth_mask, rstate.rgb_src, rstate.rgb_dst,
+            rstate.texture, rstate.cc_function, rstate.cc_factor, rstate.cc_local, rstate.cc_other, rstate.chromakey_enable,
+            x0, x1, y0, y1, w0, w1);
+}
+
 static void flush(void)
 {
     if (batch_count > 0)
     {
+        if (frame_number == trace_frame) trace_batch();
         render_glide_draw(&rstate, batch, batch_count, batch_primitive);
         batch_count = 0;
     }
@@ -414,6 +438,7 @@ static void begin_primitive(int primitive)
 
 void CCALL grGlideInit_c(void)
 {
+    if (getenv("I76_GLIDE_TRACE") != NULL) trace_frame = atoi(getenv("I76_GLIDE_TRACE"));
     if (tmu_mem == NULL)
     {
         int mb = config_get_int("texture_memory", 64);
@@ -486,6 +511,8 @@ static void resolution_size(int res, int *w, int *h)
 uint32_t CCALL grSstWinOpen_c(void *hwnd, int32_t resolution, int32_t refresh, int32_t cformat, int32_t origin, int32_t nColBuffers, int32_t nAuxBuffers)
 {
     resolution_size(resolution, &screen_w, &screen_h);
+    // widescreen: the game renders its 3D screen i76_screen_width x 480 (display.c); ZGLIDE asks for 640x480
+    if ((screen_w == 640) && (screen_h == 480) && (i76_screen_width > 640)) screen_w = (int)i76_screen_width;
     color_format = cformat;
     origin_lower_left = (origin == 1);
     if (winapi_debug) eprintf("grSstWinOpen: %dx%d cformat %d origin %d buffers %d/%d\n", screen_w, screen_h, cformat, origin, nColBuffers, nAuxBuffers);
@@ -691,6 +718,8 @@ void CCALL grBufferSwap_c(int32_t interval)
     if (!gl_open) return;
     if (winapi_debug >= 3) eprintf("grBufferSwap %u\n", winapi_get_ticks());
     flush();
+    if (frame_number == trace_frame) eprintf("trace: swap (frame %d)\n", frame_number);
+    frame_number++;
     render_glide_swap();
     display_idle();
 }
@@ -730,7 +759,8 @@ uint32_t CCALL grLfbLock_c(int32_t type, int32_t buffer, int32_t write_mode, int
     }
     lfb_locked_buffer = buffer;
     lfb_locked_origin = origin;
-    info->lfbPtr = lfb;
+    // widescreen: the game's 2D drawing (menus, messages) is 640 pixels wide - centered on the wider screen
+    info->lfbPtr = lfb + (screen_w - 640) / 2;
     info->strideInBytes = LFB_STRIDE_PIXELS * 2;
     info->writeMode = 0;        // GR_LFBWRITEMODE_565
     info->origin = origin;

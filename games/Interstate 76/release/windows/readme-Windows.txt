@@ -20,7 +20,9 @@ Every setting can also be given as an environment variable I76_<SETTING>.
 renderer          glide = hardware 3D (Glide emulated), software = the game's software renderer
 graphics_api      d3d11 (default) = Direct3D 11, opengl = OpenGL 3.3
                   (if Direct3D 11 isn't available, OpenGL is used)
-glide_scale       3D render resolution: auto (default) = the window's height, keeping 4:3;
+widescreen        widescreen 3D view: auto (default) = the desktop's aspect ratio, off = 4:3, or a ratio like
+                  16:9, 16:10, 21:9. The view gets wider (the cockpit too), menus and videos stay 4:3.
+glide_scale       3D render resolution: auto (default) = the window's height;
                   1-8 = 640x480 * glide_scale
 antialiasing      multisample anti-aliasing: 0 = off, 2, 4 (default), 8
 gamma             brightness of the 3D picture (0.5-2.5, default 1.0 = unchanged)

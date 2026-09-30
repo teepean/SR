@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <SDL.h>
 #include "display.h"
@@ -33,6 +34,44 @@ int display_exists(void)
     return window != NULL;
 }
 
+// widescreen (SR-I76.cfg widescreen = auto | off | <w>:<h>): the width of the game's 3D screen at a height of 480
+// (the recompiled game reads it: instruction_replacements.sci, sub_434100 / sub_472400); 640 = 4:3
+uint32_t i76_screen_width = 640;
+uint32_t i76_width_4x3 = 640;       // the focal length of full-width views is computed for this width (Hor+)
+float i76_aspect_scale = 1.0f;
+float i76_screen_width_f = 640.0f, i76_screen_right_f = 639.0f;   // the screen's right edge for sub_42CD90's border strips      // i76_screen_width / 640: corrects the game's aspect factor (height * 4 / (width * 3))
+
+static void widescreen_init(void)
+{
+    const char *s = config_get("widescreen");
+    double aspect = 4.0 / 3.0;
+    int w;
+
+    if ((s == NULL) || (strcasecmp(s, "auto") == 0))
+    {
+        SDL_DisplayMode mode;
+        if ((SDL_GetDesktopDisplayMode(0, &mode) == 0) && (mode.h > 0)) aspect = (double)mode.w / mode.h;
+    }
+    else if ((strcasecmp(s, "off") == 0) || (strcmp(s, "0") == 0))
+    {
+        aspect = 4.0 / 3.0;
+    }
+    else
+    {
+        double a = 0.0, b = 0.0;
+        if ((sscanf(s, "%lf:%lf", &a, &b) == 2) && (a > 0) && (b > 0)) aspect = a / b;
+        else if ((a = atof(s)) > 0) aspect = a;
+    }
+    w = (int)(480.0 * aspect + 0.5) & ~1;
+    if (w < 640) w = 640;
+    if (w > 1440) w = 1440;     // 3:1
+    i76_screen_width = (uint32_t)w;
+    i76_aspect_scale = (float)w / 640.0f;
+    i76_screen_width_f = (float)w;
+    i76_screen_right_f = (float)(w - 1);
+    if (winapi_debug) eprintf("widescreen: 3D screen %dx480 (aspect %.3f)\n", w, aspect);
+}
+
 int display_create(const char *title, int width, int height)
 {
     int scale;
@@ -53,6 +92,8 @@ int display_create(const char *title, int width, int height)
         }
     }
 
+    widescreen_init();
+
     display_width = width;
     display_height = height;
     display_pixels = (uint32_t *) calloc((size_t)width * height, sizeof(uint32_t));
@@ -66,7 +107,8 @@ int display_create(const char *title, int width, int height)
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     for (;;)
     {
-        window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width * scale, height * scale, SDL_WINDOW_RESIZABLE | render_window_flags() | (config_get_int("fullscreen", 0) ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+        // widescreen: the window has the 3D screen's aspect ratio (4:3 screens are shown pillarboxed)
+        window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, (((height == 480) && (width == 640)) ? (int)i76_screen_width : width) * scale, height * scale, SDL_WINDOW_RESIZABLE | render_window_flags() | (config_get_int("fullscreen", 0) ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
         if (window == NULL)
         {
             eprintf("Error: SDL_CreateWindow: %s\n", SDL_GetError());

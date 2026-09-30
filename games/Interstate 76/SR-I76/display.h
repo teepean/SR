@@ -15,6 +15,7 @@ extern "C" {
 
 // window client area (framebuffer) size
 extern int display_width, display_height;
+extern uint32_t i76_screen_width;      // widescreen: width of the 3D screen at a height of 480 (640 = 4:3)
 // framebuffer in XRGB8888, display_width * display_height
 extern uint32_t *display_pixels;
 

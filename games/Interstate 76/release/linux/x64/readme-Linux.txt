@@ -21,7 +21,9 @@ Configuration is stored in the file SR-I76.cfg (a file with default values is cr
 Every setting can also be given as an environment variable I76_<SETTING>, e.g. I76_FPS=30 ./I76.sh
 
 renderer          glide = hardware 3D (Glide emulated with OpenGL 3.3), software = the game's software renderer
-glide_scale       3D render resolution: auto (default) = the window's height, keeping 4:3;
+widescreen        widescreen 3D view: auto (default) = the desktop's aspect ratio, off = 4:3, or a ratio like
+                  16:9, 16:10, 21:9. The view gets wider (the cockpit too), menus and videos stay 4:3.
+glide_scale       3D render resolution: auto (default) = the window's height;
                   1-8 = 640x480 * glide_scale
 antialiasing      multisample anti-aliasing: 0 = off, 2, 4 (default), 8
 anisotropy        anisotropic texture filtering (1 = off, 2-16, default 8), sharpens textures seen

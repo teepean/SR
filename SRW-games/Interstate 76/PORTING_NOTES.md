@@ -530,3 +530,20 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
 - Post-processing of the presented 3D picture (render.c render_post_settings; GL post_fs / D3D11 post_ps):
   gamma, sharpen (unsharp mask vs. 4 neighbours), fxaa (compact FXAA); off by default. GL samples the FBO
   texture flipped (row 0 = bottom). Checked: GL and D3D11 give the same picture.
+- Widescreen (Hor+), x64 only. The cockpit is 3D geometry (textured quads near the camera + flat-shaded
+  shell polygons, painter-sorted, depth test off), so a wider camera renders it correctly by itself.
+  - display.c: widescreen = auto (desktop aspect) | off | w:h -> i76_screen_width W = 480 * aspect (even,
+    640..1440), the window is W*scale wide; i76_aspect_scale = W/640, i76_screen_width_f/right_f.
+  - i76.exe patches (SRW/x64/instruction_replacements.sci): sub_433DF0 device width (+0/+108) and
+    sub_434100 device desc for ZGLIDE's FirstDevice (width +0x3C, line length +0x54, rect right +0x68 ->
+    ZGLIDE clips to W-1); sub_434340 display surface rect (the 3D viewport) right edge W-1; sub_472400 focal
+    length: full-width viewports use the 4:3 width (cmove at 0x47244A) and fy's aspect factor
+    (height*4/(width*3), 0.751 for 852) * W/640 (0x47245A) -> fx = fy = 320 like 4:3, cx = W/2;
+    sub_42CD90 (1-pixel strips after the rear-mirror rendering at x 639..640 / y 479..480 -> a line in the
+    middle of the view) uses W / W-1.
+  - glide.c: grSstWinOpen opens W x 480 (ZGLIDE asks for 640x480); LFB stride 2048 pixels; the LFB pointer
+    handed to the game is offset by (W-640)/2 -> 2D drawing (menus, messages) is centered, and the mouse
+    mapping (display_window_to_client letterboxes the 640x480 client area) matches.
+  - The rear mirror renders into its own 256x64 surface (unaffected). 4:3 menus/videos are pillarboxed.
+  - Checked: mission 12 -> 13 at 16:9 (852x480), 4:3 (widescreen = off) unchanged; I76_GLIDE_TRACE=<frame>
+    logs every Glide draw of one frame (state, screen extent, oow) - found the cockpit structure and the strip.
