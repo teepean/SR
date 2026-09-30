@@ -38,6 +38,7 @@ window_scale      initial window size = game resolution * window_scale
 fullscreen        1 = start in fullscreen
 fps               frame rate limit (default 20; the game's physics, AI and weapons were made for ~20 FPS,
                   higher values make the game misbehave), 0 = unlimited
+graphics_api      auto (default) = OpenGL 3.3, opengl = OpenGL 3.3, vulkan = Vulkan (experimental; falls back to OpenGL)
 video_driver      x11 (default, works on Wayland desktops through XWayland), wayland or auto
 vsync             1 = vertical sync
 sound             0 = no sound

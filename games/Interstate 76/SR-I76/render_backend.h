@@ -1,6 +1,7 @@
 /**
  *
- *  Rendering backends (render.c selects one): OpenGL 3.3 (render_gl.c), Direct3D 11 (render_d3d11.c, Windows).
+ *  Rendering backends (render.c selects one): OpenGL 3.3 (render_gl.c), Direct3D 11 (render_d3d11.c, Windows),
+ *  Vulkan (render_vk.c, Linux).
  *
  */
 
@@ -42,6 +43,8 @@ void render_post_settings(int *fxaa, float *sharpen, float *gamma);
 extern const render_backend render_backend_gl;
 #ifdef _WIN32
 extern const render_backend render_backend_d3d11;
+#elif defined(HAVE_VULKAN)
+extern const render_backend render_backend_vk;
 #endif
 
 #ifdef __cplusplus

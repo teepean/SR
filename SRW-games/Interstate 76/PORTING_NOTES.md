@@ -547,3 +547,16 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   - The rear mirror renders into its own 256x64 surface (unaffected). 4:3 menus/videos are pillarboxed.
   - Checked: mission 12 -> 13 at 16:9 (852x480), 4:3 (widescreen = off) unchanged; I76_GLIDE_TRACE=<frame>
     logs every Glide draw of one frame (state, screen extent, oow) - found the cockpit structure and the strip.
+- Vulkan backend (render_vk.c, Linux, graphics_api = vulkan, experimental; OpenGL stays the default): functions
+  loaded through SDL_Vulkan_GetVkGetInstanceProcAddr (no link dependency; init failure -> OpenGL fallback);
+  built only when vulkan/vulkan.h is found (SConstruct Configure -> HAVE_VULKAN). One command buffer,
+  submitted and waited for on every present/LFB read; Glide render pass (color LOAD/STORE, MSAA resolve at the
+  end of each pass), pipelines cached by blend/depth/topology, Glide uniform block in a per-submit ring with a
+  dynamic offset, textures with blit-generated mipmaps (destruction deferred to the next submit), a present
+  pass for 2D, the Glide front buffer and post-processing, frame dumps from the swapchain image, per-image
+  "rendered" semaphores. Shaders: shaders/*.vert|frag -> gen_vk_shaders.py -> vk_shaders.h (committed; the
+  Glide fragment shader is generated from render_gl.c's). I76_VK_VALIDATION=1 enables the Khronos validation
+  layer (SDK: VK_LAYER_PATH/LD_LIBRARY_PATH). Checked: no validation errors in the menus; mission 12 renders like
+  OpenGL (identical frame). In-mission validation runs are too slow for the timed input scripts.
+- Test rule: in real-window runs (Vulkan, Wine) only the internal script commands (move/down/up/click, keys) -
+  the w* commands move the user's real cursor.

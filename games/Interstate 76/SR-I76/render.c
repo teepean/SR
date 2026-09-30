@@ -1,7 +1,7 @@
 /**
  *
- *  Rendering: selects the backend (SR-I76.cfg graphics_api = opengl | d3d11) and forwards render.h calls to it.
- *  Default: Direct3D 11 on Windows, OpenGL elsewhere.
+ *  Rendering: selects the backend (SR-I76.cfg graphics_api = opengl | d3d11 | vulkan) and forwards render.h calls
+ *  to it. Default: Direct3D 11 on Windows, OpenGL elsewhere (Vulkan: Linux).
  *
  */
 
@@ -26,7 +26,9 @@ static const render_backend *default_backend(void)
     if ((api != NULL) && ((strcasecmp(api, "opengl") == 0) || (strcasecmp(api, "gl") == 0))) return &render_backend_gl;
     return &render_backend_d3d11;
 #else
-    (void) api;
+#ifdef HAVE_VULKAN
+    if ((api != NULL) && (strcasecmp(api, "vulkan") == 0)) return &render_backend_vk;
+#endif
     return &render_backend_gl;
 #endif
 }

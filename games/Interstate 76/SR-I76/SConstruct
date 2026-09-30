@@ -65,6 +65,16 @@ if 'PATH_INC' in os.environ:
 if 'PATH_LIB' in os.environ:
     env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
 
+# Vulkan backend (render_vk.c, Linux): only when the Vulkan headers are available (vulkan-headers package, or
+# PATH_INC=<Vulkan-Headers>/include); the Vulkan loader is found at runtime through SDL
+if device.endswith('-linux') and not env.GetOption('clean'):
+    conf = Configure(env.Clone())
+    if conf.CheckCHeader('vulkan/vulkan.h'):
+        env.Append(CPPDEFINES = ['HAVE_VULKAN'])
+    else:
+        print('Vulkan headers not found: building without the Vulkan backend')
+    conf.Finish()
+
 arch_objs = SConscript(('x64' if device.startswith('pc64-') else 'x86') + '/SConscript', exports='device env')
 
 env.Program('SR-I76' + ('-x64' if device == 'pc64-linux' else ''), Glob('*.c') + arch_objs)

@@ -14,6 +14,8 @@ but it's not developed further (see PORTING_NOTES.md).
   (default location `~/.wine/drive_c/i76`, set `GAME=...` otherwise)
 - gcc/g++, python3, nasm (not 2.15.03–2.15.05), scons
 - development files of SDL2 and freetype
+- optional: Vulkan headers (vulkan-headers package, or `PATH_INC=<Vulkan-Headers>/include`) for the Vulkan
+  backend (`graphics_api = vulkan`); without them the build leaves it out
 
 ## Steps
 

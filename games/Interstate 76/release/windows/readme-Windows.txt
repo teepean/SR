@@ -18,7 +18,7 @@ Configuration is stored in the file SR-I76.cfg (a file with default values is cr
 Every setting can also be given as an environment variable I76_<SETTING>.
 
 renderer          glide = hardware 3D (Glide emulated), software = the game's software renderer
-graphics_api      d3d11 (default) = Direct3D 11, opengl = OpenGL 3.3
+graphics_api      auto (default) = Direct3D 11, d3d11 = Direct3D 11, opengl = OpenGL 3.3
                   (if Direct3D 11 isn't available, OpenGL is used)
 widescreen        widescreen 3D view: auto (default) = the desktop's aspect ratio, off = 4:3, or a ratio like
                   16:9, 16:10, 21:9. The view gets wider (the cockpit too), menus and videos stay 4:3.
