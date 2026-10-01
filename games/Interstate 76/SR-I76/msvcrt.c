@@ -1053,6 +1053,15 @@ int32_t CCALL _findclose_c(int32_t handle)
     return 0;
 }
 
+// copies at most max-1 characters and the terminator, without padding (strncpy pads the whole buffer, the game's
+// buffers are often smaller than the _MAX_* sizes)
+static void copy_part(char *dst, const char *src, size_t len, size_t max)
+{
+    if (len > max - 1) len = max - 1;
+    memcpy(dst, src, len);
+    dst[len] = 0;
+}
+
 void CCALL _splitpath_c(const char *path, char *drive, char *dir, char *fname, char *ext)
 {
     const char *p, *last_slash, *dot;
@@ -1082,7 +1091,7 @@ void CCALL _splitpath_c(const char *path, char *drive, char *dir, char *fname, c
     if (last_slash != NULL)
     {
         len = last_slash + 1 - p;
-        if (dir != NULL) { if (len > 255) len = 255; memcpy(dir, p, len); dir[len] = 0; }
+        if (dir != NULL) copy_part(dir, p, len, 256);
         p = last_slash + 1;
     }
     else if (dir != NULL) dir[0] = 0;
@@ -1090,12 +1099,12 @@ void CCALL _splitpath_c(const char *path, char *drive, char *dir, char *fname, c
     if (dot != NULL)
     {
         len = dot - p;
-        if (fname != NULL) { if (len > 255) len = 255; memcpy(fname, p, len); fname[len] = 0; }
-        if (ext != NULL) { strncpy(ext, dot, 255); ext[255] = 0; }
+        if (fname != NULL) copy_part(fname, p, len, 256);
+        if (ext != NULL) copy_part(ext, dot, strlen(dot), 256);
     }
     else
     {
-        if (fname != NULL) { strncpy(fname, p, 255); fname[255] = 0; }
+        if (fname != NULL) copy_part(fname, p, strlen(p), 256);
         if (ext != NULL) ext[0] = 0;
     }
 }

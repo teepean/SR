@@ -504,3 +504,10 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   (sub_454E40: lowest player id among players with a measured ping; the host's ping is still -1.0) and spawns
   locally (sub_456100 -> sub_451030: rand() % spawn point count = 0, no arena loaded) -> SIGFPE. Next: the
   game's ping exchange / why the joiner hasn't measured the host yet (timing, lost packets?).
+- Fixed (2026-10-01): the joiner crash was ours. The shell copies the mission name from the host's JO packet
+  (dpReceive buffer offset 50 = FullPath) after `_splitpath(FullPath, 0, 0, 0, Ext)` with Ext[80] 130 bytes
+  below it; our _splitpath_c used strncpy(ext, dot, 255), which pads to 256 bytes and zeroed FullPath -> the
+  game started with an empty mission name (sub_4B42B0("")), no spawn points (dword_540D98 = 0) ->
+  rand() % 0 in sub_451030. _splitpath now copies only the string (like MSVCRT). The joiner loads the arena;
+  next problem: it waits in the join loop (sub_452F20) for the host's SP packet (reply to its SR), which dpio
+  acknowledges but never hands to dpReceive.
