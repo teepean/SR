@@ -319,20 +319,23 @@ extern WideCharToMultiByte_c
 extern WriteFile_c
 extern wsprintfA_c
 extern wvsprintfA_c
-extern ws2_32_WSAStartup_c
-extern ws2_32_WSACleanup_c
-extern ws2_32_WSAGetLastError_c
-extern ws2_32_socket_c
-extern ws2_32_bind_c
-extern ws2_32_closesocket_c
-extern ws2_32_sendto_c
-extern recvfrom_c
-extern setsockopt_c
-extern ws2_32_ioctlsocket_c
-extern ws2_32_htons_c
-extern ws2_32_inet_addr_c
-extern ws2_32_inet_ntoa_c
-extern ws2_32_gethostbyname_c
+extern commDriverInfo_c
+extern commGroupAdd_c
+extern commGroupAlloc_c
+extern commGroupFree_c
+extern commInit_c
+extern commNoOp_c
+extern commPeekPkt_c
+extern commPlayerInfo_c
+extern commPrintAddr_c
+extern commRxPkt_c
+extern commSayBye_c
+extern commSayHi_c
+extern commScanAddr_c
+extern commSetParam_c
+extern commTerm_c
+extern commTxFull_c
+extern commTxPkt_c
 extern GlobalAlloc_c
 extern GlobalReAlloc_c
 extern GlobalFree_c
@@ -667,20 +670,23 @@ global WideCharToMultiByte_asm2c
 global WriteFile_asm2c
 global wsprintfA_asm2c
 global wvsprintfA_asm2c
-global ws2_32_WSAStartup_asm2c
-global ws2_32_WSACleanup_asm2c
-global ws2_32_WSAGetLastError_asm2c
-global ws2_32_socket_asm2c
-global ws2_32_bind_asm2c
-global ws2_32_closesocket_asm2c
-global ws2_32_sendto_asm2c
-global recvfrom_asm2c
-global setsockopt_asm2c
-global ws2_32_ioctlsocket_asm2c
-global ws2_32_htons_asm2c
-global ws2_32_inet_addr_asm2c
-global ws2_32_inet_ntoa_asm2c
-global ws2_32_gethostbyname_asm2c
+global commDriverInfo_asm2c
+global commGroupAdd_asm2c
+global commGroupAlloc_asm2c
+global commGroupFree_asm2c
+global commInit_asm2c
+global commNoOp_asm2c
+global commPeekPkt_asm2c
+global commPlayerInfo_asm2c
+global commPrintAddr_asm2c
+global commRxPkt_asm2c
+global commSayBye_asm2c
+global commSayHi_asm2c
+global commScanAddr_asm2c
+global commSetParam_asm2c
+global commTerm_asm2c
+global commTxFull_asm2c
+global commTxPkt_asm2c
 global GlobalAlloc_asm2c
 global GlobalReAlloc_asm2c
 global GlobalFree_asm2c
@@ -2291,74 +2297,89 @@ wvsprintfA_asm2c:
         Call_Asm_Stack3 wvsprintfA_c, 3
 
 align 16
-ws2_32_WSAStartup_asm2c:
-; ws2_32.WSAStartup (std2, WSOCK32.dll)
-        Call_Asm_Stack2 ws2_32_WSAStartup_c, 2
+commDriverInfo_asm2c:
+; commDriverInfo (c2, static)
+        Call_Asm_Stack2 commDriverInfo_c
 
 align 16
-ws2_32_WSACleanup_asm2c:
-; ws2_32.WSACleanup (std0, WSOCK32.dll)
-        Call_Asm_Stack0 ws2_32_WSACleanup_c, 0
+commGroupAdd_asm2c:
+; commGroupAdd (c2, static)
+        Call_Asm_Stack2 commGroupAdd_c
 
 align 16
-ws2_32_WSAGetLastError_asm2c:
-; ws2_32.WSAGetLastError (std0, WSOCK32.dll)
-        Call_Asm_Stack0 ws2_32_WSAGetLastError_c, 0
+commGroupAlloc_asm2c:
+; commGroupAlloc (c2, static)
+        Call_Asm_Stack2 commGroupAlloc_c
 
 align 16
-ws2_32_socket_asm2c:
-; ws2_32.socket (std3, WSOCK32.dll)
-        Call_Asm_Stack3 ws2_32_socket_c, 3
+commGroupFree_asm2c:
+; commGroupFree (c2, static)
+        Call_Asm_Stack2 commGroupFree_c
 
 align 16
-ws2_32_bind_asm2c:
-; ws2_32.bind (std3, WSOCK32.dll)
-        Call_Asm_Stack3 ws2_32_bind_c, 3
+commInit_asm2c:
+; commInit (c2, static)
+        Call_Asm_Stack2 commInit_c
 
 align 16
-ws2_32_closesocket_asm2c:
-; ws2_32.closesocket (std1, WSOCK32.dll)
-        Call_Asm_Stack1 ws2_32_closesocket_c, 1
+commNoOp_asm2c:
+; commNoOp (c2, static)
+        Call_Asm_Stack2 commNoOp_c
 
 align 16
-ws2_32_sendto_asm2c:
-; ws2_32.sendto (std6, WSOCK32.dll)
-        Call_Asm_Stack6 ws2_32_sendto_c, 6
+commPeekPkt_asm2c:
+; commPeekPkt (c2, static)
+        Call_Asm_Stack2 commPeekPkt_c
 
 align 16
-recvfrom_asm2c:
-; recvfrom (std6, WSOCK32.dll)
-        Call_Asm_Stack6 recvfrom_c, 6
+commPlayerInfo_asm2c:
+; commPlayerInfo (c2, static)
+        Call_Asm_Stack2 commPlayerInfo_c
 
 align 16
-setsockopt_asm2c:
-; setsockopt (std5, WSOCK32.dll)
-        Call_Asm_Stack5 setsockopt_c, 5
+commPrintAddr_asm2c:
+; commPrintAddr (c2, static)
+        Call_Asm_Stack2 commPrintAddr_c
 
 align 16
-ws2_32_ioctlsocket_asm2c:
-; ws2_32.ioctlsocket (std3, WSOCK32.dll)
-        Call_Asm_Stack3 ws2_32_ioctlsocket_c, 3
+commRxPkt_asm2c:
+; commRxPkt (c2, static)
+        Call_Asm_Stack2 commRxPkt_c
 
 align 16
-ws2_32_htons_asm2c:
-; ws2_32.htons (std1, WSOCK32.dll)
-        Call_Asm_Stack1 ws2_32_htons_c, 1
+commSayBye_asm2c:
+; commSayBye (c2, static)
+        Call_Asm_Stack2 commSayBye_c
 
 align 16
-ws2_32_inet_addr_asm2c:
-; ws2_32.inet_addr (std1, WSOCK32.dll)
-        Call_Asm_Stack1 ws2_32_inet_addr_c, 1
+commSayHi_asm2c:
+; commSayHi (c2, static)
+        Call_Asm_Stack2 commSayHi_c
 
 align 16
-ws2_32_inet_ntoa_asm2c:
-; ws2_32.inet_ntoa (std1, WSOCK32.dll)
-        Call_Asm_Stack1 ws2_32_inet_ntoa_c, 1
+commScanAddr_asm2c:
+; commScanAddr (c2, static)
+        Call_Asm_Stack2 commScanAddr_c
 
 align 16
-ws2_32_gethostbyname_asm2c:
-; ws2_32.gethostbyname (std1, WSOCK32.dll)
-        Call_Asm_Stack1 ws2_32_gethostbyname_c, 1
+commSetParam_asm2c:
+; commSetParam (c2, static)
+        Call_Asm_Stack2 commSetParam_c
+
+align 16
+commTerm_asm2c:
+; commTerm (c2, static)
+        Call_Asm_Stack2 commTerm_c
+
+align 16
+commTxFull_asm2c:
+; commTxFull (c2, static)
+        Call_Asm_Stack2 commTxFull_c
+
+align 16
+commTxPkt_asm2c:
+; commTxPkt (c2, static)
+        Call_Asm_Stack2 commTxPkt_c
 
 align 16
 GlobalAlloc_asm2c:

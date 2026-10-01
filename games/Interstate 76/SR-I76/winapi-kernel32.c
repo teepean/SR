@@ -1350,8 +1350,12 @@ extern void CheckFunc(void), FirstDevice(void), GetFuncDesc(void), GetNumDevice(
             LastDevice(void), LockDisplay(void), LostDeviceDisplay(void), PreloadTexture(void), RefreshDisplay(void),
             Render(void), RenderNoClip(void), RenderRefresh(void), RestoreDevice(void), SetLumaTable(void),
             SetState(void), SetTexturePalette(void), UnlockDisplay(void), UpdateTexture(void);
-// DLL\WINET.DLL (ANETDLL's TCP/IP transport)
-extern void commDriverInfo(void), commGroupAdd(void), commGroupAlloc(void), commGroupFree(void), commInit(void), commNoOp(void), commPeekPkt(void), commPlayerInfo(void), commPrintAddr(void), commRxPkt(void), commSayBye(void), commSayHi(void), commScanAddr(void), commSetParam(void), commTerm(void), commTxFull(void), commTxPkt(void);
+// DLL\WINET.DLL (ANETDLL's TCP/IP transport): winet.c, called through the generated asm2c stubs
+extern void commDriverInfo_asm2c(void), commGroupAdd_asm2c(void), commGroupAlloc_asm2c(void), commGroupFree_asm2c(void),
+            commInit_asm2c(void), commNoOp_asm2c(void), commPeekPkt_asm2c(void), commPlayerInfo_asm2c(void),
+            commPrintAddr_asm2c(void), commRxPkt_asm2c(void), commSayBye_asm2c(void), commSayHi_asm2c(void),
+            commScanAddr_asm2c(void), commSetParam_asm2c(void), commTerm_asm2c(void), commTxFull_asm2c(void),
+            commTxPkt_asm2c(void);
 #ifdef __cplusplus
 }
 #endif
@@ -1400,23 +1404,23 @@ static const module_export zglide_exports[] = {
 };
 
 static const module_export winet_exports[] = {
-    { "commDriverInfo", (void *) commDriverInfo },
-    { "commGroupAdd", (void *) commGroupAdd },
-    { "commGroupAlloc", (void *) commGroupAlloc },
-    { "commGroupFree", (void *) commGroupFree },
-    { "commInit", (void *) commInit },
-    { "commNoOp", (void *) commNoOp },
-    { "commPeekPkt", (void *) commPeekPkt },
-    { "commPlayerInfo", (void *) commPlayerInfo },
-    { "commPrintAddr", (void *) commPrintAddr },
-    { "commRxPkt", (void *) commRxPkt },
-    { "commSayBye", (void *) commSayBye },
-    { "commSayHi", (void *) commSayHi },
-    { "commScanAddr", (void *) commScanAddr },
-    { "commSetParam", (void *) commSetParam },
-    { "commTerm", (void *) commTerm },
-    { "commTxFull", (void *) commTxFull },
-    { "commTxPkt", (void *) commTxPkt },
+    { "commDriverInfo", (void *) commDriverInfo_asm2c },
+    { "commGroupAdd", (void *) commGroupAdd_asm2c },
+    { "commGroupAlloc", (void *) commGroupAlloc_asm2c },
+    { "commGroupFree", (void *) commGroupFree_asm2c },
+    { "commInit", (void *) commInit_asm2c },
+    { "commNoOp", (void *) commNoOp_asm2c },
+    { "commPeekPkt", (void *) commPeekPkt_asm2c },
+    { "commPlayerInfo", (void *) commPlayerInfo_asm2c },
+    { "commPrintAddr", (void *) commPrintAddr_asm2c },
+    { "commRxPkt", (void *) commRxPkt_asm2c },
+    { "commSayBye", (void *) commSayBye_asm2c },
+    { "commSayHi", (void *) commSayHi_asm2c },
+    { "commScanAddr", (void *) commScanAddr_asm2c },
+    { "commSetParam", (void *) commSetParam_asm2c },
+    { "commTerm", (void *) commTerm_asm2c },
+    { "commTxFull", (void *) commTxFull_asm2c },
+    { "commTxPkt", (void *) commTxPkt_asm2c },
     { NULL, NULL }
 };
 

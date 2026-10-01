@@ -55,4 +55,3 @@ gen SRW-i76shell i76shell.dll i76shell
 gen SRW-zglide   ZGLIDE.DLL   zglide
 gen SRW-strlkup  STRLKUP.DLL  strlkup
 gen SRW-anetdll  ANETDLL.DLL  anetdll
-gen SRW-winet    DLL/WINET.DLL winet

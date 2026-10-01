@@ -1,7 +1,7 @@
 # Building Interstate '76 (SR-I76) for Linux x64 and Windows x64
 
 The recompiled game consists of the generated assembler versions of the game's modules
-(i76.exe, i76shell.dll, ZGLIDE.DLL, STRLKUP.DLL) and the runtime in `games/Interstate 76/SR-I76`
+(i76.exe, i76shell.dll, ZGLIDE.DLL, STRLKUP.DLL, ANETDLL.DLL) and the runtime in `games/Interstate 76/SR-I76`
 (Win32 API, DirectDraw, DirectSound, Glide → OpenGL, CRT, ...).
 The generated assembler files are not part of the repository; they are created from the original game files.
 

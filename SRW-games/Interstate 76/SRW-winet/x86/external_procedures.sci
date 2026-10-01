@@ -1,3 +1,0 @@
-loc_10001B60,sprintf
-loc_10001BD0,clock
-loc_10002A90,_ftime

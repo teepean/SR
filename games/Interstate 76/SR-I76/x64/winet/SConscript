@@ -1,8 +1,0 @@
-Import('env2')
-
-env3 = env2.Clone()
-env3.Append(ASFLAGS = ' -ix64/winet/')
-
-obj = env3.Object('winet.asm')
-
-Return('obj')

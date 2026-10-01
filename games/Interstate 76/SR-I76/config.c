@@ -52,7 +52,11 @@ static const char default_config[] =
     "# joystick / gamepad (1 = on, 0 = off)\n"
     "joystick = 1\n"
     "# joystick backend: sdl, or evdev (Linux: read /dev/input directly)\n"
-    "joystick_backend = sdl\n";
+    "joystick_backend = sdl\n"
+    "# multiplayer: net_nat = 1 (default) works through NAT routers (only the host forwards UDP port 21155;\n"
+    "# every player needs SR-I76 with net_nat = 1); 0 = the original network addresses (LAN or VPN, compatible\n"
+    "# with the original game)\n"
+    "net_nat = 1\n";
 
 static void trim(char *s)
 {

@@ -35,7 +35,7 @@ env1.Append(ASFLAGS = ' -Ox')
 env2.Append(ASFLAGS = ' -O1')
 
 module_objs = []
-for module in ['i76', 'i76shell', 'zglide', 'strlkup', 'anetdll', 'winet']:
+for module in ['i76', 'i76shell', 'zglide', 'strlkup', 'anetdll']:
     module_objs += SConscript(module + '/SConscript', exports='device env2')
 
 obj = env1.Object(Glob('*.asm')) + module_objs

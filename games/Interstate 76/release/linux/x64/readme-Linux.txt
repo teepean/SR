@@ -36,6 +36,20 @@ joystick_backend  sdl (default) or evdev (reads /dev/input directly)
 Command line parameters /glide or /gdi select the renderer (overriding the configuration).
 
 
+Multiplayer
+-----------
+
+Internet / LAN games over TCP/IP: MELEE -> MULTI MELEE -> HOST or JOIN -> INTERNET.
+The host starts a game (BROADCAST GAME). The other players add the host in the CONNECT TO SERVER dialog
+(NEW, a name and the host's IP address or host name - optionally host:port - then DONE) and join the game.
+
+net_nat = 1 (default): works through NAT routers. Only the host has to forward UDP port 21155 in its
+router; the joining players need nothing. All players must use this version of the game with net_nat = 1.
+net_nat = 0: the original network code - for LAN or VPN games (e.g. ZeroTier, Radmin VPN) together with
+players who use the original game; doesn't work through NAT routers.
+net_bind_ip = <address>: use one network interface only.
+
+
 Controls
 --------
 
@@ -63,7 +77,6 @@ Misc
 The game requires following 64-bit libraries: SDL2, freetype, OpenGL 3.3 driver
 On debian based distributions these libraries are in following packages: libsdl2-2.0-0 libfreetype6
 
-Multiplayer is not supported (yet).
 
 Debug output: I76_DEBUG=1 ./I76.sh (I76_DEBUG=2 for more)
 

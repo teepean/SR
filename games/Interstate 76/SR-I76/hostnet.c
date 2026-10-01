@@ -1,6 +1,6 @@
 /**
  *
- *  Host UDP sockets for the Winsock emulation (winsock.c): BSD sockets on Linux, Winsock 2 on Windows.
+ *  Host UDP sockets for the anet transport (winet.c): BSD sockets on Linux, Winsock 2 on Windows.
  *
  */
 

@@ -648,34 +648,40 @@ extern wsprintfA_asm2c
 %define wsprintfA wsprintfA_asm2c
 extern wvsprintfA_asm2c
 %define wvsprintfA wvsprintfA_asm2c
-extern ws2_32_WSAStartup_asm2c
-%define ws2_32.WSAStartup ws2_32_WSAStartup_asm2c
-extern ws2_32_WSACleanup_asm2c
-%define ws2_32.WSACleanup ws2_32_WSACleanup_asm2c
-extern ws2_32_WSAGetLastError_asm2c
-%define ws2_32.WSAGetLastError ws2_32_WSAGetLastError_asm2c
-extern ws2_32_socket_asm2c
-%define ws2_32.socket ws2_32_socket_asm2c
-extern ws2_32_bind_asm2c
-%define ws2_32.bind ws2_32_bind_asm2c
-extern ws2_32_closesocket_asm2c
-%define ws2_32.closesocket ws2_32_closesocket_asm2c
-extern ws2_32_sendto_asm2c
-%define ws2_32.sendto ws2_32_sendto_asm2c
-extern recvfrom_asm2c
-%define recvfrom recvfrom_asm2c
-extern setsockopt_asm2c
-%define setsockopt setsockopt_asm2c
-extern ws2_32_ioctlsocket_asm2c
-%define ws2_32.ioctlsocket ws2_32_ioctlsocket_asm2c
-extern ws2_32_htons_asm2c
-%define ws2_32.htons ws2_32_htons_asm2c
-extern ws2_32_inet_addr_asm2c
-%define ws2_32.inet_addr ws2_32_inet_addr_asm2c
-extern ws2_32_inet_ntoa_asm2c
-%define ws2_32.inet_ntoa ws2_32_inet_ntoa_asm2c
-extern ws2_32_gethostbyname_asm2c
-%define ws2_32.gethostbyname ws2_32_gethostbyname_asm2c
+extern commDriverInfo_asm2c
+%define commDriverInfo commDriverInfo_asm2c
+extern commGroupAdd_asm2c
+%define commGroupAdd commGroupAdd_asm2c
+extern commGroupAlloc_asm2c
+%define commGroupAlloc commGroupAlloc_asm2c
+extern commGroupFree_asm2c
+%define commGroupFree commGroupFree_asm2c
+extern commInit_asm2c
+%define commInit commInit_asm2c
+extern commNoOp_asm2c
+%define commNoOp commNoOp_asm2c
+extern commPeekPkt_asm2c
+%define commPeekPkt commPeekPkt_asm2c
+extern commPlayerInfo_asm2c
+%define commPlayerInfo commPlayerInfo_asm2c
+extern commPrintAddr_asm2c
+%define commPrintAddr commPrintAddr_asm2c
+extern commRxPkt_asm2c
+%define commRxPkt commRxPkt_asm2c
+extern commSayBye_asm2c
+%define commSayBye commSayBye_asm2c
+extern commSayHi_asm2c
+%define commSayHi commSayHi_asm2c
+extern commScanAddr_asm2c
+%define commScanAddr commScanAddr_asm2c
+extern commSetParam_asm2c
+%define commSetParam commSetParam_asm2c
+extern commTerm_asm2c
+%define commTerm commTerm_asm2c
+extern commTxFull_asm2c
+%define commTxFull commTxFull_asm2c
+extern commTxPkt_asm2c
+%define commTxPkt commTxPkt_asm2c
 extern GlobalAlloc_asm2c
 %define GlobalAlloc GlobalAlloc_asm2c
 extern GlobalReAlloc_asm2c

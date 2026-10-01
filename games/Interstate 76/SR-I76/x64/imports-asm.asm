@@ -320,20 +320,23 @@ extern WideCharToMultiByte_c
 extern WriteFile_c
 extern wsprintfA_c
 extern wvsprintfA_c
-extern ws2_32_WSAStartup_c
-extern ws2_32_WSACleanup_c
-extern ws2_32_WSAGetLastError_c
-extern ws2_32_socket_c
-extern ws2_32_bind_c
-extern ws2_32_closesocket_c
-extern ws2_32_sendto_c
-extern recvfrom_c
-extern setsockopt_c
-extern ws2_32_ioctlsocket_c
-extern ws2_32_htons_c
-extern ws2_32_inet_addr_c
-extern ws2_32_inet_ntoa_c
-extern ws2_32_gethostbyname_c
+extern commDriverInfo_c
+extern commGroupAdd_c
+extern commGroupAlloc_c
+extern commGroupFree_c
+extern commInit_c
+extern commNoOp_c
+extern commPeekPkt_c
+extern commPlayerInfo_c
+extern commPrintAddr_c
+extern commRxPkt_c
+extern commSayBye_c
+extern commSayHi_c
+extern commScanAddr_c
+extern commSetParam_c
+extern commTerm_c
+extern commTxFull_c
+extern commTxPkt_c
 extern GlobalAlloc_c
 extern GlobalReAlloc_c
 extern GlobalFree_c
@@ -668,20 +671,23 @@ global WideCharToMultiByte_asm2c
 global WriteFile_asm2c
 global wsprintfA_asm2c
 global wvsprintfA_asm2c
-global ws2_32_WSAStartup_asm2c
-global ws2_32_WSACleanup_asm2c
-global ws2_32_WSAGetLastError_asm2c
-global ws2_32_socket_asm2c
-global ws2_32_bind_asm2c
-global ws2_32_closesocket_asm2c
-global ws2_32_sendto_asm2c
-global recvfrom_asm2c
-global setsockopt_asm2c
-global ws2_32_ioctlsocket_asm2c
-global ws2_32_htons_asm2c
-global ws2_32_inet_addr_asm2c
-global ws2_32_inet_ntoa_asm2c
-global ws2_32_gethostbyname_asm2c
+global commDriverInfo_asm2c
+global commGroupAdd_asm2c
+global commGroupAlloc_asm2c
+global commGroupFree_asm2c
+global commInit_asm2c
+global commNoOp_asm2c
+global commPeekPkt_asm2c
+global commPlayerInfo_asm2c
+global commPrintAddr_asm2c
+global commRxPkt_asm2c
+global commSayBye_asm2c
+global commSayHi_asm2c
+global commScanAddr_asm2c
+global commSetParam_asm2c
+global commTerm_asm2c
+global commTxFull_asm2c
+global commTxPkt_asm2c
 global GlobalAlloc_asm2c
 global GlobalReAlloc_asm2c
 global GlobalFree_asm2c
@@ -8149,35 +8155,15 @@ wvsprintfA_asm2c:
         Call_Asm_Epilogue_0 3
 %endif
 
-; ws2_32.WSAStartup (std2, WSOCK32.dll)
+; commDriverInfo (c2, static)
 align 16
-ws2_32_WSAStartup_asm2c:
+commDriverInfo_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
         mov ecx, [r11d+4]
         mov edx, [r11d+8]
-        call ws2_32_WSAStartup_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+8
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        call ws2_32_WSAStartup_c
-        Call_Asm_Epilogue_0 2
-%endif
-
-; ws2_32.WSACleanup (std0, WSOCK32.dll)
-align 16
-ws2_32_WSACleanup_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        call ws2_32_WSACleanup_c
+        call commDriverInfo_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
@@ -8185,17 +8171,21 @@ ws2_32_WSACleanup_asm2c:
         jmp r8
 %else
         Call_Asm_Prologue_0
-        call ws2_32_WSACleanup_c
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commDriverInfo_c
         Call_Asm_Epilogue_0 0
 %endif
 
-; ws2_32.WSAGetLastError (std0, WSOCK32.dll)
+; commGroupAdd (c2, static)
 align 16
-ws2_32_WSAGetLastError_asm2c:
+commGroupAdd_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
-        call ws2_32_WSAGetLastError_c
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commGroupAdd_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
@@ -8203,279 +8193,340 @@ ws2_32_WSAGetLastError_asm2c:
         jmp r8
 %else
         Call_Asm_Prologue_0
-        call ws2_32_WSAGetLastError_c
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commGroupAdd_c
         Call_Asm_Epilogue_0 0
 %endif
 
-; ws2_32.socket (std3, WSOCK32.dll)
+; commGroupAlloc (c2, static)
 align 16
-ws2_32_socket_asm2c:
+commGroupAlloc_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
         mov ecx, [r11d+4]
         mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        call ws2_32_socket_c
+        call commGroupAlloc_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
-        add r11d, byte 4+12
+        add r11d, byte 4+0
         jmp r8
 %else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        call ws2_32_socket_c
-        Call_Asm_Epilogue_0 3
+        call commGroupAlloc_c
+        Call_Asm_Epilogue_0 0
 %endif
 
-; ws2_32.bind (std3, WSOCK32.dll)
+; commGroupFree (c2, static)
 align 16
-ws2_32_bind_asm2c:
+commGroupFree_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
         mov ecx, [r11d+4]
         mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        call ws2_32_bind_c
+        call commGroupFree_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
-        add r11d, byte 4+12
+        add r11d, byte 4+0
         jmp r8
 %else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        call ws2_32_bind_c
-        Call_Asm_Epilogue_0 3
+        call commGroupFree_c
+        Call_Asm_Epilogue_0 0
 %endif
 
-; ws2_32.closesocket (std1, WSOCK32.dll)
+; commInit (c2, static)
 align 16
-ws2_32_closesocket_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        mov ecx, [r11d+4]
-        call ws2_32_closesocket_c
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+4
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        call ws2_32_closesocket_c
-        Call_Asm_Epilogue_0 1
-%endif
-
-; ws2_32.sendto (std6, WSOCK32.dll)
-align 16
-ws2_32_sendto_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov eax, [r11d+24]
-        mov [rsp+40], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call ws2_32_sendto_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+24
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        mov r9d, [r11d+32]
-        call ws2_32_sendto_c
-        Call_Asm_Epilogue_0 6
-%endif
-
-; recvfrom (std6, WSOCK32.dll)
-align 16
-recvfrom_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov eax, [r11d+24]
-        mov [rsp+40], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call recvfrom_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+24
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        mov r9d, [r11d+32]
-        call recvfrom_c
-        Call_Asm_Epilogue_0 6
-%endif
-
-; setsockopt (std5, WSOCK32.dll)
-align 16
-setsockopt_asm2c:
-%ifidn __OUTPUT_FORMAT__, win64
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov [r10], r11d
-        sub rsp, 16
-        mov eax, [r11d+20]
-        mov [rsp+32], rax
-        mov ecx, [r11d+4]
-        mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        mov r9d, [r11d+16]
-        call setsockopt_c
-        add rsp, 16
-        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
-        mov r11d, [r10]
-        mov r8d, [r11d]
-        add r11d, byte 4+20
-        jmp r8
-%else
-        Call_Asm_Prologue_0
-        mov edi, [r11d+12]
-        mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        mov ecx, [r11d+24]
-        mov r8d, [r11d+28]
-        call setsockopt_c
-        Call_Asm_Epilogue_0 5
-%endif
-
-; ws2_32.ioctlsocket (std3, WSOCK32.dll)
-align 16
-ws2_32_ioctlsocket_asm2c:
+commInit_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
         mov ecx, [r11d+4]
         mov edx, [r11d+8]
-        mov r8d, [r11d+12]
-        call ws2_32_ioctlsocket_c
+        call commInit_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
-        add r11d, byte 4+12
+        add r11d, byte 4+0
         jmp r8
 %else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         mov esi, [r11d+16]
-        mov edx, [r11d+20]
-        call ws2_32_ioctlsocket_c
-        Call_Asm_Epilogue_0 3
+        call commInit_c
+        Call_Asm_Epilogue_0 0
 %endif
 
-; ws2_32.htons (std1, WSOCK32.dll)
+; commNoOp (c2, static)
 align 16
-ws2_32_htons_asm2c:
+commNoOp_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
         mov ecx, [r11d+4]
-        call ws2_32_htons_c
+        mov edx, [r11d+8]
+        call commNoOp_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
-        add r11d, byte 4+4
+        add r11d, byte 4+0
         jmp r8
 %else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
-        call ws2_32_htons_c
-        Call_Asm_Epilogue_0 1
+        mov esi, [r11d+16]
+        call commNoOp_c
+        Call_Asm_Epilogue_0 0
 %endif
 
-; ws2_32.inet_addr (std1, WSOCK32.dll)
+; commPeekPkt (c2, static)
 align 16
-ws2_32_inet_addr_asm2c:
+commPeekPkt_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
         mov ecx, [r11d+4]
-        call ws2_32_inet_addr_c
+        mov edx, [r11d+8]
+        call commPeekPkt_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
-        add r11d, byte 4+4
+        add r11d, byte 4+0
         jmp r8
 %else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
-        call ws2_32_inet_addr_c
-        Call_Asm_Epilogue_0 1
+        mov esi, [r11d+16]
+        call commPeekPkt_c
+        Call_Asm_Epilogue_0 0
 %endif
 
-; ws2_32.inet_ntoa (std1, WSOCK32.dll)
+; commPlayerInfo (c2, static)
 align 16
-ws2_32_inet_ntoa_asm2c:
+commPlayerInfo_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
         mov ecx, [r11d+4]
-        call ws2_32_inet_ntoa_c
+        mov edx, [r11d+8]
+        call commPlayerInfo_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
-        add r11d, byte 4+4
+        add r11d, byte 4+0
         jmp r8
 %else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
-        call ws2_32_inet_ntoa_c
-        Call_Asm_Epilogue_0 1
+        mov esi, [r11d+16]
+        call commPlayerInfo_c
+        Call_Asm_Epilogue_0 0
 %endif
 
-; ws2_32.gethostbyname (std1, WSOCK32.dll)
+; commPrintAddr (c2, static)
 align 16
-ws2_32_gethostbyname_asm2c:
+commPrintAddr_asm2c:
 %ifidn __OUTPUT_FORMAT__, win64
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov [r10], r11d
         mov ecx, [r11d+4]
-        call ws2_32_gethostbyname_c
+        mov edx, [r11d+8]
+        call commPrintAddr_c
         mov r10, [rsp+FIRST_PARAMETER_OFFSET]
         mov r11d, [r10]
         mov r8d, [r11d]
-        add r11d, byte 4+4
+        add r11d, byte 4+0
         jmp r8
 %else
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
-        call ws2_32_gethostbyname_c
-        Call_Asm_Epilogue_0 1
+        mov esi, [r11d+16]
+        call commPrintAddr_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; commRxPkt (c2, static)
+align 16
+commRxPkt_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commRxPkt_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commRxPkt_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; commSayBye (c2, static)
+align 16
+commSayBye_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commSayBye_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commSayBye_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; commSayHi (c2, static)
+align 16
+commSayHi_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commSayHi_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commSayHi_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; commScanAddr (c2, static)
+align 16
+commScanAddr_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commScanAddr_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commScanAddr_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; commSetParam (c2, static)
+align 16
+commSetParam_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commSetParam_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commSetParam_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; commTerm (c2, static)
+align 16
+commTerm_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commTerm_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commTerm_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; commTxFull (c2, static)
+align 16
+commTxFull_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commTxFull_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commTxFull_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; commTxPkt (c2, static)
+align 16
+commTxPkt_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call commTxPkt_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call commTxPkt_c
+        Call_Asm_Epilogue_0 0
 %endif
 
 ; GlobalAlloc (std2, KERNEL32.dll)

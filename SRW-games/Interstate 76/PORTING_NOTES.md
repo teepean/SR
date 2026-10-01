@@ -517,6 +517,27 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   that byte (uninitialized stack); on Windows the leftover evidently wasn't 2, in the port it often was ->
   the joiner ignored SP and waited forever. SRW/x64 instruction_replacements: write the type as a dword
   (state 0, like the other packets). Result: host + joiner in The Crater, both on each other's radar.
-- Debugging aids: I76_DEBUG=3 hex-dumps every UDP packet (winsock.c); anet reliable packets are
+- Debugging aids: I76_DEBUG=3 hex-dumps every UDP packet (winet.c); anet reliable packets are
   'dT' (64 54) pktnum(2) len(1) payload, acks 'dU' (64 55) pktnum; user payloads end with a 6-byte trailer
   (from id, to id, session key) checked in dpReceive.
+
+### 2026-10-01 — multiplayer, step 2: native WINET (winet.c) with NAT traversal
+- DLL\WINET.DLL is no longer recompiled: winet.c implements its 17 comm* functions (int f(req *, resp *),
+  packed responses with a status byte; ANETDLL gets them with GetProcAddress -> imports.spec `static` c2
+  entries -> generated commX_asm2c stubs in the LoadLibrary module table). winsock.c (the WSOCK32 emulation,
+  only used by WINET) and SRW-winet are gone; hostnet.c is used directly.
+  Original behaviour (from the decompiled DLL): UDP port 21155, peer table of up to 100 sockaddrs, index =
+  comm handle (0 broadcast, 1 self; ANETDLL handles -1 broadcast, -2 me, -3/-4 none), addresses = 4-byte IPv4
+  (same port for everybody), own address learned by broadcasting to itself, comm_driverInfo_t copied verbatim
+  ("AVKEGEL6", "Internet").
+- Why the original fails behind NAT (Shane Peelar's notes, https://inbetweennames.net/projects/interstate76anet/,
+  blerh.txt): ANETDLL puts its own address (commPlayerInfo(me)) into its packets (SYN, enum sessions, player
+  list) and answers/compares those embedded addresses, not the packet's source address.
+- net_nat = 1 (default), Peelar's scheme reimplemented: addresses are 6 bytes (IPv4 + port); commPlayerInfo(me)
+  returns the placeholder DE AD BE EF AA AA; commRxPkt replaces it in each packet with the sender's
+  ip:port as received, and replaces the receiver placeholder AB AD C0 DA BB BB with our own placeholder;
+  commTxPkt replaces the destination's address with the receiver placeholder. Peers are matched by ip:port.
+  commScanAddr accepts host:port. net_nat = 0 = the original wire format (compatible with the original game).
+- Tests (two instances, 127.0.0.1 host / 127.0.0.2 joiner): net_nat 1 joins; through a simulated NAT
+  (natsim.py: the joiner talks to 127.0.0.4, the host sees it as 127.0.0.3:40000) net_nat 1 joins (~1500
+  packets relayed), net_nat 0 doesn't (the host answers the joiner's self-reported address).
