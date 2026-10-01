@@ -239,6 +239,14 @@ uint32_t CCALL ws2_32_ioctlsocket_c(uint32_t s, uint32_t cmd, uint32_t *argp)
     return fail(10045);     // WSAEOPNOTSUPP
 }
 
+// debugging (I76_DEBUG=3): the first bytes of each packet
+static void dump_packet(const char *buf, int len)
+{
+    int k;
+    for (k = 0; (k < len) && (k < 128); k++) eprintf(" %02x", (uint8_t)buf[k]);
+    eprintf((len > 128) ? " ...\n" : "\n");
+}
+
 uint32_t CCALL ws2_32_sendto_c(uint32_t s, const char *buf, int32_t len, int32_t flags, const ws_sockaddr_in *to, int32_t tolen)
 {
     int i = socket_index(s);
@@ -247,6 +255,7 @@ uint32_t CCALL ws2_32_sendto_c(uint32_t s, const char *buf, int32_t len, int32_t
     if ((to == NULL) || (tolen < (int32_t)sizeof(ws_sockaddr_in))) return fail(10014);
     r = hn_sendto(sockets[i].s, buf, len, to->sin_addr, to->sin_port);
     if (winapi_debug >= 2) eprintf("sendto: %d bytes to %u.%u.%u.%u:%u -> %d\n", len, to->sin_addr & 0xFF, (to->sin_addr >> 8) & 0xFF, (to->sin_addr >> 16) & 0xFF, to->sin_addr >> 24, (unsigned)((to->sin_port >> 8) | ((to->sin_port & 0xFF) << 8)), r);
+    if (winapi_debug >= 3) dump_packet(buf, len);
     if (r < 0) return fail(hn_last_error());
     if (is_broadcast(to->sin_addr) && (to->sin_port == sockets[i].port) && (sockets[i].port != 0) && (len <= LOOP_SIZE))
     {
@@ -322,6 +331,7 @@ uint32_t CCALL recvfrom_c(uint32_t s, char *buf, int32_t len, int32_t flags, ws_
         *fromlen = sizeof(ws_sockaddr_in);
     }
     if (winapi_debug >= 2) eprintf("recvfrom: %d bytes from %u.%u.%u.%u:%u\n", r, ip & 0xFF, (ip >> 8) & 0xFF, (ip >> 16) & 0xFF, ip >> 24, (unsigned)((port >> 8) | ((port & 0xFF) << 8)));
+    if (winapi_debug >= 3) dump_packet(buf, r);
     return (uint32_t)r;
 }
 

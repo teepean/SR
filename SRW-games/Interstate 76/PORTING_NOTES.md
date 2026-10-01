@@ -508,6 +508,15 @@ Dynamically loaded (strings): `I76SHELL.DLL`, renderer DLLs found via `*.dll`
   (dpReceive buffer offset 50 = FullPath) after `_splitpath(FullPath, 0, 0, 0, Ext)` with Ext[80] 130 bytes
   below it; our _splitpath_c used strncpy(ext, dot, 255), which pads to 256 bytes and zeroed FullPath -> the
   game started with an empty mission name (sub_4B42B0("")), no spawn points (dword_540D98 = 0) ->
-  rand() % 0 in sub_451030. _splitpath now copies only the string (like MSVCRT). The joiner loads the arena;
-  next problem: it waits in the join loop (sub_452F20) for the host's SP packet (reply to its SR), which dpio
-  acknowledges but never hands to dpReceive.
+  rand() % 0 in sub_451030. _splitpath now copies only the string (like MSVCRT).
+- Join sequence (game level, packets = u16 type + u8 sender state + ...): the joiner's join loop (sub_452F20,
+  called every frame until it returns 1) learns the host from its 'XX' packets (every 0.5 s, state 4 = host),
+  sends 'SR' (spawn request, sub_456100); the host builds the joiner's car from its player data and answers
+  'SP' (spawn position, sub_456220); 'SP' addressed to us ends the join loop. Receivers drop packets whose
+  state byte is 2 (join loop, in-game loop sub_4532C0). sub_456220 (SP) and sub_4565B0 (chat 'CH') never set
+  that byte (uninitialized stack); on Windows the leftover evidently wasn't 2, in the port it often was ->
+  the joiner ignored SP and waited forever. SRW/x64 instruction_replacements: write the type as a dword
+  (state 0, like the other packets). Result: host + joiner in The Crater, both on each other's radar.
+- Debugging aids: I76_DEBUG=3 hex-dumps every UDP packet (winsock.c); anet reliable packets are
+  'dT' (64 54) pktnum(2) len(1) payload, acks 'dU' (64 55) pktnum; user payloads end with a 6-byte trailer
+  (from id, to id, session key) checked in dpReceive.
