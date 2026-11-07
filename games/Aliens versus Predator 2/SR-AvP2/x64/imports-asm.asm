@@ -315,6 +315,47 @@ extern wsprintfA_c
 extern wvsprintfA_c
 extern memcpy_c
 extern memmove_c
+extern RenderDLLSetup_c
+extern GetSupportedModes_c
+extern FreeModeList_c
+extern ren_Init_c
+extern ren_Term_c
+extern ren_BindTexture_c
+extern ren_UnbindTexture_c
+extern ren_RebindLightmaps_c
+extern ren_CreateContext_c
+extern ren_DeleteContext_c
+extern ren_Clear_c
+extern ren_Start3D_c
+extern ren_End3D_c
+extern ren_IsIn3D_c
+extern ren_StartOptimized2D_c
+extern ren_EndOptimized2D_c
+extern ren_IsInOptimized2D_c
+extern ren_SetOptimized2DBlend_c
+extern ren_GetOptimized2DBlend_c
+extern ren_SetOptimized2DColor_c
+extern ren_GetOptimized2DColor_c
+extern ren_RenderScene_c
+extern ren_RenderCommand_c
+extern ren_GetHook_c
+extern ren_SwapBuffers_c
+extern ren_GetInfoFlags_c
+extern ren_GetScreenFormat_c
+extern ren_CreateSurface_c
+extern ren_DeleteSurface_c
+extern ren_GetSurfaceInfo_c
+extern ren_LockSurface_c
+extern ren_UnlockSurface_c
+extern ren_OptimizeSurface_c
+extern ren_UnoptimizeSurface_c
+extern ren_LockScreen_c
+extern ren_UnlockScreen_c
+extern ren_BlitToScreen_c
+extern ren_WarpToScreen_c
+extern ren_MakeScreenShot_c
+extern ren_ReadConsoleVariables_c
+extern ren_BlitFromScreen_c
 
 global AIL_3D_orientation_asm2c
 global AIL_3D_position_asm2c
@@ -628,6 +669,47 @@ global wsprintfA_asm2c
 global wvsprintfA_asm2c
 global memcpy_asm2c
 global memmove_asm2c
+global RenderDLLSetup_asm2c
+global GetSupportedModes_asm2c
+global FreeModeList_asm2c
+global ren_Init_asm2c
+global ren_Term_asm2c
+global ren_BindTexture_asm2c
+global ren_UnbindTexture_asm2c
+global ren_RebindLightmaps_asm2c
+global ren_CreateContext_asm2c
+global ren_DeleteContext_asm2c
+global ren_Clear_asm2c
+global ren_Start3D_asm2c
+global ren_End3D_asm2c
+global ren_IsIn3D_asm2c
+global ren_StartOptimized2D_asm2c
+global ren_EndOptimized2D_asm2c
+global ren_IsInOptimized2D_asm2c
+global ren_SetOptimized2DBlend_asm2c
+global ren_GetOptimized2DBlend_asm2c
+global ren_SetOptimized2DColor_asm2c
+global ren_GetOptimized2DColor_asm2c
+global ren_RenderScene_asm2c
+global ren_RenderCommand_asm2c
+global ren_GetHook_asm2c
+global ren_SwapBuffers_asm2c
+global ren_GetInfoFlags_asm2c
+global ren_GetScreenFormat_asm2c
+global ren_CreateSurface_asm2c
+global ren_DeleteSurface_asm2c
+global ren_GetSurfaceInfo_asm2c
+global ren_LockSurface_asm2c
+global ren_UnlockSurface_asm2c
+global ren_OptimizeSurface_asm2c
+global ren_UnoptimizeSurface_asm2c
+global ren_LockScreen_asm2c
+global ren_UnlockScreen_asm2c
+global ren_BlitToScreen_asm2c
+global ren_WarpToScreen_asm2c
+global ren_MakeScreenShot_asm2c
+global ren_ReadConsoleVariables_asm2c
+global ren_BlitFromScreen_asm2c
 
 %ifidn __OUTPUT_FORMAT__, elf64
 section .note.GNU-stack noalloc noexec nowrite progbits
@@ -7917,6 +7999,836 @@ memmove_asm2c:
         mov esi, [r11d+16]
         mov edx, [r11d+20]
         call memmove_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; RenderDLLSetup (c1, static)
+align 16
+RenderDLLSetup_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call RenderDLLSetup_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call RenderDLLSetup_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; GetSupportedModes (c0, static)
+align 16
+GetSupportedModes_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call GetSupportedModes_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call GetSupportedModes_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; FreeModeList (c1, static)
+align 16
+FreeModeList_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call FreeModeList_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call FreeModeList_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_Init (c1, static)
+align 16
+ren_Init_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_Init_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_Init_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_Term (c0, static)
+align 16
+ren_Term_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_Term_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_Term_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_BindTexture (c2, static)
+align 16
+ren_BindTexture_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ren_BindTexture_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call ren_BindTexture_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_UnbindTexture (c1, static)
+align 16
+ren_UnbindTexture_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_UnbindTexture_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_UnbindTexture_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_RebindLightmaps (c1, static)
+align 16
+ren_RebindLightmaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_RebindLightmaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_RebindLightmaps_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_CreateContext (c1, static)
+align 16
+ren_CreateContext_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_CreateContext_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_CreateContext_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_DeleteContext (c1, static)
+align 16
+ren_DeleteContext_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_DeleteContext_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_DeleteContext_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_Clear (c3, static)
+align 16
+ren_Clear_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call ren_Clear_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call ren_Clear_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_Start3D (c0, static)
+align 16
+ren_Start3D_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_Start3D_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_Start3D_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_End3D (c0, static)
+align 16
+ren_End3D_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_End3D_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_End3D_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_IsIn3D (c0, static)
+align 16
+ren_IsIn3D_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_IsIn3D_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_IsIn3D_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_StartOptimized2D (c0, static)
+align 16
+ren_StartOptimized2D_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_StartOptimized2D_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_StartOptimized2D_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_EndOptimized2D (c0, static)
+align 16
+ren_EndOptimized2D_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_EndOptimized2D_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_EndOptimized2D_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_IsInOptimized2D (c0, static)
+align 16
+ren_IsInOptimized2D_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_IsInOptimized2D_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_IsInOptimized2D_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_SetOptimized2DBlend (c1, static)
+align 16
+ren_SetOptimized2DBlend_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_SetOptimized2DBlend_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_SetOptimized2DBlend_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_GetOptimized2DBlend (c1, static)
+align 16
+ren_GetOptimized2DBlend_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_GetOptimized2DBlend_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_GetOptimized2DBlend_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_SetOptimized2DColor (c1, static)
+align 16
+ren_SetOptimized2DColor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_SetOptimized2DColor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_SetOptimized2DColor_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_GetOptimized2DColor (c1, static)
+align 16
+ren_GetOptimized2DColor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_GetOptimized2DColor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_GetOptimized2DColor_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_RenderScene (c1, static)
+align 16
+ren_RenderScene_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_RenderScene_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_RenderScene_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_RenderCommand (c2, static)
+align 16
+ren_RenderCommand_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ren_RenderCommand_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call ren_RenderCommand_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_GetHook (c1, static)
+align 16
+ren_GetHook_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_GetHook_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_GetHook_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_SwapBuffers (c1, static)
+align 16
+ren_SwapBuffers_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_SwapBuffers_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_SwapBuffers_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_GetInfoFlags (c0, static)
+align 16
+ren_GetInfoFlags_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_GetInfoFlags_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_GetInfoFlags_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_GetScreenFormat (c1, static)
+align 16
+ren_GetScreenFormat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_GetScreenFormat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_GetScreenFormat_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_CreateSurface (c2, static)
+align 16
+ren_CreateSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ren_CreateSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call ren_CreateSurface_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_DeleteSurface (c1, static)
+align 16
+ren_DeleteSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_DeleteSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_DeleteSurface_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_GetSurfaceInfo (c4, static)
+align 16
+ren_GetSurfaceInfo_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call ren_GetSurfaceInfo_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call ren_GetSurfaceInfo_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_LockSurface (c1, static)
+align 16
+ren_LockSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_LockSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_LockSurface_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_UnlockSurface (c1, static)
+align 16
+ren_UnlockSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_UnlockSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_UnlockSurface_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_OptimizeSurface (c2, static)
+align 16
+ren_OptimizeSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ren_OptimizeSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call ren_OptimizeSurface_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_UnoptimizeSurface (c1, static)
+align 16
+ren_UnoptimizeSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_UnoptimizeSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_UnoptimizeSurface_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_LockScreen (c6, static)
+align 16
+ren_LockScreen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call ren_LockScreen_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call ren_LockScreen_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_UnlockScreen (c0, static)
+align 16
+ren_UnlockScreen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_UnlockScreen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_UnlockScreen_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_BlitToScreen (c1, static)
+align 16
+ren_BlitToScreen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_BlitToScreen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_BlitToScreen_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_WarpToScreen (c1, static)
+align 16
+ren_WarpToScreen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_WarpToScreen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_WarpToScreen_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_MakeScreenShot (c1, static)
+align 16
+ren_MakeScreenShot_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_MakeScreenShot_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_MakeScreenShot_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_ReadConsoleVariables (c0, static)
+align 16
+ren_ReadConsoleVariables_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        call ren_ReadConsoleVariables_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        call ren_ReadConsoleVariables_c
+        Call_Asm_Epilogue_0 0
+%endif
+
+; ren_BlitFromScreen (c1, static)
+align 16
+ren_BlitFromScreen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ren_BlitFromScreen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+0
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ren_BlitFromScreen_c
         Call_Asm_Epilogue_0 0
 %endif
 

@@ -624,3 +624,85 @@ extern memcpy_asm2c
 %define memcpy memcpy_asm2c
 extern memmove_asm2c
 %define memmove memmove_asm2c
+extern RenderDLLSetup_asm2c
+%define RenderDLLSetup RenderDLLSetup_asm2c
+extern GetSupportedModes_asm2c
+%define GetSupportedModes GetSupportedModes_asm2c
+extern FreeModeList_asm2c
+%define FreeModeList FreeModeList_asm2c
+extern ren_Init_asm2c
+%define ren_Init ren_Init_asm2c
+extern ren_Term_asm2c
+%define ren_Term ren_Term_asm2c
+extern ren_BindTexture_asm2c
+%define ren_BindTexture ren_BindTexture_asm2c
+extern ren_UnbindTexture_asm2c
+%define ren_UnbindTexture ren_UnbindTexture_asm2c
+extern ren_RebindLightmaps_asm2c
+%define ren_RebindLightmaps ren_RebindLightmaps_asm2c
+extern ren_CreateContext_asm2c
+%define ren_CreateContext ren_CreateContext_asm2c
+extern ren_DeleteContext_asm2c
+%define ren_DeleteContext ren_DeleteContext_asm2c
+extern ren_Clear_asm2c
+%define ren_Clear ren_Clear_asm2c
+extern ren_Start3D_asm2c
+%define ren_Start3D ren_Start3D_asm2c
+extern ren_End3D_asm2c
+%define ren_End3D ren_End3D_asm2c
+extern ren_IsIn3D_asm2c
+%define ren_IsIn3D ren_IsIn3D_asm2c
+extern ren_StartOptimized2D_asm2c
+%define ren_StartOptimized2D ren_StartOptimized2D_asm2c
+extern ren_EndOptimized2D_asm2c
+%define ren_EndOptimized2D ren_EndOptimized2D_asm2c
+extern ren_IsInOptimized2D_asm2c
+%define ren_IsInOptimized2D ren_IsInOptimized2D_asm2c
+extern ren_SetOptimized2DBlend_asm2c
+%define ren_SetOptimized2DBlend ren_SetOptimized2DBlend_asm2c
+extern ren_GetOptimized2DBlend_asm2c
+%define ren_GetOptimized2DBlend ren_GetOptimized2DBlend_asm2c
+extern ren_SetOptimized2DColor_asm2c
+%define ren_SetOptimized2DColor ren_SetOptimized2DColor_asm2c
+extern ren_GetOptimized2DColor_asm2c
+%define ren_GetOptimized2DColor ren_GetOptimized2DColor_asm2c
+extern ren_RenderScene_asm2c
+%define ren_RenderScene ren_RenderScene_asm2c
+extern ren_RenderCommand_asm2c
+%define ren_RenderCommand ren_RenderCommand_asm2c
+extern ren_GetHook_asm2c
+%define ren_GetHook ren_GetHook_asm2c
+extern ren_SwapBuffers_asm2c
+%define ren_SwapBuffers ren_SwapBuffers_asm2c
+extern ren_GetInfoFlags_asm2c
+%define ren_GetInfoFlags ren_GetInfoFlags_asm2c
+extern ren_GetScreenFormat_asm2c
+%define ren_GetScreenFormat ren_GetScreenFormat_asm2c
+extern ren_CreateSurface_asm2c
+%define ren_CreateSurface ren_CreateSurface_asm2c
+extern ren_DeleteSurface_asm2c
+%define ren_DeleteSurface ren_DeleteSurface_asm2c
+extern ren_GetSurfaceInfo_asm2c
+%define ren_GetSurfaceInfo ren_GetSurfaceInfo_asm2c
+extern ren_LockSurface_asm2c
+%define ren_LockSurface ren_LockSurface_asm2c
+extern ren_UnlockSurface_asm2c
+%define ren_UnlockSurface ren_UnlockSurface_asm2c
+extern ren_OptimizeSurface_asm2c
+%define ren_OptimizeSurface ren_OptimizeSurface_asm2c
+extern ren_UnoptimizeSurface_asm2c
+%define ren_UnoptimizeSurface ren_UnoptimizeSurface_asm2c
+extern ren_LockScreen_asm2c
+%define ren_LockScreen ren_LockScreen_asm2c
+extern ren_UnlockScreen_asm2c
+%define ren_UnlockScreen ren_UnlockScreen_asm2c
+extern ren_BlitToScreen_asm2c
+%define ren_BlitToScreen ren_BlitToScreen_asm2c
+extern ren_WarpToScreen_asm2c
+%define ren_WarpToScreen ren_WarpToScreen_asm2c
+extern ren_MakeScreenShot_asm2c
+%define ren_MakeScreenShot ren_MakeScreenShot_asm2c
+extern ren_ReadConsoleVariables_asm2c
+%define ren_ReadConsoleVariables ren_ReadConsoleVariables_asm2c
+extern ren_BlitFromScreen_asm2c
+%define ren_BlitFromScreen ren_BlitFromScreen_asm2c

@@ -28,6 +28,7 @@
 #include "display.h"
 #include "sysmem.h"
 #include "peimage.h"
+#include "printf_x86.h"
 #include <pthread.h>
 
 EXTERN_C_BEGIN
@@ -1358,6 +1359,7 @@ typedef struct {
     const module_export *exports;
     void *entry;        // the DLL's entry point (its C runtime's _DllMainCRTStartup), recompiled
     int loaded;
+    uint8_t *image;     // the DLL file mapped as data (its resources)
 } module_info;
 
 // recompiled game DLLs (stand-ins until the native builds from Monolith's source replace them)
@@ -1370,9 +1372,20 @@ static const module_export cshell_exports[] = {
     { NULL, NULL }
 };
 
+// the renderer (render.c): native, replaces d3d.ren
+extern char RenderDLLSetup_asm2c[], GetSupportedModes_asm2c[], FreeModeList_asm2c[];
+
+static const module_export render_exports[] = {
+    { "RenderDLLSetup", (void *) RenderDLLSetup_asm2c },
+    { "GetSupportedModes", (void *) GetSupportedModes_asm2c },
+    { "FreeModeList", (void *) FreeModeList_asm2c },
+    { NULL, NULL }
+};
+
 // AvP2's modules: the engine loads the game DLLs from temporary copies (any path, matched by name)
 static module_info modules[] = {
-    { 0, "cshell.dll", cshell_exports, (void *) cshell_DllMainCRTStartup, 0 },
+    { 0, "cshell.dll", cshell_exports, (void *) cshell_DllMainCRTStartup, 0, NULL },
+    { 0, "d3d.ren", render_exports, NULL, 0, NULL },
 };
 
 static module_info *find_module(const char *name)
@@ -1412,6 +1425,8 @@ void * CCALL LoadLibraryA_c(const char *lpLibFileName)
     if (!m->loaded)
     {
         m->loaded = 1;
+        // its resources (the code is the recompiled one)
+        if (m->image == NULL) m->image = pe_image_load(lpLibFileName, 0);
         // DllMain(hModule, DLL_PROCESS_ATTACH, NULL): the DLL's C runtime initializes itself and runs its C++
         // static constructors
         if (m->entry != NULL)
@@ -1849,20 +1864,163 @@ void CCALL GlobalMemoryStatus_c(MEMORYSTATUS_32 *ms)
 void * CCALL LocalFree_c(void *hMem) { if (hMem != NULL) game_free(hMem); return NULL; }
 int32_t CCALL lstrlenA_c(const char *s) { return (s != NULL) ? (int32_t)strlen(s) : 0; }
 
+// RT_MESSAGETABLE (11), name 1: blocks of (LowId, HighId, OffsetToEntries); entries (Length, Flags, Text)
+static int message_table_text(const uint8_t *image, uint32_t id, char *out, size_t size)
+{
+    const uint8_t *e, *data;
+    uint32_t nblocks, i, k;
+
+    if (image == NULL) return 0;
+    e = pe_resource_find(image, 1, 11);
+    if (e == NULL) return 0;
+    data = (const uint8_t *)pe_resource_data(image, e, NULL);
+    nblocks = *(const uint32_t *)data;
+    for (i = 0; i < nblocks; i++)
+    {
+        const uint32_t *b = (const uint32_t *)(data + 4 + 12 * i);
+        if ((id >= b[0]) && (id <= b[1]))
+        {
+            const uint8_t *entry = data + b[2];
+            uint16_t len, flags;
+            size_t n = 0;
+            for (k = b[0]; k < id; k++) entry += *(const uint16_t *)entry;
+            len = *(const uint16_t *)entry;
+            flags = *(const uint16_t *)(entry + 2);
+            if (flags & 1)
+            {
+                const uint16_t *t = (const uint16_t *)(entry + 4);
+                for (k = 0; (k < (uint32_t)(len - 4) / 2u) && t[k] && (n + 1 < size); k++) out[n++] = (t[k] < 256) ? (char)t[k] : '?';
+            }
+            else
+            {
+                const char *t = (const char *)(entry + 4);
+                for (k = 0; (k < (uint32_t)(len - 4)) && t[k] && (n + 1 < size); k++) out[n++] = t[k];
+            }
+            out[n] = 0;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// FORMAT_MESSAGE_ALLOCATE_BUFFER 0x100, _IGNORE_INSERTS 0x200, _FROM_STRING 0x400, _FROM_HMODULE 0x800,
+// _FROM_SYSTEM 0x1000, _ARGUMENT_ARRAY 0x2000, _MAX_WIDTH_MASK 0xff.
+// Arguments: a pointer to the caller's (32-bit) va_list, or to an array of dwords; inserts %1..%99 take
+// the n-th dword, formatted by !printf format! (default !s!).
 uint32_t CCALL FormatMessageA_c(uint32_t dwFlags, const void *lpSource, uint32_t dwMessageId, uint32_t dwLanguageId, char *lpBuffer, uint32_t nSize, void *Arguments)
 {
-    char msg[64];
-    snprintf(msg, sizeof(msg), "Error %u", dwMessageId);
-    if (dwFlags & 0x100)    // FORMAT_MESSAGE_ALLOCATE_BUFFER: lpBuffer receives a LocalAlloc'd pointer
+    char source[5000], *out;
+    const char *src;
+    uint32_t *args = NULL;
+    size_t n = 0, cap = 8192;
+    uint32_t max_width = dwFlags & 0xff;
+
+    if (dwFlags & 0x400) src = (const char *)lpSource;
+    else
     {
-        char *p = (char *)game_malloc((uint32_t)strlen(msg) + 1);
-        strcpy(p, msg);
-        *(uint32_t *)lpBuffer = (uint32_t)(uintptr_t)p;
-        return (uint32_t)strlen(msg);
+        int found = 0;
+        if (dwFlags & 0x800) found = message_table_text(winapi_module_image((void *)lpSource), dwMessageId, source, sizeof(source));
+        if (!found && (dwFlags & 0x1000))
+        {
+            snprintf(source, sizeof(source), "Error %u%%n", dwMessageId);
+            found = 1;
+        }
+        if (!found)
+        {
+            last_error = 317;   // ERROR_MR_MID_NOT_FOUND
+            return 0;
+        }
+        src = source;
     }
-    if (nSize == 0) return 0;
-    snprintf(lpBuffer, nSize, "%s", msg);
-    return (uint32_t)strlen(lpBuffer);
+    if (src == NULL) { last_error = ERROR_INVALID_PARAMETER; return 0; }
+    if ((Arguments != NULL) && !(dwFlags & 0x200))
+        args = (dwFlags & 0x2000) ? (uint32_t *)Arguments : (uint32_t *)(uintptr_t)*(uint32_t *)Arguments;
+
+    out = (char *)malloc(cap);
+    while (*src != 0)
+    {
+        char piece[1024];
+        size_t plen = 0;
+
+        if (*src == '%')
+        {
+            src++;
+            if ((*src >= '1') && (*src <= '9'))
+            {
+                int index = *src++ - '0';
+                char fmt[32] = "%s";
+                if ((*src >= '0') && (*src <= '9')) index = index * 10 + (*src++ - '0');
+                if (*src == '!')
+                {
+                    const char *endf = strchr(src + 1, '!');
+                    if ((endf != NULL) && (endf - src < 30))
+                    {
+                        fmt[0] = '%';
+                        memcpy(fmt + 1, src + 1, endf - src - 1);
+                        fmt[endf - src] = 0;
+                        src = endf + 1;
+                    }
+                }
+                if (args == NULL)
+                {
+                    // inserts are kept
+                    plen = (size_t)snprintf(piece, sizeof(piece), "%%%d", index);
+                }
+                else
+                {
+                    vsnprintf_x86(piece, sizeof(piece), fmt, args + index - 1);
+                    plen = strlen(piece);
+                }
+            }
+            else if (*src == '0') break;
+            else if (*src == 'n') { piece[0] = '\r'; piece[1] = '\n'; plen = 2; src++; }
+            else if (*src == 'r') { piece[0] = '\r'; plen = 1; src++; }
+            else if (*src == 't') { piece[0] = '\t'; plen = 1; src++; }
+            else if (*src != 0) { piece[0] = *src++; plen = 1; }
+        }
+        else if ((max_width != 0) && ((*src == '\r') || (*src == '\n')))
+        {
+            // line breaks of the text are ignored (only %n breaks lines)
+            if ((*src == '\r') && (src[1] == '\n')) src++;
+            src++;
+            piece[0] = ' ';
+            plen = 1;
+        }
+        else
+        {
+            piece[0] = *src++;
+            plen = 1;
+        }
+
+        if (n + plen + 1 > cap)
+        {
+            cap = (n + plen + 1) * 2;
+            out = (char *)realloc(out, cap);
+        }
+        memcpy(out + n, piece, plen);
+        n += plen;
+    }
+    out[n] = 0;
+
+    if (dwFlags & 0x100)    // lpBuffer receives a LocalAlloc'd pointer
+    {
+        char *p = (char *)game_malloc((uint32_t)n + 1);
+        memcpy(p, out, n + 1);
+        *(uint32_t *)lpBuffer = (uint32_t)(uintptr_t)p;
+    }
+    else
+    {
+        if (n + 1 > nSize)
+        {
+            free(out);
+            last_error = 122;   // ERROR_INSUFFICIENT_BUFFER
+            return 0;
+        }
+        memcpy(lpBuffer, out, n + 1);
+    }
+    free(out);
+    if (winapi_debug >= 2) eprintf("FormatMessageA: %u -> %u chars\n", dwMessageId, (unsigned)n);
+    return (uint32_t)n;
 }
 
 void CCALL DebugBreak_c(void) { eprintf("DebugBreak called\n"); }
@@ -1872,8 +2030,16 @@ void CCALL DebugBreak_c(void) { eprintf("DebugBreak called\n"); }
 
 static const uint8_t *module_image(void *hModule)
 {
-    return (const uint8_t *)((hModule == NULL) ? (void *)0x400000 : hModule);
+    unsigned int i;
+    if (hModule == NULL) return (const uint8_t *)0x400000;
+    for (i = 0; i < sizeof(modules) / sizeof(modules[0]); i++)
+    {
+        if (hModule == &modules[i]) return modules[i].image;
+    }
+    return (const uint8_t *)hModule;
 }
+
+const uint8_t *winapi_module_image(void *hModule) { return module_image(hModule); }
 
 void * CCALL FindResourceA_c(void *hModule, const char *lpName, const char *lpType)
 {
@@ -2162,5 +2328,396 @@ uint32_t CCALL TlsAlloc_c(void)
 }
 uint32_t CCALL TlsGetValue_c(uint32_t dwTlsIndex) { return (dwTlsIndex < 64) ? tls_values[dwTlsIndex] : 0; }
 uint32_t CCALL TlsSetValue_c(uint32_t dwTlsIndex, uint32_t lpTlsValue) { if (dwTlsIndex >= 64) return 0; tls_values[dwTlsIndex] = lpTlsValue; return 1; }
+
+uint32_t CCALL TlsFree_c(uint32_t dwTlsIndex) { return (dwTlsIndex < 64) ? 1 : 0; }
+
+uint32_t CCALL WaitForSingleObjectEx_c(void *hHandle, uint32_t dwMilliseconds, uint32_t bAlertable)
+{
+    return WaitForSingleObject_c(hHandle, dwMilliseconds);
+}
+
+/* ------------------------------------------------------------------ */
+/* AvP2: directories, files, times, INI files, processes               */
+
+static uint32_t error_mode;
+uint32_t CCALL SetErrorMode_c(uint32_t uMode)
+{
+    uint32_t old = error_mode;
+    error_mode = uMode;
+    return old;
+}
+
+uint32_t CCALL CreateDirectoryA_c(const char *lpPathName, void *lpSecurityAttributes)
+{
+    char path[1024];
+
+    if (lpPathName == NULL) { last_error = ERROR_FILE_NOT_FOUND; return 0; }
+    vfs_resolve(lpPathName, path, sizeof(path));
+    if (winapi_debug) eprintf("CreateDirectoryA: %s -> %s\n", lpPathName, path);
+#ifdef _WIN32
+    if (mkdir(path) != 0)
+#else
+    if (mkdir(path, 0777) != 0)
+#endif
+    {
+        last_error = (errno == EEXIST) ? 183 : errno_to_win(errno);    // ERROR_ALREADY_EXISTS
+        return 0;
+    }
+    return 1;
+}
+
+uint32_t CCALL RemoveDirectoryA_c(const char *lpPathName)
+{
+    char path[1024];
+
+    if ((lpPathName == NULL) || !vfs_resolve(lpPathName, path, sizeof(path))) { last_error = ERROR_FILE_NOT_FOUND; return 0; }
+    if (rmdir(path) != 0) { last_error = errno_to_win(errno); return 0; }
+    return 1;
+}
+
+uint32_t CCALL MoveFileA_c(const char *lpExistingFileName, const char *lpNewFileName)
+{
+    char from[1024], to[1024];
+
+    if ((lpExistingFileName == NULL) || (lpNewFileName == NULL) || !vfs_resolve(lpExistingFileName, from, sizeof(from)))
+    {
+        last_error = ERROR_FILE_NOT_FOUND;
+        return 0;
+    }
+    vfs_resolve(lpNewFileName, to, sizeof(to));
+    if (access(to, F_OK) == 0) { last_error = 183; return 0; }  // MoveFile doesn't replace
+    if (rename(from, to) != 0) { last_error = errno_to_win(errno); return 0; }
+    return 1;
+}
+
+uint32_t CCALL SetFileTime_c(void *hFile, const uint64_t *lpCreationTime, const uint64_t *lpLastAccessTime, const uint64_t *lpLastWriteTime)
+{
+    struct timespec ts[2];
+
+    if (handle_type(hFile) != HT_FILE) { last_error = ERROR_INVALID_HANDLE; return 0; }
+    ts[0].tv_nsec = ts[1].tv_nsec = UTIME_OMIT;
+    ts[0].tv_sec = ts[1].tv_sec = 0;
+    if (lpLastAccessTime != NULL)
+    {
+        ts[0].tv_sec = (time_t)(*lpLastAccessTime / 10000000ull - 11644473600ull);
+        ts[0].tv_nsec = (long)(*lpLastAccessTime % 10000000ull) * 100;
+    }
+    if (lpLastWriteTime != NULL)
+    {
+        ts[1].tv_sec = (time_t)(*lpLastWriteTime / 10000000ull - 11644473600ull);
+        ts[1].tv_nsec = (long)(*lpLastWriteTime % 10000000ull) * 100;
+    }
+#ifndef _WIN32
+    futimens(((win_file *)hFile)->fd, ts);
+#endif
+    return 1;
+}
+
+uint32_t CCALL SystemTimeToFileTime_c(const SYSTEMTIME_32 *st, uint64_t *lpFileTime)
+{
+    struct tm tm;
+    time_t t;
+
+    memset(&tm, 0, sizeof(tm));
+    tm.tm_year = st->wYear - 1900;
+    tm.tm_mon = st->wMonth - 1;
+    tm.tm_mday = st->wDay;
+    tm.tm_hour = st->wHour;
+    tm.tm_min = st->wMinute;
+    tm.tm_sec = st->wSecond;
+#ifdef _WIN32
+    t = _mkgmtime(&tm);
+#else
+    t = timegm(&tm);
+#endif
+    *lpFileTime = ((uint64_t)t + 11644473600ull) * 10000000ull + (uint64_t)st->wMilliseconds * 10000;
+    return 1;
+}
+
+uint32_t CCALL LocalFileTimeToFileTime_c(const uint64_t *lpLocalFileTime, uint64_t *lpFileTime)
+{
+    time_t t = (time_t)(*lpLocalFileTime / 10000000ull - 11644473600ull);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    *lpFileTime = *lpLocalFileTime - (int64_t)tm.tm_gmtoff * 10000000;
+    return 1;
+}
+
+// OFSTRUCT: cBytes, fFixedDisk, nErrCode, Reserved1, Reserved2, szPathName[128]
+typedef struct { uint8_t cBytes, fFixedDisk; uint16_t nErrCode, Reserved1, Reserved2; char szPathName[128]; } OFSTRUCT_32;
+
+int32_t CCALL OpenFile_c(const char *lpFileName, OFSTRUCT_32 *lpReOpenBuff, uint32_t uStyle)
+{
+    char path[1024];
+    void *h;
+    uint32_t access_mode, creation;
+
+    if (lpReOpenBuff != NULL)
+    {
+        memset(lpReOpenBuff, 0, sizeof(*lpReOpenBuff));
+        lpReOpenBuff->cBytes = sizeof(*lpReOpenBuff);
+        lpReOpenBuff->fFixedDisk = 1;
+        if (lpFileName != NULL) snprintf(lpReOpenBuff->szPathName, sizeof(lpReOpenBuff->szPathName), "%s", lpFileName);
+    }
+    if (lpFileName == NULL) return -1;
+
+    if (uStyle & 0x4000)    // OF_EXIST
+    {
+        int ok = vfs_resolve(lpFileName, path, sizeof(path)) && (access(path, F_OK) == 0);
+        if (winapi_debug) eprintf("OpenFile: %s (exist) -> %d\n", lpFileName, ok);
+        if (!ok && (lpReOpenBuff != NULL)) lpReOpenBuff->nErrCode = ERROR_FILE_NOT_FOUND;
+        return ok ? 1 : -1;
+    }
+    if (uStyle & 0x0200)    // OF_DELETE
+    {
+        return DeleteFileA_c(lpFileName) ? 1 : -1;
+    }
+    access_mode = ((uStyle & 3) == 0) ? 0x80000000u : (((uStyle & 3) == 1) ? 0x40000000u : 0xC0000000u);
+    creation = (uStyle & 0x1000) ? 2 : 3;   // OF_CREATE: CREATE_ALWAYS, else OPEN_EXISTING
+    h = CreateFileA_c(lpFileName, access_mode, 3, NULL, creation, 0x80, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+    {
+        if (lpReOpenBuff != NULL) lpReOpenBuff->nErrCode = (uint16_t)last_error;
+        return -1;
+    }
+    return (int32_t)(uintptr_t)h;
+}
+
+uint32_t CCALL CreateProcessA_c(const char *lpApplicationName, char *lpCommandLine, void *lpProcessAttributes, void *lpThreadAttributes,
+                                uint32_t bInheritHandles, uint32_t dwCreationFlags, void *lpEnvironment, const char *lpCurrentDirectory,
+                                void *lpStartupInfo, void *lpProcessInformation)
+{
+    eprintf("CreateProcessA: %s %s (not supported)\n", (lpApplicationName != NULL) ? lpApplicationName : "", (lpCommandLine != NULL) ? lpCommandLine : "");
+    last_error = ERROR_FILE_NOT_FOUND;
+    return 0;
+}
+
+// INI files: read and written whole, case-insensitive sections and keys
+#define INI_MAX_LINES 2048
+
+typedef struct { int nlines; char *lines[INI_MAX_LINES]; } ini_file;
+
+static void ini_load(const char *winpath, ini_file *ini, char *host, size_t hostsize)
+{
+    FILE *f;
+    char line[1024];
+
+    ini->nlines = 0;
+    // a bare name is in the Windows directory; ours is the game directory
+    vfs_resolve(winpath, host, hostsize);
+    f = fopen(host, "rt");
+    if (f == NULL) return;
+    while ((ini->nlines < INI_MAX_LINES) && (fgets(line, sizeof(line), f) != NULL))
+    {
+        size_t n = strlen(line);
+        while (n && ((line[n - 1] == '\n') || (line[n - 1] == '\r'))) line[--n] = 0;
+        ini->lines[ini->nlines++] = strdup(line);
+    }
+    fclose(f);
+}
+
+static void ini_free(ini_file *ini)
+{
+    int i;
+    for (i = 0; i < ini->nlines; i++) free(ini->lines[i]);
+    ini->nlines = 0;
+}
+
+static const char *ini_trim(const char *s, char *out, size_t size, char stop)
+{
+    size_t n = 0;
+    while ((*s == ' ') || (*s == '\t')) s++;
+    while ((*s != 0) && (*s != stop) && (n + 1 < size)) out[n++] = *s++;
+    while (n && ((out[n - 1] == ' ') || (out[n - 1] == '\t'))) n--;
+    out[n] = 0;
+    return s;
+}
+
+// line index of the section header, or -1
+static int ini_find_section(ini_file *ini, const char *section)
+{
+    int i;
+    char name[256];
+    for (i = 0; i < ini->nlines; i++)
+    {
+        const char *s = ini->lines[i];
+        while ((*s == ' ') || (*s == '\t')) s++;
+        if (*s != '[') continue;
+        ini_trim(s + 1, name, sizeof(name), ']');
+        if (0 == strcasecmp(name, section)) return i;
+    }
+    return -1;
+}
+
+// line index of the key in the section starting at sec, or -1; *end = the line after the section's last line
+static int ini_find_key(ini_file *ini, int sec, const char *key, int *end)
+{
+    int i;
+    char name[256];
+    for (i = sec + 1; i < ini->nlines; i++)
+    {
+        const char *s = ini->lines[i];
+        while ((*s == ' ') || (*s == '\t')) s++;
+        if (*s == '[') break;
+        if (strchr(s, '=') == NULL) continue;
+        ini_trim(s, name, sizeof(name), '=');
+        if ((key != NULL) && (0 == strcasecmp(name, key))) { if (end != NULL) *end = i + 1; return i; }
+    }
+    if (end != NULL)
+    {
+        // after the last non-empty line of the section
+        int last = i;
+        while ((last > sec + 1) && (ini->lines[last - 1][0] == 0)) last--;
+        *end = last;
+    }
+    return -1;
+}
+
+static uint32_t copy_string_list(char *buffer, uint32_t size, const char *list, uint32_t len)
+{
+    // list: strings separated by zeros, len excluding the final terminator
+    if (size == 0) return 0;
+    if (len + 1 > size)
+    {
+        len = (size >= 2) ? size - 2 : 0;
+        memcpy(buffer, list, len);
+        buffer[len] = 0;
+        if (size >= 2) buffer[len + 1] = 0;
+        return len;
+    }
+    memcpy(buffer, list, len);
+    buffer[len] = 0;
+    return (len > 0) ? len - 1 : 0;
+}
+
+uint32_t CCALL GetPrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpDefault, char *lpReturnedString, uint32_t nSize, const char *lpFileName)
+{
+    ini_file ini;
+    char host[1024], value[1024];
+    uint32_t n = 0;
+    int sec, k;
+
+    if ((lpReturnedString == NULL) || (nSize == 0) || (lpFileName == NULL)) return 0;
+    ini_load(lpFileName, &ini, host, sizeof(host));
+    sec = (lpAppName != NULL) ? ini_find_section(&ini, lpAppName) : -1;
+
+    if ((lpAppName == NULL) || (lpKeyName == NULL))
+    {
+        // the names of all sections, or of all keys in a section
+        char list[8192];
+        uint32_t len = 0;
+        int i;
+        for (i = (lpAppName == NULL) ? 0 : sec + 1; (i >= 0) && (i < ini.nlines); i++)
+        {
+            const char *s = ini.lines[i];
+            char name[256];
+            while ((*s == ' ') || (*s == '\t')) s++;
+            if (lpAppName == NULL)
+            {
+                if (*s != '[') continue;
+                ini_trim(s + 1, name, sizeof(name), ']');
+            }
+            else
+            {
+                if (*s == '[') break;
+                if (strchr(s, '=') == NULL) continue;
+                ini_trim(s, name, sizeof(name), '=');
+            }
+            if (len + strlen(name) + 2 >= sizeof(list)) break;
+            strcpy(list + len, name);
+            len += (uint32_t)strlen(name) + 1;
+        }
+        if ((lpAppName != NULL) && (sec < 0)) len = 0;
+        ini_free(&ini);
+        return copy_string_list(lpReturnedString, nSize, list, len);
+    }
+
+    k = (sec >= 0) ? ini_find_key(&ini, sec, lpKeyName, NULL) : -1;
+    if (k >= 0)
+    {
+        ini_trim(strchr(ini.lines[k], '=') + 1, value, sizeof(value), 0);
+        // surrounding quotes are removed
+        n = (uint32_t)strlen(value);
+        if ((n >= 2) && (((value[0] == '"') && (value[n - 1] == '"')) || ((value[0] == '\'') && (value[n - 1] == '\''))))
+        {
+            memmove(value, value + 1, n - 2);
+            value[n - 2] = 0;
+        }
+    }
+    else
+    {
+        ini_trim((lpDefault != NULL) ? lpDefault : "", value, sizeof(value), 0);
+    }
+    ini_free(&ini);
+    n = (uint32_t)strlen(value);
+    if (n >= nSize) n = nSize - 1;
+    memcpy(lpReturnedString, value, n);
+    lpReturnedString[n] = 0;
+    if (winapi_debug >= 2) eprintf("GetPrivateProfileStringA: [%s] %s in %s -> %s\n", lpAppName, lpKeyName, lpFileName, lpReturnedString);
+    return n;
+}
+
+uint32_t CCALL WritePrivateProfileStringA_c(const char *lpAppName, const char *lpKeyName, const char *lpString, const char *lpFileName)
+{
+    ini_file ini;
+    char host[1024], line[1024];
+    int sec, k, end, i;
+    FILE *f;
+
+    if ((lpAppName == NULL) || (lpFileName == NULL)) return 0;
+    ini_load(lpFileName, &ini, host, sizeof(host));
+    sec = ini_find_section(&ini, lpAppName);
+
+    if (lpKeyName == NULL)
+    {
+        // delete the section
+        if (sec >= 0)
+        {
+            ini_find_key(&ini, sec, NULL, &end);
+            for (i = sec; i < end; i++) { free(ini.lines[i]); ini.lines[i] = NULL; }
+        }
+    }
+    else
+    {
+        if (sec < 0)
+        {
+            if (lpString == NULL) { ini_free(&ini); return 1; }
+            if (ini.nlines + 2 >= INI_MAX_LINES) { ini_free(&ini); return 0; }
+            snprintf(line, sizeof(line), "[%s]", lpAppName);
+            ini.lines[ini.nlines++] = strdup(line);
+            sec = ini.nlines - 1;
+        }
+        k = ini_find_key(&ini, sec, lpKeyName, &end);
+        if (lpString == NULL)
+        {
+            if (k >= 0) { free(ini.lines[k]); ini.lines[k] = NULL; }
+        }
+        else
+        {
+            snprintf(line, sizeof(line), "%s=%s", lpKeyName, lpString);
+            if (k >= 0)
+            {
+                free(ini.lines[k]);
+                ini.lines[k] = strdup(line);
+            }
+            else if (ini.nlines < INI_MAX_LINES)
+            {
+                memmove(&ini.lines[end + 1], &ini.lines[end], (ini.nlines - end) * sizeof(char *));
+                ini.lines[end] = strdup(line);
+                ini.nlines++;
+            }
+        }
+    }
+
+    f = fopen(host, "wt");
+    if (f == NULL) { ini_free(&ini); last_error = errno_to_win(errno); return 0; }
+    for (i = 0; i < ini.nlines; i++)
+    {
+        if (ini.lines[i] != NULL) fprintf(f, "%s\r\n", ini.lines[i]);
+    }
+    fclose(f);
+    for (i = 0; i < ini.nlines; i++) free(ini.lines[i]);
+    return 1;
+}
 
 EXTERN_C_END

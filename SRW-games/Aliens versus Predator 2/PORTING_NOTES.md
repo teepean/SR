@@ -146,3 +146,20 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   12-15, "##x-axis" etc. match by GUID/offset, diblit.cpp).
 - Now: the client shell initializes, reads autoexec.cfg and sets the render mode: LoadLibrary("d3d.ren") +
   GetProcAddress("RenderDLLSetup") - the renderer (Godot) is next; then Bink for the movies.
+
+### 2026-11-07 — the main menu
+- render.c replaces d3d.ren (registered as module "d3d.ren", RenderDLLSetup fills the RenderStruct's
+  function slots 0x70-0x104): 2D for now - 32-bit surfaces in game memory, CPU BlitToScreen (stretch, colour
+  key, the optimized-2D blend modes and colour), Clear, LockScreen, SwapBuffers -> display.c (SDL window,
+  XRGB framebuffer) with a frame limiter (AVP2_FPS, default 60). The 3D calls draw nothing yet (Godot).
+- Cursors: CLTCursor::LoadCursorBitmapResource asks the engine hook "cres_hinstance" for cres.dll and calls
+  LoadImageA(IMAGE_CURSOR) - RT_GROUP_CURSOR/RT_CURSOR resources become SDL colour cursors. A recompiled
+  module's handle (module_info) now also maps its DLL file for its resources.
+- Strings: the engine's FormatString is LoadString (cres.dll) + FormatMessageA(FROM_STRING) with a 32-bit
+  va_list; FormatMessageA now does inserts (%1!d!), %n, message tables. With the stub every key binding name
+  was "Error 0", so Profiles\Player_0.txt was written wrong (delete it when that happens).
+- miles.c: first stage - AIL_startup works, AIL_waveOutOpen fails, so the engine runs without sound.
+- Also: CreateFontA, character spacing, INI files, directories, OpenFile, the desktop window, keyboard state,
+  CoCreateInstance (no classes: DirectMusic's class is asked for).
+- Now: the main menu is drawn (frames dumped with AVP2_DUMP_FRAMES under SDL_VIDEODRIVER=offscreen).
+  Starting a game needs server.dll and object.lto (both still original binaries) and the 3D renderer.

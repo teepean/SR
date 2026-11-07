@@ -17,6 +17,7 @@
 #include "printf_x86.h"
 #include "display.h"
 #include "dinput.h"
+#include "peimage.h"
 
 #include "winapi.h"
 #include "winapi-gdi32.h"
@@ -94,6 +95,7 @@ typedef struct {
     wndproc_t wndproc;
     int32_t cbWndExtra;
     uint32_t style;
+    uint32_t hcursor, hicon;
 } window_class;
 
 typedef struct {
@@ -434,6 +436,13 @@ uint32_t CCALL MapVirtualKeyA_c(uint32_t uCode, uint32_t uMapType)
             return (uint32_t) vk_to_char(uCode, 0, 0);
     }
     return 0;
+}
+
+uint32_t CCALL GetKeyboardState_c(uint8_t *lpKeyState)
+{
+    if (lpKeyState == NULL) return 0;
+    memcpy(lpKeyState, key_state, 256);
+    return 1;
 }
 
 int32_t CCALL ToAscii_c(uint32_t uVirtKey, uint32_t uScanCode, const uint8_t *lpKeyState, uint16_t *lpChar, uint32_t uFlags)
@@ -811,6 +820,8 @@ uint16_t CCALL RegisterClassA_c(const wndclassa *lpWndClass)
     c->wndproc = lpWndClass->lpfnWndProc;
     c->cbWndExtra = lpWndClass->cbWndExtra;
     c->style = lpWndClass->style;
+    c->hcursor = (uint32_t)(uintptr_t)lpWndClass->hCursor;
+    c->hicon = (uint32_t)(uintptr_t)lpWndClass->hIcon;
     if (winapi_debug) eprintf("RegisterClassA: %s\n", c->name);
     return (uint16_t)(0xc000 + num_classes);
 }
@@ -1000,6 +1011,54 @@ uint32_t CCALL GetClientRect_c(void *hWnd, win_rect *lpRect)
     return 1;
 }
 
+// the desktop: a window object (not shown) as big as the host's desktop
+void * CCALL GetDesktopWindow_c(void)
+{
+    static window *desktop;
+    if (desktop == NULL)
+    {
+        SDL_DisplayMode mode;
+        desktop = (window *) game_calloc(1, sizeof(window));
+        desktop->magic = WINDOW_MAGIC;
+        desktop->width = 1920;
+        desktop->height = 1080;
+        if (SDL_GetDesktopDisplayMode(0, &mode) == 0)
+        {
+            desktop->width = mode.w;
+            desktop->height = mode.h;
+        }
+        strcpy(desktop->title, "Desktop");
+    }
+    return desktop;
+}
+
+uint32_t CCALL IsIconic_c(void *hWnd) { return 0; }
+
+// screen coordinates are client coordinates of the game window (no frames)
+int32_t CCALL MapWindowPoints_c(void *hWndFrom, void *hWndTo, win_point *lpPoints, uint32_t cPoints) { return 0; }
+
+// GCL_HCURSOR -12, GCL_HICON -14, GCL_WNDPROC -24, GCL_STYLE -26
+uint32_t CCALL GetClassLongA_c(void *hWnd, int32_t nIndex)
+{
+    window *w = get_window(hWnd);
+    if ((w == NULL) || (w->cls == NULL)) return 0;
+    switch (nIndex)
+    {
+        case -12: return w->cls->hcursor;
+        case -14: return w->cls->hicon;
+        case -24: return w->cls->wndproc;
+        case -26: return w->cls->style;
+    }
+    return 0;
+}
+
+uint32_t CCALL CallWindowProcA_c(uint32_t lpPrevWndFunc, void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
+{
+    uint32_t args[4] = { (uint32_t)(uintptr_t) hWnd, Msg, wParam, lParam };
+    if (lpPrevWndFunc == 0) return DefWindowProcA_c(hWnd, Msg, wParam, lParam);
+    return call_game(lpPrevWndFunc, 4, args);
+}
+
 uint32_t CCALL GetWindowRect_c(void *hWnd, win_rect *lpRect)
 {
     window *w = get_window(hWnd);
@@ -1089,9 +1148,188 @@ uint32_t CCALL EndPaint_c(void *hWnd, const paintstruct *lpPaint)
 /* ------------------------------------------------------------------ */
 /* cursor                                                              */
 
-void * CCALL LoadCursorA_c(void *hInstance, const char *lpCursorName) { return (void *)0x7f00; }
-void * CCALL LoadCursorFromFileA_c(const char *lpFileName) { return (void *)0x7f00; }
-void * CCALL SetCursor_c(void *hCursor) { return (void *)0x7f00; }
+// HCURSOR / HICON: objects in game memory (the game keeps them in 32-bit variables)
+#define CURSOR_MAGIC 0x53525543     // "CURS"
+#define ICON_MAGIC   0x4e4f4349     // "ICON"
+
+typedef struct {
+    uint32_t magic;
+    uint32_t system_id;         // IDC_* of a system cursor, 0 for a cursor from resources
+    SDL_Cursor *sdl;
+    int32_t hot_x, hot_y, width, height;
+} win_cursor;
+
+static win_cursor *current_cursor;
+
+static win_cursor *get_cursor(void *h)
+{
+    if ((h != NULL) && ((uintptr_t)h >= 0x10000) && (((win_cursor *)h)->magic == CURSOR_MAGIC)) return (win_cursor *)h;
+    return NULL;
+}
+
+static uint32_t rd16u(const uint8_t *p) { return p[0] | (p[1] << 8); }
+static uint32_t rd32u(const uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
+
+// a cursor resource (RT_CURSOR): hotspot, then a DIB of double height (XOR image above the AND mask)
+static SDL_Cursor *cursor_from_dib(const uint8_t *data, uint32_t size, int32_t *hot_x, int32_t *hot_y, int32_t *pw, int32_t *ph)
+{
+    const uint8_t *bi = data + 4, *colors, *xor_bits, *and_bits;
+    uint32_t hdr, ncolors, xor_pitch, and_pitch;
+    int32_t w, h, bpp, x, y;
+    SDL_Surface *surf;
+    SDL_Cursor *c;
+
+    if (size < 4 + 40) return NULL;
+    *hot_x = (int32_t)rd16u(data);
+    *hot_y = (int32_t)rd16u(data + 2);
+    hdr = rd32u(bi);
+    w = (int32_t)rd32u(bi + 4);
+    h = (int32_t)rd32u(bi + 8) / 2;
+    bpp = (int32_t)rd16u(bi + 14);
+    ncolors = rd32u(bi + 32);
+    if ((ncolors == 0) && (bpp <= 8)) ncolors = 1u << bpp;
+    if ((w <= 0) || (h <= 0) || (w > 256) || (h > 256)) return NULL;
+    colors = bi + hdr;
+    xor_bits = colors + 4 * ((bpp <= 8) ? ncolors : 0);
+    xor_pitch = ((w * bpp + 31) / 32) * 4;
+    and_bits = xor_bits + xor_pitch * h;
+    and_pitch = ((w + 31) / 32) * 4;
+    if (and_bits + and_pitch * h > data + size) return NULL;
+
+    surf = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (surf == NULL) return NULL;
+    for (y = 0; y < h; y++)
+    {
+        // DIB rows are bottom-up
+        const uint8_t *xr = xor_bits + xor_pitch * (h - 1 - y);
+        const uint8_t *ar = and_bits + and_pitch * (h - 1 - y);
+        uint32_t *out = (uint32_t *)((uint8_t *)surf->pixels + surf->pitch * y);
+        for (x = 0; x < w; x++)
+        {
+            uint32_t rgb, a = 0xff, mask = (ar[x >> 3] >> (7 - (x & 7))) & 1;
+            switch (bpp)
+            {
+                case 1:  rgb = rd32u(colors + 4 * ((xr[x >> 3] >> (7 - (x & 7))) & 1)) & 0xffffff; break;
+                case 4:  rgb = rd32u(colors + 4 * ((xr[x >> 1] >> ((x & 1) ? 0 : 4)) & 15)) & 0xffffff; break;
+                case 8:  rgb = rd32u(colors + 4 * xr[x]) & 0xffffff; break;
+                case 24: rgb = xr[3 * x] | (xr[3 * x + 1] << 8) | (xr[3 * x + 2] << 16); break;
+                case 32: rgb = rd32u(xr + 4 * x); a = rgb >> 24; rgb &= 0xffffff; break;
+                default: rgb = 0; break;
+            }
+            if (mask)
+            {
+                // AND 1: transparent where the XOR colour is black; "invert the screen" pixels are drawn black
+                if (rgb == 0) a = 0; else rgb = 0;
+            }
+            else if (bpp != 32) a = 0xff;
+            out[x] = (a << 24) | rgb;
+        }
+    }
+    c = SDL_CreateColorCursor(surf, *hot_x, *hot_y);
+    SDL_FreeSurface(surf);
+    *pw = w;
+    *ph = h;
+    return c;
+}
+
+static win_cursor *new_cursor(void)
+{
+    win_cursor *c = (win_cursor *) game_calloc(1, sizeof(win_cursor));
+    c->magic = CURSOR_MAGIC;
+    return c;
+}
+
+static win_cursor *system_cursor(uint32_t id)
+{
+    static win_cursor *cache[32];
+    static const struct { uint32_t id; SDL_SystemCursor sdl; } map[] = {
+        { 32512, SDL_SYSTEM_CURSOR_ARROW }, { 32513, SDL_SYSTEM_CURSOR_IBEAM }, { 32514, SDL_SYSTEM_CURSOR_WAIT },
+        { 32515, SDL_SYSTEM_CURSOR_CROSSHAIR }, { 32642, SDL_SYSTEM_CURSOR_SIZENWSE }, { 32643, SDL_SYSTEM_CURSOR_SIZENESW },
+        { 32644, SDL_SYSTEM_CURSOR_SIZEWE }, { 32645, SDL_SYSTEM_CURSOR_SIZENS }, { 32646, SDL_SYSTEM_CURSOR_SIZEALL },
+        { 32648, SDL_SYSTEM_CURSOR_NO }, { 32649, SDL_SYSTEM_CURSOR_HAND }, { 32650, SDL_SYSTEM_CURSOR_WAITARROW },
+    };
+    unsigned int i;
+
+    for (i = 0; i < sizeof(map) / sizeof(map[0]); i++) if (map[i].id == id) break;
+    if (i == sizeof(map) / sizeof(map[0])) i = 0;
+    if (cache[i] == NULL)
+    {
+        cache[i] = new_cursor();
+        cache[i]->system_id = map[i].id;
+        cache[i]->sdl = SDL_CreateSystemCursor(map[i].sdl);
+    }
+    return cache[i];
+}
+
+// RT_GROUP_CURSOR -> the first RT_CURSOR image of the group
+static win_cursor *load_cursor_resource(void *hInstance, const char *name)
+{
+    const uint8_t *image = winapi_module_image(hInstance), *e, *group, *cur;
+    uint32_t size, gsize, count, id;
+    win_cursor *c;
+
+    if (image == NULL) return NULL;
+    e = pe_resource_find(image, (uintptr_t)name, 12);
+    if (e == NULL) return NULL;
+    group = (const uint8_t *)pe_resource_data(image, e, &gsize);
+    count = rd16u(group + 4);
+    if ((count == 0) || (gsize < 6 + 14)) return NULL;
+    id = rd16u(group + 6 + 12);
+    e = pe_resource_find(image, id, 1);
+    if (e == NULL) return NULL;
+    cur = (const uint8_t *)pe_resource_data(image, e, &size);
+
+    c = new_cursor();
+    c->sdl = cursor_from_dib(cur, size, &c->hot_x, &c->hot_y, &c->width, &c->height);
+    if (winapi_debug) eprintf("cursor resource %p: %dx%d hotspot %d,%d%s\n", (void *)name, c->width, c->height, c->hot_x, c->hot_y, (c->sdl != NULL) ? "" : " (no SDL cursor)");
+    return c;
+}
+
+void * CCALL LoadCursorA_c(void *hInstance, const char *lpCursorName)
+{
+    if (hInstance == NULL) return system_cursor((uint32_t)(uintptr_t)lpCursorName);
+    return load_cursor_resource(hInstance, lpCursorName);
+}
+
+void * CCALL LoadCursorFromFileA_c(const char *lpFileName) { return system_cursor(32512); }
+
+void * CCALL LoadIconA_c(void *hInstance, const char *lpIconName)
+{
+    static uint32_t *icon;
+    if (icon == NULL)
+    {
+        icon = (uint32_t *) game_calloc(1, 16);
+        icon[0] = ICON_MAGIC;
+    }
+    return icon;
+}
+
+// IMAGE_BITMAP 0, IMAGE_ICON 1, IMAGE_CURSOR 2
+void * CCALL LoadImageA_c(void *hInst, const char *name, uint32_t type, int32_t cx, int32_t cy, uint32_t fuLoad)
+{
+    void *h = NULL;
+    if (fuLoad & 0x10)  // LR_LOADFROMFILE
+    {
+        if (winapi_debug) eprintf("LoadImageA: file %s type %u (not supported)\n", name, type);
+        return NULL;
+    }
+    switch (type)
+    {
+        case 2: h = LoadCursorA_c(hInst, name); break;
+        case 1: h = LoadIconA_c(hInst, name); break;
+        default: break;
+    }
+    if (winapi_debug) eprintf("LoadImageA: %p %s%p type %u -> %p\n", hInst, ((uintptr_t)name < 0x10000) ? "#" : "", (void *)name, type, h);
+    return h;
+}
+
+void * CCALL SetCursor_c(void *hCursor)
+{
+    win_cursor *old = current_cursor, *c = get_cursor(hCursor);
+    current_cursor = c;
+    if ((c != NULL) && (c->sdl != NULL)) SDL_SetCursor(c->sdl);
+    return old;
+}
 
 int32_t CCALL ShowCursor_c(uint32_t bShow)
 {

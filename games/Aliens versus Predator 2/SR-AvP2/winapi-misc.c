@@ -33,6 +33,14 @@ uint32_t CCALL mciGetErrorStringA_c(uint32_t fdwError, char *lpszErrorText, uint
 }
 
 uint32_t CCALL CoInitialize_c(void *pvReserved) { return 0; }
+
+// no COM classes are registered (DirectMusic, DirectPlay lobby, ...): REGDB_E_CLASSNOTREG
+uint32_t CCALL CoCreateInstance_c(const uint8_t *rclsid, void *pUnkOuter, uint32_t dwClsContext, const uint8_t *riid, uint32_t *ppv)
+{
+    if (ppv != NULL) *ppv = 0;
+    fprintf(stderr, "CoCreateInstance: class {%08x-...} not available\n", (rclsid != NULL) ? *(const uint32_t *)rclsid : 0);
+    return 0x80040154u;
+}
 void CCALL CoUninitialize_c(void) {}
 
 uint32_t CCALL DirectDrawEnumerateA_c(void *lpCallback, void *lpContext)

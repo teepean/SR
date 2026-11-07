@@ -319,4 +319,11 @@ int32_t CCALL RegSetValueExA_c(uint32_t hKey, const char *lpValueName, uint32_t 
     return ERROR_SUCCESS;
 }
 
+// keys are not deleted (the registry file keeps them); the game only deletes its own temporary keys
+int32_t CCALL RegDeleteKeyA_c(uint32_t hKey, const char *lpSubKey)
+{
+    if (winapi_debug) eprintf("RegDeleteKeyA: %s (ignored)\n", (lpSubKey != NULL) ? lpSubKey : "");
+    return ERROR_SUCCESS;
+}
+
 EXTERN_C_END

@@ -87,6 +87,7 @@ typedef struct {
     gdi_brush *pen;
     uint32_t text_color, bk_color;
     int32_t bk_mode;        // 1 = TRANSPARENT, 2 = OPAQUE
+    int32_t char_extra;     // SetTextCharacterExtra
 } gdi_dc;
 
 static gdi_bitmap screen_bitmap;
@@ -918,6 +919,44 @@ void * CCALL CreateFontIndirectA_c(const logfonta *lplf)
     return f;
 }
 
+void * CCALL CreateFontA_c(int32_t cHeight, int32_t cWidth, int32_t cEscapement, int32_t cOrientation, int32_t cWeight, uint32_t bItalic,
+                           uint32_t bUnderline, uint32_t bStrikeOut, uint32_t iCharSet, uint32_t iOutPrecision, uint32_t iClipPrecision,
+                           uint32_t iQuality, uint32_t iPitchAndFamily, const char *pszFaceName)
+{
+    logfonta lf;
+    memset(&lf, 0, sizeof(lf));
+    lf.lfHeight = cHeight;
+    lf.lfWidth = cWidth;
+    lf.lfEscapement = cEscapement;
+    lf.lfOrientation = cOrientation;
+    lf.lfWeight = cWeight;
+    lf.lfItalic = (uint8_t)bItalic;
+    lf.lfUnderline = (uint8_t)bUnderline;
+    lf.lfStrikeOut = (uint8_t)bStrikeOut;
+    lf.lfCharSet = (uint8_t)iCharSet;
+    lf.lfOutPrecision = (uint8_t)iOutPrecision;
+    lf.lfClipPrecision = (uint8_t)iClipPrecision;
+    lf.lfQuality = (uint8_t)iQuality;
+    lf.lfPitchAndFamily = (uint8_t)iPitchAndFamily;
+    if (pszFaceName != NULL) strncpy(lf.lfFaceName, pszFaceName, sizeof(lf.lfFaceName) - 1);
+    return CreateFontIndirectA_c(&lf);
+}
+
+int32_t CCALL SetTextCharacterExtra_c(gdi_dc *hdc, int32_t extra)
+{
+    int32_t old;
+    if (obj_type(hdc) != GDI_DC) return (int32_t)0x80000000;
+    old = hdc->char_extra;
+    hdc->char_extra = extra;
+    return old;
+}
+
+int32_t CCALL GetTextCharacterExtra_c(gdi_dc *hdc)
+{
+    if (obj_type(hdc) != GDI_DC) return (int32_t)0x80000000;
+    return hdc->char_extra;
+}
+
 uint32_t CCALL SetMapperFlags_c(gdi_dc *hdc, uint32_t flags) { return 0; }
 
 // .fot files created by CreateScalableFontResourceA contain the path of the TrueType file
@@ -999,7 +1038,7 @@ uint32_t CCALL GetTextExtentPoint32A_c(gdi_dc *hdc, const char *lpString, int32_
         psizl->cy = 16;
         return 1;
     }
-    psizl->cx = (lpString != NULL) ? text_width(hdc->font, lpString, c) : 0;
+    psizl->cx = (lpString != NULL) ? text_width(hdc->font, lpString, c) + c * hdc->char_extra : 0;
     psizl->cy = hdc->font->ascent + hdc->font->descent;
     return 1;
 }
@@ -1011,7 +1050,7 @@ uint32_t CCALL GetTextExtentExPointA_c(gdi_dc *hdc, const char *lpszString, int3
     if ((obj_type(hdc) != GDI_DC) || !load_font(hdc->font)) return 0;
     for (i = 0; i < cchString; i++)
     {
-        w += glyph_advance(hdc->font, (unsigned char)lpszString[i]);
+        w += glyph_advance(hdc->font, (unsigned char)lpszString[i]) + hdc->char_extra;
         if (w <= nMaxExtent) fit = i + 1;
         if (lpnDx != NULL) lpnDx[i] = w;
     }
@@ -1040,7 +1079,7 @@ uint32_t CCALL TextOutA_c(gdi_dc *hdc, int32_t x, int32_t y, const char *lpStrin
 
     if (hdc->bk_mode == 2)
     {
-        fill_rect(bm, x, y, x + text_width(f, lpString, c), y + f->ascent + f->descent, color_to_pixel(bm, hdc->bk_color, hdc->palette));
+        fill_rect(bm, x, y, x + text_width(f, lpString, c) + c * hdc->char_extra, y + f->ascent + f->descent, color_to_pixel(bm, hdc->bk_color, hdc->palette));
     }
 
     pen_x = x;
@@ -1070,7 +1109,7 @@ uint32_t CCALL TextOutA_c(gdi_dc *hdc, int32_t x, int32_t y, const char *lpStrin
                 if (on) put_pixel(bm, px, py, fg);
             }
         }
-        pen_x += (int)((g->advance.x + 32) >> 6);
+        pen_x += (int)((g->advance.x + 32) >> 6) + hdc->char_extra;
     }
 
     dc_changed(hdc);

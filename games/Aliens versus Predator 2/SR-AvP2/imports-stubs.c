@@ -35,16 +35,10 @@ uint32_t CCALL AIL_digital_handle_reacquire_c(uint32_t a0) { static int reported
 uint32_t CCALL AIL_digital_handle_release_c(uint32_t a0) { static int reported; unimplemented("_AIL_digital_handle_release@4", &reported); return 0; }
 uint32_t CCALL AIL_digital_master_volume_c(uint32_t a0) { static int reported; unimplemented("_AIL_digital_master_volume@4", &reported); return 0; }
 uint32_t CCALL AIL_end_3D_sample_c(uint32_t a0) { static int reported; unimplemented("_AIL_end_3D_sample@4", &reported); return 0; }
-uint32_t CCALL AIL_enumerate_3D_providers_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_enumerate_3D_providers@12", &reported); return 0; }
 uint32_t CCALL AIL_enumerate_filter_sample_attributes_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_enumerate_filter_sample_attributes@12", &reported); return 0; }
 uint32_t CCALL AIL_enumerate_filters_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_enumerate_filters@12", &reported); return 0; }
 uint32_t CCALL AIL_filter_sample_attribute_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_filter_sample_attribute@12", &reported); return 0; }
-uint32_t CCALL AIL_get_preference_c(uint32_t a0) { static int reported; unimplemented("_AIL_get_preference@4", &reported); return 0; }
 uint32_t CCALL AIL_init_sample_c(uint32_t a0) { static int reported; unimplemented("_AIL_init_sample@4", &reported); return 0; }
-uint32_t CCALL AIL_lock_c(void) { static int reported; unimplemented("_AIL_lock@0", &reported); return 0; }
-uint32_t CCALL AIL_mem_alloc_lock_c(uint32_t a0) { static int reported; unimplemented("_AIL_mem_alloc_lock@4", &reported); return 0; }
-uint32_t CCALL AIL_mem_free_lock_c(uint32_t a0) { static int reported; unimplemented("_AIL_mem_free_lock@4", &reported); return 0; }
-uint32_t CCALL AIL_ms_count_c(void) { static int reported; unimplemented("_AIL_ms_count@0", &reported); return 0; }
 uint32_t CCALL AIL_open_3D_listener_c(uint32_t a0) { static int reported; unimplemented("_AIL_open_3D_listener@4", &reported); return 0; }
 uint32_t CCALL AIL_open_3D_provider_c(uint32_t a0) { static int reported; unimplemented("_AIL_open_3D_provider@4", &reported); return 0; }
 uint32_t CCALL AIL_open_stream_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_open_stream@12", &reported); return 0; }
@@ -74,7 +68,6 @@ uint32_t CCALL AIL_set_3D_user_data_c(uint32_t a0, uint32_t a1, uint32_t a2) { s
 uint32_t CCALL AIL_set_3D_velocity_vector_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("_AIL_set_3D_velocity_vector@16", &reported); return 0; }
 uint32_t CCALL AIL_set_digital_master_volume_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("_AIL_set_digital_master_volume@8", &reported); return 0; }
 uint32_t CCALL AIL_set_filter_sample_preference_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_set_filter_sample_preference@12", &reported); return 0; }
-uint32_t CCALL AIL_set_preference_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("_AIL_set_preference@8", &reported); return 0; }
 uint32_t CCALL AIL_set_sample_address_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_set_sample_address@12", &reported); return 0; }
 uint32_t CCALL AIL_set_sample_file_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_set_sample_file@12", &reported); return 0; }
 uint32_t CCALL AIL_set_sample_loop_block_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_set_sample_loop_block@12", &reported); return 0; }
@@ -93,42 +86,11 @@ uint32_t CCALL AIL_set_stream_pan_c(uint32_t a0, uint32_t a1) { static int repor
 uint32_t CCALL AIL_set_stream_playback_rate_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("_AIL_set_stream_playback_rate@8", &reported); return 0; }
 uint32_t CCALL AIL_set_stream_user_data_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("_AIL_set_stream_user_data@12", &reported); return 0; }
 uint32_t CCALL AIL_set_stream_volume_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("_AIL_set_stream_volume@8", &reported); return 0; }
-uint32_t CCALL AIL_shutdown_c(void) { static int reported; unimplemented("_AIL_shutdown@0", &reported); return 0; }
 uint32_t CCALL AIL_start_3D_sample_c(uint32_t a0) { static int reported; unimplemented("_AIL_start_3D_sample@4", &reported); return 0; }
 uint32_t CCALL AIL_start_stream_c(uint32_t a0) { static int reported; unimplemented("_AIL_start_stream@4", &reported); return 0; }
-uint32_t CCALL AIL_startup_c(void) { static int reported; unimplemented("_AIL_startup@0", &reported); return 0; }
 uint32_t CCALL AIL_stop_3D_sample_c(uint32_t a0) { static int reported; unimplemented("_AIL_stop_3D_sample@4", &reported); return 0; }
 uint32_t CCALL AIL_stop_sample_c(uint32_t a0) { static int reported; unimplemented("_AIL_stop_sample@4", &reported); return 0; }
 uint32_t CCALL AIL_stream_pan_c(uint32_t a0) { static int reported; unimplemented("_AIL_stream_pan@4", &reported); return 0; }
 uint32_t CCALL AIL_stream_volume_c(uint32_t a0) { static int reported; unimplemented("_AIL_stream_volume@4", &reported); return 0; }
-uint32_t CCALL AIL_unlock_c(void) { static int reported; unimplemented("_AIL_unlock@0", &reported); return 0; }
-uint32_t CCALL AIL_waveOutClose_c(uint32_t a0) { static int reported; unimplemented("_AIL_waveOutClose@4", &reported); return 0; }
-uint32_t CCALL AIL_waveOutOpen_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("_AIL_waveOutOpen@16", &reported); return 0; }
-uint32_t CCALL CallWindowProcA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4) { static int reported; unimplemented("CallWindowProcA", &reported); return 0; }
-uint32_t CCALL CoCreateInstance_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4) { static int reported; unimplemented("CoCreateInstance", &reported); return 0; }
-uint32_t CCALL CreateDirectoryA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("CreateDirectoryA", &reported); return 0; }
-uint32_t CCALL CreateFontA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7, uint32_t a8, uint32_t a9, uint32_t a10, uint32_t a11, uint32_t a12, uint32_t a13) { static int reported; unimplemented("CreateFontA", &reported); return 0; }
-uint32_t CCALL CreateProcessA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7, uint32_t a8, uint32_t a9) { static int reported; unimplemented("CreateProcessA", &reported); return 0; }
-uint32_t CCALL GetClassLongA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("GetClassLongA", &reported); return 0; }
-uint32_t CCALL GetDesktopWindow_c(void) { static int reported; unimplemented("GetDesktopWindow", &reported); return 0; }
-uint32_t CCALL GetKeyboardState_c(uint32_t a0) { static int reported; unimplemented("GetKeyboardState", &reported); return 0; }
-uint32_t CCALL GetPrivateProfileStringA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("GetPrivateProfileStringA", &reported); return 0; }
-uint32_t CCALL GetTextCharacterExtra_c(uint32_t a0) { static int reported; unimplemented("GetTextCharacterExtra", &reported); return 0; }
-uint32_t CCALL IsIconic_c(uint32_t a0) { static int reported; unimplemented("IsIconic", &reported); return 0; }
-uint32_t CCALL LoadIconA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("LoadIconA", &reported); return 0; }
-uint32_t CCALL LoadImageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("LoadImageA", &reported); return 0; }
-uint32_t CCALL LocalFileTimeToFileTime_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("LocalFileTimeToFileTime", &reported); return 0; }
-uint32_t CCALL MapWindowPoints_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("MapWindowPoints", &reported); return 0; }
-uint32_t CCALL MoveFileA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("MoveFileA", &reported); return 0; }
-uint32_t CCALL OpenFile_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("OpenFile", &reported); return 0; }
-uint32_t CCALL RegDeleteKeyA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("RegDeleteKeyA", &reported); return 0; }
-uint32_t CCALL RemoveDirectoryA_c(uint32_t a0) { static int reported; unimplemented("RemoveDirectoryA", &reported); return 0; }
-uint32_t CCALL SetErrorMode_c(uint32_t a0) { static int reported; unimplemented("SetErrorMode", &reported); return 0; }
-uint32_t CCALL SetFileTime_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("SetFileTime", &reported); return 0; }
-uint32_t CCALL SetTextCharacterExtra_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("SetTextCharacterExtra", &reported); return 0; }
-uint32_t CCALL SystemTimeToFileTime_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("SystemTimeToFileTime", &reported); return 0; }
-uint32_t CCALL TlsFree_c(uint32_t a0) { static int reported; unimplemented("TlsFree", &reported); return 0; }
-uint32_t CCALL WaitForSingleObjectEx_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("WaitForSingleObjectEx", &reported); return 0; }
-uint32_t CCALL WritePrivateProfileStringA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("WritePrivateProfileStringA", &reported); return 0; }
 
 EXTERN_C_END
