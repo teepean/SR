@@ -90,6 +90,12 @@ static int on_main_thread(void)
     return pthread_equal(pthread_self(), main_thread);
 }
 
+// for render3d.cpp: Godot is up and this is the thread that may call it
+extern "C" int ghost_ready(void)
+{
+    return started && !quitting && on_main_thread();
+}
+
 // window state the game asks for from any thread; applied on the main thread before each Godot frame
 static struct
 {
@@ -421,7 +427,7 @@ extern "C" int ghost_load(void)
     gs->canvas_item = rs->canvas_item_create();
     rs->canvas_item_set_parent(gs->canvas_item, gs->canvas);
     gs->shader = rs->shader_create();
-    rs->shader_set_code(gs->shader, "shader_type canvas_item;\nvoid fragment() { vec4 c = texture(TEXTURE, UV); COLOR = vec4(c.b, c.g, c.r, 1.0); }\n");
+    rs->shader_set_code(gs->shader, "shader_type canvas_item;\nrender_mode blend_premul_alpha;\nvoid fragment() { vec4 c = texture(TEXTURE, UV); COLOR = vec4(c.b, c.g, c.r, c.a); }\n");
     gs->material = rs->material_create();
     rs->material_set_shader(gs->material, gs->shader);
     rs->canvas_item_set_material(gs->canvas_item, gs->material);

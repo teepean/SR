@@ -9,8 +9,9 @@
  *
  *  This stage: the 2D layer. Surfaces are 32-bit (the screen format GetScreenFormat reports), the screen is a
  *  32-bit framebuffer composed on the CPU (blits, optimized 2D with its blend modes) and presented by
- *  SwapBuffers through display.c. The 3D calls (contexts, textures, RenderScene) are accepted and draw nothing
- *  yet - the world goes to Godot.
+ *  SwapBuffers through display.c. The 3D world is Godot's (render3d.cpp); the 2D frame is an overlay over it:
+ *  its pixels are premultiplied ARGB, RenderScene makes the scene's rectangle transparent and what's drawn after
+ *  it (the HUD) covers the 3D picture (alpha) or adds to it (additive blending keeps the alpha).
  *
  */
 
@@ -25,6 +26,8 @@
 #include "winapi.h"
 #include "display.h"
 #include "config.h"
+#include "host.h"
+#include "render3d.h"
 
 EXTERN_C_BEGIN
 
@@ -128,6 +131,7 @@ static void clip_rect(LTRect32 *r, int w, int h)
 void CCALL RenderDLLSetup_c(uint8_t *pStruct)
 {
     rs = pStruct;
+    r3d_set_render_struct(pStruct);
     rs_set(0x70, ren_Init_asm2c);
     rs_set(0x74, ren_Term_asm2c);
     rs_set(0x78, ren_BindTexture_asm2c);
@@ -265,27 +269,51 @@ uint32_t CCALL ren_GetScreenFormat_c(uint8_t *pFormat)
 }
 
 /* ------------------------------------------------------------------ */
-/* 3D (not drawn yet)                                                  */
+/* 3D: render3d.cpp (Godot)                                            */
 
-void CCALL ren_BindTexture_c(void *pTexture, uint32_t bTextureChanged) {}
-void CCALL ren_UnbindTexture_c(void *pTexture) {}
+#ifndef HAVE_GODOT
+void r3d_set_render_struct(uint8_t *p) {}
+uint32_t r3d_create_context(uint32_t world) { static uint32_t dummy[4]; return (uint32_t)(uintptr_t)dummy; }
+void r3d_delete_context(uint32_t context) {}
+int r3d_render_scene(uint8_t *scene) { return 0; }
+void r3d_end_frame(int drawn) {}
+void r3d_unbind_texture(void *texture) {}
+#endif
+
+static int scene_drawn;     // RenderScene in this frame
+
+void CCALL ren_BindTexture_c(void *pTexture, uint32_t bTextureChanged) { if (bTextureChanged) r3d_unbind_texture(pTexture); }
+void CCALL ren_UnbindTexture_c(void *pTexture) { r3d_unbind_texture(pTexture); }
 void CCALL ren_RebindLightmaps_c(void *pContext) {}
 
-uint32_t CCALL ren_CreateContext_c(void *pInit)
+// RenderContextInit: the world (MainWorld*)
+uint32_t CCALL ren_CreateContext_c(uint32_t *pInit)
 {
-    static uint32_t context_dummy[4];
-    return (uint32_t)(uintptr_t)context_dummy;
+    return r3d_create_context((pInit != NULL) ? pInit[0] : 0);
 }
-void CCALL ren_DeleteContext_c(uint32_t hContext) {}
+void CCALL ren_DeleteContext_c(uint32_t hContext) { r3d_delete_context(hContext); }
 
 uint32_t CCALL ren_Start3D_c(void) { in_3d = 1; return 1; }
 uint32_t CCALL ren_End3D_c(void) { in_3d = 0; return 1; }
 uint32_t CCALL ren_IsIn3D_c(void) { return in_3d; }
 
-int32_t CCALL ren_RenderScene_c(void *pScene)
+int32_t CCALL ren_RenderScene_c(uint8_t *pScene)
 {
-    static int reported;
-    if (!reported && winapi_debug) { reported = 1; eprintf("render: RenderScene (the 3D world is not drawn yet)\n"); }
+    int32_t *rect;
+    int x, y;
+
+    if (pScene == NULL) return RENDER_OK;
+    if (!r3d_render_scene(pScene)) return RENDER_OK;
+    scene_drawn = 1;
+    // the scene's rectangle shows the 3D picture: transparent in the overlay
+    rect = (int32_t *)(pScene + 0xbc);
+    if (screen != NULL)
+    {
+        LTRect32 r = { rect[0], rect[1], rect[2], rect[3] };
+        clip_rect(&r, screen_w, screen_h);
+        for (y = r.top; y < r.bottom; y++)
+            for (x = r.left; x < r.right; x++) screen[y * screen_w + x] = 0;
+    }
     return RENDER_OK;
 }
 
@@ -299,13 +327,14 @@ void CCALL ren_Clear_c(LTRect32 *pRect, uint32_t flags, LTVector32 *pColor)
     uint32_t c = 0;
     int x, y;
 
-    if (screen == NULL) return;
+    if ((screen == NULL) || !(flags & 1)) return;     // CLEARSCREEN_SCREEN (CLEARSCREEN_RENDER is the z buffer)
     if (pRect != NULL) r = *pRect;
     clip_rect(&r, screen_w, screen_h);
+    c = 0xFF000000;
     if (pColor != NULL)
     {
         int cr = (int)pColor->x, cg = (int)pColor->y, cb = (int)pColor->z;
-        c = ((uint32_t)(cr & 0xFF) << 16) | ((uint32_t)(cg & 0xFF) << 8) | (uint32_t)(cb & 0xFF);
+        c |= ((uint32_t)(cr & 0xFF) << 16) | ((uint32_t)(cg & 0xFF) << 8) | (uint32_t)(cb & 0xFF);
     }
     for (y = r.top; y < r.bottom; y++)
         for (x = r.left; x < r.right; x++) screen[y * screen_w + x] = c;
@@ -342,9 +371,11 @@ void CCALL ren_SwapBuffers_c(uint32_t flags)
 {
     frames++;
     if (winapi_debug && (frames == 1 || frames % 300 == 0)) eprintf("render: frame %u\n", frames);
+    r3d_end_frame(scene_drawn);
+    scene_drawn = 0;
     display_invalidate();
     display_present(1);
-    limit_frame_rate();
+    if (!host_vsync()) limit_frame_rate();
 }
 
 static uint32_t locked_screen_buffer;
@@ -437,27 +468,33 @@ uint32_t CCALL ren_GetOptimized2DColor_c(uint32_t *pColor) { if (pColor) *pColor
 
 static inline uint32_t clamp8(int v) { return (v < 0) ? 0 : ((v > 255) ? 255 : (uint32_t)v); }
 
-// one pixel: src (already color-modulated) over dst with the optimized 2D blend mode
+// one pixel: src (already color-modulated) over dst with the optimized 2D blend mode. The screen is
+// premultiplied ARGB (alpha = how much of the 3D picture below is covered): the modes that can be expressed
+// that way are exact over the 3D world (alpha, solid, add, mask & add); multiply and mask only affect 2D.
 static inline uint32_t blend_pixel(uint32_t src, uint32_t dst, uint32_t mode, int alpha256)
 {
     int sr = (src >> 16) & 0xFF, sg = (src >> 8) & 0xFF, sb = src & 0xFF;
     int dr = (dst >> 16) & 0xFF, dg = (dst >> 8) & 0xFF, db = dst & 0xFF;
+    uint32_t da = dst & 0xFF000000;
     switch (mode)
     {
         case 1:     // solid
-            return src & 0xFFFFFF;
+            return (src & 0xFFFFFF) | 0xFF000000;
         case 2:     // add
-            return (clamp8(sr + dr) << 16) | (clamp8(sg + dg) << 8) | clamp8(sb + db);
+            return da | (clamp8(sr + dr) << 16) | (clamp8(sg + dg) << 8) | clamp8(sb + db);
         case 3:     // multiply
-            return ((uint32_t)(sr * dr / 255) << 16) | ((uint32_t)(sg * dg / 255) << 8) | (uint32_t)(sb * db / 255);
+            return da | ((uint32_t)(sr * dr / 255) << 16) | ((uint32_t)(sg * dg / 255) << 8) | (uint32_t)(sb * db / 255);
         case 4:     // multiply * 2
-            return (clamp8(sr * dr / 128) << 16) | (clamp8(sg * dg / 128) << 8) | clamp8(sb * db / 128);
+            return da | (clamp8(sr * dr / 128) << 16) | (clamp8(sg * dg / 128) << 8) | clamp8(sb * db / 128);
         case 5:     // mask: (1 - src) * dest
-            return ((uint32_t)((255 - sr) * dr / 255) << 16) | ((uint32_t)((255 - sg) * dg / 255) << 8) | (uint32_t)((255 - sb) * db / 255);
+            return da | ((uint32_t)((255 - sr) * dr / 255) << 16) | ((uint32_t)((255 - sg) * dg / 255) << 8) | (uint32_t)((255 - sb) * db / 255);
         case 6:     // mask & add: src + (1 - src) * dest
-            return (clamp8(sr + (255 - sr) * dr / 255) << 16) | (clamp8(sg + (255 - sg) * dg / 255) << 8) | clamp8(sb + (255 - sb) * db / 255);
+            return da | (clamp8(sr + (255 - sr) * dr / 255) << 16) | (clamp8(sg + (255 - sg) * dg / 255) << 8) | clamp8(sb + (255 - sb) * db / 255);
         default:    // alpha
-            return ((uint32_t)(dr + (((sr - dr) * alpha256) >> 8)) << 16) | ((uint32_t)(dg + (((sg - dg) * alpha256) >> 8)) << 8) | (uint32_t)(db + (((sb - db) * alpha256) >> 8));
+        {
+            uint32_t a = (uint32_t)((int)(dst >> 24) + (((255 - (int)(dst >> 24)) * alpha256) >> 8));
+            return (a << 24) | ((uint32_t)(dr + (((sr - dr) * alpha256) >> 8)) << 16) | ((uint32_t)(dg + (((sg - dg) * alpha256) >> 8)) << 8) | (uint32_t)(db + (((sb - db) * alpha256) >> 8));
+        }
     }
 }
 
@@ -508,7 +545,7 @@ void CCALL ren_BlitToScreen_c(BlitRequest32 *req)
             {
                 *d = blend_pixel(p, *d, 0, alpha256);
             }
-            else *d = p;
+            else *d = p | 0xFF000000;
         }
     }
 }

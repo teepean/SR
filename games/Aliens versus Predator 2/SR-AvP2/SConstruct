@@ -82,7 +82,7 @@ if godot_lib is not None:
     genv['CCFLAGS'] = str(genv['CCFLAGS']).replace('-fno-rtti', '')
     genv.Append(CCFLAGS = ' -std=c++17',
                 CPPPATH = [godot_cpp + '/include', godot_cpp + '/gen/include', godot_cpp + '/gdextension'])
-    godot_objs = [genv.Object('host_godot.cpp'), godot_lib]
+    godot_objs = [genv.Object('host_godot.cpp'), genv.Object('render3d.cpp'), godot_lib]
     env.Append(LIBS = ['dl'])
 else:
     print('Godot (godot-cpp) not found: SDL window only')

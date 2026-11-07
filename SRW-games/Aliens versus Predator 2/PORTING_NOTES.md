@@ -194,3 +194,25 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - The engine draws from other threads too (loading screen); Godot is only called on the main thread - other
   threads' frames and window changes wait for it.
 - AVP2_DUMP_GODOT=<dir> saves Godot's picture (GPU readback) every 2 s.
+
+### 2026-11-07 — milestone 4 (first part): the world in Godot
+- render3d.cpp (render.c calls it for CreateContext/DeleteContext/RenderScene/textures): the bound world
+  (RenderContextInit::m_pWorld, MainWorld) becomes Godot meshes when first drawn (on the main thread); each
+  RenderScene sets a Camera3D from the SceneDesc (LithTech is left-handed: z negated, quaternion (-x, -y, z, w)).
+  Layouts from AVP2-Reconstructed's headers (renderstruct.h, scenedesc.h, de_mainworld.h, de_world.h,
+  de_objects.h, dtxmgr.h) and the LithTech 2 SDK (avp2src src/LT2/sdk/inc: SURF_ flags) - they fit this build.
+- Geometry: every BSP of MainWorld::m_WorldModels but the VisBSP; world models' points are in world space
+  (the canyon walls of m1s1 are one, "first_terrain_walls"). A poly whose vertex list was reallocated has
+  m_nExtraVertices vertices there (not m_nVertices + m_nExtraVertices). Vertex UVs are in texels of the DTX's
+  base size.
+- Light comes from the light animations ("LightAnim_BASE" and the rest; WorldPoly::m_pLMAnimRefs = (animation,
+  its poly) pairs): lightmapped polies get the frames' run-length lightmaps (d3d_DecompressLM32, at most 32x32,
+  the first layer as is, the others added at their intensity), packed into 2048x2048 atlas pages; the lightmap
+  axes are normal.Cross(base) and right.Cross(normal) with LithTech's operand order (b x a); Gouraud polies get
+  the frames' per-vertex R/G/B (summed). SPolyVertex colours are B, G, R.
+- Shading like D3D7: texture * light in sRGB values, lightmaps MODULATE2X, converted to linear for Godot.
+- The 2D frame is an overlay (premultiplied ARGB): RenderScene clears its rectangle to transparent.
+- Reference pictures: tools in avp2work (wine_ref.sh: the original lithtech.exe under GE-Proton in its own prefix,
+  window captured with ImageMagick's import; +windowed 1; the prefix needs Proton's vkd3d DLLs for wined3d).
+- Now: m1s1's canyon renders like the original (night, moonlight, lamps); objects (models, sprites, particles,
+  the weapon), dynamic lights, sky and fog are next.
