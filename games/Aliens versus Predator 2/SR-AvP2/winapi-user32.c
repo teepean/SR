@@ -473,6 +473,7 @@ int32_t CCALL GetKeyboardType_c(int32_t nTypeFlag)
 /*   <ms> quit                    <ms> close (WM_CLOSE)               */
 /*   <ms> skey|sdown|sup <SDL key name> (also seen by DirectInput)     */
 /*   <ms> rel <dx> <dy> (relative mouse motion, DirectInput: looking)  */
+/*   <ms> mdown|mup|mclick <SDL button: 1 left, 3 right> (DirectInput) */
 /* <vk>: hex/decimal number, a letter/digit, or ESCAPE RETURN SPACE    */
 /* UP DOWN LEFT RIGHT TAB F1..F12                                      */
 
@@ -589,6 +590,24 @@ static void run_script(void)
         else if (0 == strcmp(e->cmd, "skey")) { dinput_event_and_key((SDL_Scancode) e->a, 1); dinput_event_and_key((SDL_Scancode) e->a, 0); }
         else if (0 == strcmp(e->cmd, "sdown")) dinput_event_and_key((SDL_Scancode) e->a, 1);
         else if (0 == strcmp(e->cmd, "sup")) dinput_event_and_key((SDL_Scancode) e->a, 0);
+        else if ((0 == strcmp(e->cmd, "mdown")) || (0 == strcmp(e->cmd, "mup")) || (0 == strcmp(e->cmd, "mclick")))
+        {
+            SDL_Event ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.button.button = (Uint8) e->a;
+            if (strcmp(e->cmd, "mup") != 0)
+            {
+                ev.type = SDL_MOUSEBUTTONDOWN;
+                ev.button.state = SDL_PRESSED;
+                dinput_event(&ev);
+            }
+            if (strcmp(e->cmd, "mdown") != 0)
+            {
+                ev.type = SDL_MOUSEBUTTONUP;
+                ev.button.state = SDL_RELEASED;
+                dinput_event(&ev);
+            }
+        }
         else if (0 == strcmp(e->cmd, "rel"))
         {
             SDL_Event ev;

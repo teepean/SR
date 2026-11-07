@@ -27,7 +27,8 @@
  *  (light scale or InvertHack, light add); DrawSky and LMFullBright (vision modes) are followed.
  *  Textures' D3D state changes (SharedTexture::m_pStateChange, switched by the game per vision mode): their fog
  *  (none, all of a colour, a range) and colour op (texture only, add signed) as material uniforms.
- *  To do: the state changes' blend modes, poly grids, lines, canvases, multi-frame light
+ *  Line systems (tracers, beams): lines in the object's space.
+ *  To do: the state changes' blend modes, poly grids, canvases, multi-frame light
  *  animations, shadow-map light animations,
  *  vertical fog, detail and environment textures, model LODs and static lights for models, sprite-animated
  *  surfaces (SURF_SPRITEANIMATE).
@@ -231,6 +232,7 @@ struct godot_scene
     std::map<uint32_t, model_instance> models;        // by object
     std::map<uint32_t, sprite_instance> sprites;      // by object
     std::map<uint32_t, sprite_instance> particles;    // by object
+    std::map<uint32_t, sprite_instance> lines;        // line systems, by object
     std::map<uint64_t, Ref<ShaderMaterial>> sprite_materials;  // by texture and shader variant
     std::map<uint32_t, texture_entry> textures;     // by SharedTexture*
     uint32_t frame;
@@ -1213,6 +1215,8 @@ static void clear_world(void)
     gs->sprites.clear();
     for (auto &kv : gs->particles) kv.second.mi->queue_free();
     gs->particles.clear();
+    for (auto &kv : gs->lines) kv.second.mi->queue_free();
+    gs->lines.clear();
     gs->sprite_materials.clear();
     for (auto &kv : gs->textures) kv.second.materials.clear();
     gs->bsp_meshes.clear();
@@ -2351,6 +2355,101 @@ static void update_sky(uint32_t mw, uint32_t sd)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* line systems                                                        */
+
+// LineSystem: a ring of LSLine (two points: position, r, g, b, a in 0-1; prev 0x3c, next 0x40) through m_LineHead
+#define LS_HEAD 0x1b8
+#define LL_NEXT 0x40
+
+static Ref<ShaderMaterial> line_material(int close)
+{
+    static Ref<ShaderMaterial> m[2];
+    if (m[close].is_null())
+    {
+        Ref<Shader> sh;
+        sh.instantiate();
+        std::string c = "shader_type spatial;\nrender_mode unshaded, cull_disabled, depth_draw_never;\n"
+                         "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n";
+        if (close)
+            c += "void vertex() {\n"
+                 "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
+                 "  POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n"
+                 "}\n";
+        c += "void fragment() {\n  ALBEDO = to_linear(COLOR.rgb);\n  ALPHA = COLOR.a;\n}\n";
+        sh->set_code(c.c_str());
+        m[close].instantiate();
+        m[close]->set_shader(sh);
+    }
+    return m[close];
+}
+
+// d3d_DrawLineSystem: lines in the system's space, colour as is, alpha x the object's alpha, no fog, no texture
+static void draw_lines(uint32_t o)
+{
+    uint32_t flags = g32(o + OB_FLAGS);
+    int close = (flags & FLAG_REALLYCLOSE) != 0;
+    float oa = g8(o + OB_COLOR + 3) / 255.0f;
+    PackedVector3Array v;
+    PackedColorArray col;
+    uint32_t head = o + LS_HEAD, n = 0;
+    AABB box;
+    for (uint32_t l = g32(head + LL_NEXT); (l != head) && (l != 0) && (n < 65536); l = g32(l + LL_NEXT), n++)
+    {
+        for (int k = 0; k < 2; k++)
+        {
+            uint32_t pt = l + k * 0x1c;
+            Vector3 p = lt_pos(pt);
+            v.push_back(p);
+            col.push_back(Color(gf(pt + 0x0c), gf(pt + 0x10), gf(pt + 0x14), gf(pt + 0x18) * oa));
+            if ((n == 0) && (k == 0)) box = AABB(p, Vector3()); else box.expand_to(p);
+        }
+    }
+    sprite_instance &si = gs->lines[o];
+    if (si.mi == NULL)
+    {
+        si.mi = memnew(MeshInstance3D);
+        si.mesh.instantiate();
+        si.mi->set_mesh(si.mesh);
+        (close ? (Node *)gs->camera : (Node *)gs->root)->add_child(si.mi);
+        si.close = close;
+    }
+    else if (si.close != close)
+    {
+        si.mi->get_parent()->remove_child(si.mi);
+        (close ? (Node *)gs->camera : (Node *)gs->root)->add_child(si.mi);
+        si.close = close;
+    }
+    si.mi->set_transform(lt_object_transform(o));
+    si.mesh->clear_surfaces();
+    if (n > 0)
+    {
+        Array arrays;
+        arrays.resize(Mesh::ARRAY_MAX);
+        arrays[Mesh::ARRAY_VERTEX] = v;
+        arrays[Mesh::ARRAY_COLOR] = col;
+        si.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINES, arrays);
+        si.mesh->surface_set_material(0, line_material(close));
+        si.mi->set_custom_aabb(box.grow(1.0f));
+    }
+    si.frame = gs->frame;
+    if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
+}
+
+static void update_lines(uint32_t mw)
+{
+    for_objects(mw, OT_LINESYSTEM, [&](uint32_t o) {
+        uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
+        if (!(flags & FLAG_VISIBLE) || (flags2 & FLAG2_SKYOBJECT)) return;
+        draw_lines(o);
+    });
+    for (auto &kv : gs->lines)
+    {
+        sprite_instance &si = kv.second;
+        if ((si.frame != gs->frame) && si.shown) { si.mi->set_visible(false); si.shown = 0; }
+    }
+}
+
 // the engine keeps a context in 32 bits: handles are 1-based indices into this table
 static std::vector<world_context *> &contexts(void)
 {
@@ -2508,6 +2607,7 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         update_models(ctx->world, sd);
         update_sprites(ctx->world, sd);
         update_particles(ctx->world);
+        update_lines(ctx->world);
     }
 
     if (!gs->shown)
