@@ -470,7 +470,8 @@ int32_t CCALL GetKeyboardType_c(int32_t nTypeFlag)
 /* scripted input (debugging): AVP2_INPUT_SCRIPT=<file>                 */
 /*   <ms> click <x> <y> [right]   <ms> down|up <x> <y> [right]         */
 /*   <ms> move <x> <y>            <ms> key|keydown|keyup <vk>          */
-/*   <ms> quit                                                        */
+/*   <ms> quit                    <ms> close (WM_CLOSE)               */
+/*   <ms> skey|sdown|sup <SDL key name> (also seen by DirectInput)     */
 /* <vk>: hex/decimal number, a letter/digit, or ESCAPE RETURN SPACE    */
 /* UP DOWN LEFT RIGHT TAB F1..F12                                      */
 
@@ -518,6 +519,11 @@ static void load_script(void)
         n = sscanf(line, "%u %15s %63s %d %d", &e.time, e.cmd, arg, &e.b, &e.c);
         if (n < 2 || line[0] == '#') continue;
         if (0 == strncmp(e.cmd, "key", 3)) e.a = parse_vk(arg);
+        else if ((0 == strcmp(e.cmd, "skey")) || (0 == strcmp(e.cmd, "sdown")) || (0 == strcmp(e.cmd, "sup")))
+        {
+            e.a = (int) SDL_GetScancodeFromName(arg);
+            if (e.a == SDL_SCANCODE_UNKNOWN) eprintf("input script: unknown key %s\n", arg);
+        }
         else { e.a = atoi(arg); }
         if ((0 == strcmp(e.cmd, "click") || 0 == strcmp(e.cmd, "down") || 0 == strcmp(e.cmd, "up")) && n >= 5) e.c = 1; else if (0 != strncmp(e.cmd, "key", 3)) e.c = 0;
         script = (script_event *) realloc(script, (script_count + 1) * sizeof(script_event));
@@ -543,6 +549,9 @@ static void script_key(int vk, int down)
     }
     if (focus_window != NULL) post_message(focus_window, down ? WM_KEYDOWN : WM_KEYUP, vk, lparam);
 }
+
+// a key event like the window system's (DirectInput sees it too)
+static void dinput_event_and_key(SDL_Scancode sc, int down);
 
 static void script_mouse(int x, int y, int button, int down)
 {
@@ -576,6 +585,11 @@ static void run_script(void)
         else if (0 == strcmp(e->cmd, "up")) script_mouse(e->a, e->b, e->c, 0);
         else if (0 == strcmp(e->cmd, "click")) { script_mouse(e->a, e->b, e->c, 1); script_mouse(e->a, e->b, e->c, 0); }
         else if (0 == strcmp(e->cmd, "quit")) { eprintf("input script: quit\n"); app_exit(0); }
+        else if (0 == strcmp(e->cmd, "skey")) { dinput_event_and_key((SDL_Scancode) e->a, 1); dinput_event_and_key((SDL_Scancode) e->a, 0); }
+        else if (0 == strcmp(e->cmd, "sdown")) dinput_event_and_key((SDL_Scancode) e->a, 1);
+        else if (0 == strcmp(e->cmd, "sup")) dinput_event_and_key((SDL_Scancode) e->a, 0);
+        // the window's close button (the game shuts down by itself)
+        else if (0 == strcmp(e->cmd, "close")) { if (main_window != NULL) post_message(main_window, WM_CLOSE, 0, 0); }
         else if (0 == strcmp(e->cmd, "mflood"))
         {
             // many mouse motion messages at once, like a high-rate mouse (tests message coalescing)
@@ -644,6 +658,19 @@ static void set_active(int active)
         }
     }
     post_message(main_window, WM_ACTIVATEAPP, active ? 1 : 0, 0);
+}
+
+static void dinput_event_and_key(SDL_Scancode sc, int down)
+{
+    SDL_Event ev;
+    if ((sc <= SDL_SCANCODE_UNKNOWN) || (sc >= SDL_NUM_SCANCODES)) return;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = down ? SDL_KEYDOWN : SDL_KEYUP;
+    ev.key.state = down ? SDL_PRESSED : SDL_RELEASED;
+    ev.key.keysym.scancode = sc;
+    ev.key.keysym.sym = SDL_GetKeyFromScancode(sc);
+    dinput_event(&ev);
+    handle_key(&ev.key, down);
 }
 
 void winapi_process_events(void)

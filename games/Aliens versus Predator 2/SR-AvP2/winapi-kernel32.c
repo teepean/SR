@@ -2121,18 +2121,26 @@ uint32_t CCALL GetCurrentThreadId_c(void)
     return current_thread_id;
 }
 
-static void *thread_main(void *arg)
-{
-    thread_handle *t = (thread_handle *)arg;
-    uint32_t param = t->param, code;
+static thread_local thread_handle *current_thread;
 
-    current_thread_id = t->id;
-    code = call_game(t->start, 1, &param);
+// the thread's handle becomes signalled (WaitForSingleObject on it returns)
+static void thread_finished(thread_handle *t, uint32_t code)
+{
     pthread_mutex_lock(&wait_mutex);
     t->exit_code = code;
     t->finished = 1;
     pthread_cond_broadcast(&wait_cond);
     pthread_mutex_unlock(&wait_mutex);
+}
+
+static void *thread_main(void *arg)
+{
+    thread_handle *t = (thread_handle *)arg;
+    uint32_t param = t->param;
+
+    current_thread_id = t->id;
+    current_thread = t;
+    thread_finished(t, call_game(t->start, 1, &param));
     return NULL;
 }
 
@@ -2192,8 +2200,10 @@ uint32_t CCALL SetThreadPriority_c(void *hThread, int32_t nPriority) { return 1;
 void CCALL ExitThread_c(uint32_t dwExitCode)
 {
     if (GetCurrentThreadId_c() == 1) app_exit(dwExitCode);
-    // the thread's call_game frame is abandoned with it
-    eprintf("ExitThread: thread %u exits (%u)\n", GetCurrentThreadId_c(), dwExitCode);
+    // the thread's call_game frame is abandoned with it. The C runtime's threads always end here
+    // (_endthreadex), so this is what signals their handles.
+    if (winapi_debug) eprintf("ExitThread: thread %u exits (%u)\n", GetCurrentThreadId_c(), dwExitCode);
+    if (current_thread != NULL) thread_finished(current_thread, dwExitCode);
     pthread_exit(NULL);
 }
 

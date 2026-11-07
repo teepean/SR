@@ -173,10 +173,18 @@ void CCALL RenderDLLSetup_c(uint8_t *pStruct)
     if (winapi_debug) eprintf("render: RenderDLLSetup\n");
 }
 
-// the modes the options menu offers (32 and 16 bits; the screen is 32-bit either way)
+// the one device, named like DirectDraw's primary display device in the original
+#define RENDER_DEVICE_NAME "display"
+#define RENDER_DEVICE_DESC "Primary Display Driver"
+
+// the modes the options menu offers (32 and 16 bits; the screen is 32-bit either way). The device is named
+// like the original's DirectDraw primary device: the Graphics page lists only the modes whose internal name
+// is the CardDesc console variable ("display"), and with none listed it crashes on leaving the page.
+// (The page also drops the modes that aren't 4:3.)
 RMode32 * CCALL GetSupportedModes_c(void)
 {
-    static const int sizes[][2] = { { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1280, 960 }, { 1280, 1024 }, { 1600, 1200 } };
+    static const int sizes[][2] = { { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1152, 864 }, { 1280, 960 },
+                                    { 1400, 1050 }, { 1600, 1200 }, { 1920, 1440 }, { 2048, 1536 } };
     RMode32 *head = NULL;
     int i, d;
 
@@ -186,8 +194,8 @@ RMode32 * CCALL GetSupportedModes_c(void)
         {
             RMode32 *m = (RMode32 *)game_calloc(1, sizeof(RMode32));
             m->bHardware = 1;
-            strcpy(m->internalName, "SR-AvP2");
-            strcpy(m->description, "Godot");
+            strcpy(m->internalName, RENDER_DEVICE_NAME);
+            strcpy(m->description, RENDER_DEVICE_DESC);
             m->width = sizes[i][0];
             m->height = sizes[i][1];
             m->bitDepth = d ? 16 : 32;
@@ -224,6 +232,12 @@ int32_t CCALL ren_Init_c(RenderStructInit32 *pInit)
     }
     display_resize(screen_w, screen_h);
     screen = display_pixels;
+    // the device in use goes back into the mode (the engine's current mode: the Graphics page compares it
+    // with the listed modes to select the current one)
+    memset(pInit->mode.internalName, 0, sizeof(pInit->mode.internalName));
+    memset(pInit->mode.description, 0, sizeof(pInit->mode.description));
+    strcpy(pInit->mode.internalName, RENDER_DEVICE_NAME);
+    strcpy(pInit->mode.description, RENDER_DEVICE_DESC);
     *(uint32_t *)(rs + RS_WIDTH) = screen_w;
     *(uint32_t *)(rs + RS_HEIGHT) = screen_h;
     *(uint32_t *)(rs + RS_INITTED) = 1;

@@ -216,3 +216,19 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   window captured with ImageMagick's import; +windowed 1; the prefix needs Proton's vkd3d DLLs for wined3d).
 - Now: m1s1's canyon renders like the original (night, moonlight, lamps); objects (models, sprites, particles,
   the weapon), dynamic lights, sky and fog are next.
+
+### 2026-11-07 — first user test: two fixes
+- The game hung when its window was closed in a level: CGameServerShell's destructor (object.lto) stops its
+  worker threads and waits for their handles (WaitForSingleObject, INFINITE). The DLLs' C runtime ends every
+  thread through _endthreadex -> ExitThread, which ended the pthread without marking the handle finished.
+  ExitThread now signals the thread's handle (and keeps the exit code) like a returning thread.
+- Leaving Options > Graphics crashed (CFolderDisplay::SetRenderer indexing an empty resolution list): the page
+  lists only modes whose internal name is the CardDesc console variable ("display" - DirectDraw's name for the
+  primary device in the original), and ours were "SR-AvP2". GetSupportedModes now names the device "display" /
+  "Primary Display Driver" (more 4:3 sizes too), and Init writes them back into the mode like the original (the
+  engine's current mode, which the page compares with the list to select the current one; without that it
+  selected 640x480x16 and switched to it on leaving). Changing resolution in a level works with Godot: the
+  renderer restarts and render3d rebuilds the world for the new context.
+- AVP2_INPUT_SCRIPT has `close` (WM_CLOSE, like the window's close button) and `skey|sdown|sup <SDL key name>`
+  (synthetic key events through the same path as real keys, so DirectInput sees them). In m1s1 Escape opens
+  the pause menu only after the level start (weapon select, fade-in) - ~30 s after launch here.
