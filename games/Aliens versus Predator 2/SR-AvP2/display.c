@@ -1,7 +1,7 @@
 /**
  *
- *  Game display: the client area of the game window as a 32-bit framebuffer (GDI drawing), presented with
- *  SDL's window surface. Temporary: Godot (LibGodot) takes the window over with the renderer.
+ *  Game display: the client area of the game window as a 32-bit framebuffer (GDI drawing and the renderer's 2D),
+ *  presented by the window system backend (host.h: Godot or SDL).
  *
  */
 
@@ -15,6 +15,7 @@
 #include "config.h"
 #include "platform.h"
 #include "winapi.h"
+#include "host.h"
 
 EXTERN_C_BEGIN
 
@@ -23,44 +24,28 @@ EXTERN_C_BEGIN
 int display_width, display_height;
 uint32_t *display_pixels;
 
-static SDL_Window *window;
+static int created;
 static int dirty;
 static uint32_t last_present;
 
 int display_exists(void)
 {
-    return window != NULL;
+    return created && host_window_exists();
 }
 
 int display_create(const char *title, int width, int height)
 {
-    int scale;
-
-    if (window != NULL)
+    if (created)
     {
         display_resize(width, height);
         display_set_title(title);
         return 1;
     }
-    if (!SDL_WasInit(SDL_INIT_VIDEO) && (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0))
-    {
-        eprintf("Error: SDL video: %s\n", SDL_GetError());
-        return 0;
-    }
-
     display_width = width;
     display_height = height;
     display_pixels = (uint32_t *) calloc((size_t)width * height, sizeof(uint32_t));
-
-    scale = config_get_int("window_scale", 1);
-    if (scale < 1) scale = 1;
-    window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width * scale, height * scale,
-                              SDL_WINDOW_RESIZABLE | (config_get_int("fullscreen", 0) ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
-    if (window == NULL)
-    {
-        eprintf("Error: SDL_CreateWindow: %s\n", SDL_GetError());
-        return 0;
-    }
+    if (!host_create_window(title, width, height)) return 0;
+    created = 1;
     display_present(1);
     return 1;
 }
@@ -73,27 +58,28 @@ void display_resize(int width, int height)
     display_width = width;
     display_height = height;
     display_pixels = (uint32_t *) calloc((size_t)width * height, sizeof(uint32_t));
+    host_resize(width, height);
     dirty = 1;
 }
 
 void display_destroy(void)
 {
-    if (window != NULL) SDL_DestroyWindow(window);
-    window = NULL;
+    if (created) host_destroy_window();
+    created = 0;
 }
 
-// tears SDL down explicitly and exits without running atexit handlers
+// tears the window system down explicitly and exits without running atexit handlers
 void app_exit(int code)
 {
     fflush(NULL);
     display_destroy();
-    SDL_Quit();
+    host_shutdown();
     _exit(code);
 }
 
 void display_set_title(const char *title)
 {
-    if ((window != NULL) && (title != NULL)) SDL_SetWindowTitle(window, title);
+    if (created && (title != NULL)) host_set_title(title);
 }
 
 // debugging: AVP2_DUMP_FRAMES=<existing dir> saves the framebuffer every second
@@ -119,12 +105,13 @@ void display_idle(void)
     uint32_t now = SDL_GetTicks();
 
     heap_check_all();
-    if ((getenv("AVP2_DUMP_FRAMES") != NULL) && (window != NULL) && (now - last >= 1000))
+    if ((getenv("AVP2_DUMP_FRAMES") != NULL) && created && (now - last >= 1000))
     {
         last = now;
         dump_frame();
     }
     display_present(0);
+    if (created) host_pump();
 }
 
 void display_invalidate(void)
@@ -136,21 +123,13 @@ void display_invalidate(void)
 void display_present(int force)
 {
     uint32_t now;
-    SDL_Surface *dst, *src;
 
-    if ((window == NULL) || (display_pixels == NULL)) return;
+    if (!created || (display_pixels == NULL)) return;
     if (!dirty && !force) return;
     now = SDL_GetTicks();
     if (!force && (now - last_present < 8)) return;
 
-    dst = SDL_GetWindowSurface(window);
-    src = SDL_CreateRGBSurfaceWithFormatFrom(display_pixels, display_width, display_height, 32, display_width * 4, SDL_PIXELFORMAT_XRGB8888);
-    if ((dst != NULL) && (src != NULL))
-    {
-        SDL_BlitScaled(src, NULL, dst, NULL);
-        SDL_UpdateWindowSurface(window);
-    }
-    if (src != NULL) SDL_FreeSurface(src);
+    host_present(display_pixels, display_width, display_height);
 
     last_present = now;
     dirty = 0;
@@ -160,24 +139,24 @@ void display_window_to_client(int wx, int wy, int *cx, int *cy)
 {
     int ww, wh;
 
-    if (window == NULL) { *cx = wx; *cy = wy; return; }
-    SDL_GetWindowSize(window, &ww, &wh);
+    if (!created) { *cx = wx; *cy = wy; return; }
+    host_window_size(&ww, &wh);
     *cx = (ww > 0) ? wx * display_width / ww : wx;
     *cy = (wh > 0) ? wy * display_height / wh : wy;
 }
 
 void display_warp_window(int wx, int wy)
 {
-    if (window != NULL) SDL_WarpMouseInWindow(window, wx, wy);
+    if (created) host_warp_mouse(wx, wy);
 }
 
 void display_warp_mouse(int cx, int cy)
 {
     int ww, wh;
 
-    if ((window == NULL) || (display_width <= 0) || (display_height <= 0)) return;
-    SDL_GetWindowSize(window, &ww, &wh);
-    SDL_WarpMouseInWindow(window, cx * ww / display_width, cy * wh / display_height);
+    if (!created || (display_width <= 0) || (display_height <= 0)) return;
+    host_window_size(&ww, &wh);
+    host_warp_mouse(cx * ww / display_width, cy * wh / display_height);
 }
 
 EXTERN_C_END

@@ -28,6 +28,7 @@
 #include "Game-Memory.h"
 #include "ptr32.h"
 #include "display.h"
+#include "host.h"
 #include "peimage.h"
 
 EXTERN_C_BEGIN
@@ -146,6 +147,7 @@ int main(int argc, char *argv[])
 
     winapi_debug = (getenv("AVP2_DEBUG") != NULL) ? atoi(getenv("AVP2_DEBUG")) : 0;
 
+
     // lithtech.exe's image (headers, resources) at its image base: the C runtime and the resource functions read
     // it through GetModuleHandle(NULL), as on Windows (the code is the recompiled one)
     if (pe_image_load("lithtech.exe", 1) != (uint8_t *)(uintptr_t)0x400000)
@@ -153,6 +155,9 @@ int main(int argc, char *argv[])
         eprintf("Error: can't map lithtech.exe at 0x400000 - start the game in its directory\n");
         return 1;
     }
+
+    // the window system: Godot (its window opens now) or SDL
+    host_select();
 
     msvcrt_init();
     winapi_user32_init();

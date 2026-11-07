@@ -177,3 +177,20 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - user32: a focus change cancels the opposite one still queued (SDL reports a short focus loss while the window
   is set up; the engine restarts the renderer on each WM_ACTIVATEAPP(0)).
 - Now: m1s1 runs with the HUD (motion tracker blips move, training messages); the world isn't drawn.
+
+### 2026-11-07 — milestone 2b: Godot owns the window
+- host.h: the window system under user32/dinput/display, two backends. host_godot.cpp: LibGodot (window, the
+  2D framebuffer as a texture on a canvas item - a shader swaps B and R -, input events turned into SDL_Event
+  structures, cursors, mouse capture); host.c: SDL (AVP2_HOST=sdl, e.g. with SDL_VIDEODRIVER=offscreen).
+  One Godot frame (GodotInstance::iteration) per SwapBuffers, vsync paces it; while the game only processes
+  messages (loading) a frame every 100 ms.
+- libgodot is dlopen'ed (RTLD_LOCAL | RTLD_DEEPBIND) and must be built with godot/libgodot.map (only the
+  libgodot_* entry points exported): Godot's statically linked libstdc++ exports STB_GNU_UNIQUE symbols
+  (num_get<char>::id) that the dynamic linker unifies with the system libstdc++'s even across DEEPBIND -
+  glslang crashed reading a float. godot/build_libgodot.sh builds it and godot-cpp.
+- godot-cpp: no godot types as statics (their constructors call into the engine before it exists); RTTI
+  for host_godot.cpp (godot-cpp's postinitialize uses dynamic_cast); Godot's --path changes the current
+  directory (restored).
+- The engine draws from other threads too (loading screen); Godot is only called on the main thread - other
+  threads' frames and window changes wait for it.
+- AVP2_DUMP_GODOT=<dir> saves Godot's picture (GPU readback) every 2 s.

@@ -64,4 +64,27 @@ if 'PATH_LIB' in os.environ:
 
 arch_objs = SConscript('x64/SConscript', exports='device env')
 
-env.Program('SR-AvP2' + ('-x64' if device == 'pc64-linux' else ''), Glob('*.c') + arch_objs)
+# Godot (LibGodot) as the window system and 3D renderer: host_godot.cpp with godot-cpp
+# (GODOT_CPP=<godot-cpp checkout with bin/libgodot-cpp.*.a built for the libgodot used>). libgodot itself is
+# loaded at run time (dlopen), see host_godot.cpp.
+godot_objs = []
+godot_cpp = os.environ.get('GODOT_CPP', '/home/teemu/sorsa/godot-cpp')
+godot_lib = None
+if device == 'pc64-linux' and os.path.isdir(godot_cpp):
+    for name in ['libgodot-cpp.linux.template_release.x86_64.a', 'libgodot-cpp.linux.template_debug.x86_64.a']:
+        if os.path.exists(os.path.join(godot_cpp, 'bin', name)):
+            godot_lib = os.path.join(godot_cpp, 'bin', name)
+            break
+if godot_lib is not None:
+    env.Append(CPPDEFINES = ['HAVE_GODOT'])
+    genv = env.Clone()
+    # godot-cpp uses dynamic_cast (the rest of the runtime is built without RTTI)
+    genv['CCFLAGS'] = str(genv['CCFLAGS']).replace('-fno-rtti', '')
+    genv.Append(CCFLAGS = ' -std=c++17',
+                CPPPATH = [godot_cpp + '/include', godot_cpp + '/gen/include', godot_cpp + '/gdextension'])
+    godot_objs = [genv.Object('host_godot.cpp'), godot_lib]
+    env.Append(LIBS = ['dl'])
+else:
+    print('Godot (godot-cpp) not found: SDL window only')
+
+env.Program('SR-AvP2' + ('-x64' if device == 'pc64-linux' else ''), Glob('*.c') + arch_objs + godot_objs)

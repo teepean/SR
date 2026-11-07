@@ -17,6 +17,7 @@
 #include "ptr32.h"
 #include "winapi.h"
 #include "dinput.h"
+#include "host.h"
 
 EXTERN_C_BEGIN
 
@@ -418,7 +419,7 @@ uint32_t CCALL IDirectInputDevice2A_Release_c(di_device *lpThis)
     di_device **p;
     if (--lpThis->refs) return lpThis->refs;
     for (p = &devices; *p != NULL; p = &(*p)->next) if (*p == lpThis) { *p = lpThis->next; break; }
-    if ((lpThis->kind == DIDEVTYPE_MOUSE) && lpThis->acquired) SDL_SetRelativeMouseMode(SDL_FALSE);
+    if ((lpThis->kind == DIDEVTYPE_MOUSE) && lpThis->acquired) host_set_relative_mouse(0);
     lpThis->lpVtbl = NULL;
     game_free(lpThis);
     return 0;
@@ -531,7 +532,7 @@ uint32_t CCALL IDirectInputDevice2A_Acquire_c(di_device *lpThis)
     lpThis->acquired = 1;
     // the game reads the mouse relatively (mouse look, its own menu cursor)
     if ((lpThis->kind == DIDEVTYPE_MOUSE) && (getenv("SDL_VIDEODRIVER") == NULL || strcmp(getenv("SDL_VIDEODRIVER"), "offscreen") != 0))
-        SDL_SetRelativeMouseMode(SDL_TRUE);
+        host_set_relative_mouse(1);
     return DI_OK;
 }
 
@@ -540,7 +541,7 @@ uint32_t CCALL IDirectInputDevice2A_Unacquire_c(di_device *lpThis)
     if (!lpThis->acquired) return DI_NOEFFECT;
     lpThis->acquired = 0;
     lpThis->q_count = 0;
-    if (lpThis->kind == DIDEVTYPE_MOUSE) SDL_SetRelativeMouseMode(SDL_FALSE);
+    if (lpThis->kind == DIDEVTYPE_MOUSE) host_set_relative_mouse(0);
     return DI_OK;
 }
 

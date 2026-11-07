@@ -1,0 +1,20 @@
+; The embedded engine's project (LibGodot, host_godot.cpp): the window, the 2D picture and the 3D renderer
+; are set up from code; this only gives Godot a main scene and the window's defaults.
+config_version=5
+
+[application]
+config/name="SR-AvP2"
+config/auto_accept_quit=false
+run/main_scene="res://main.tscn"
+
+[debug]
+file_logging/enable_file_logging=false
+
+[display]
+window/size/viewport_width=640
+window/size/viewport_height=480
+window/size/resizable=true
+window/vsync/vsync_mode=1
+
+[rendering]
+renderer/rendering_method="forward_plus"

@@ -7,3 +7,7 @@ SR-AvP2.exe
 x64/*/*.asm
 x64/*/*.inc
 !x64/*/extern.inc
+# LibGodot (a build of Godot with library_type=shared_library), next to the executable
+libgodot.so
+# Godot's cache in the embedded project
+godot/.godot/

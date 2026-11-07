@@ -1,0 +1,10 @@
+/* libgodot for SR-AvP2: export only the embedding entry points. Godot links libstdc++ and its third-party
+   libraries statically; exported, they interpose (or are interposed by) the host's copies - libstdc++'s
+   STB_GNU_UNIQUE locale ids even across RTLD_DEEPBIND. */
+{
+  global:
+    libgodot_create_godot_instance;
+    libgodot_destroy_godot_instance;
+  local:
+    *;
+};

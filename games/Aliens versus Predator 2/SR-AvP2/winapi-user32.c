@@ -18,6 +18,7 @@
 #include "display.h"
 #include "dinput.h"
 #include "peimage.h"
+#include "host.h"
 
 #include "winapi.h"
 #include "winapi-gdi32.h"
@@ -151,7 +152,7 @@ static void post_message(void *hwnd, uint32_t msg, uint32_t wparam, uint32_t lpa
             if ((q->message >= WM_LBUTTONDOWN) && (q->message <= WM_MBUTTONDBLCLK)) break;  // keep order around clicks
             if ((q->message == WM_MOUSEMOVE) && (q->hwnd == hwnd))
             {
-                SDL_GetMouseState(&mx, &my);
+                host_mouse_state(&mx, &my);
                 q->wParam = wparam;
                 q->lParam = lparam;
                 q->time = winapi_get_ticks();
@@ -170,7 +171,7 @@ static void post_message(void *hwnd, uint32_t msg, uint32_t wparam, uint32_t lpa
     m = &queue[(queue_head + queue_count) % QUEUE_SIZE];
     queue_count++;
 
-    SDL_GetMouseState(&mx, &my);
+    host_mouse_state(&mx, &my);
     m->hwnd = hwnd;
     m->message = msg;
     m->wParam = wparam;
@@ -309,8 +310,7 @@ static int vk_to_char(uint32_t vk, int shift, int caps)
 
 static void update_modifier_vks(void)
 {
-    SDL_Keymod mod = SDL_GetModState();
-    const uint8_t *keys = SDL_GetKeyboardState(NULL);
+    const uint8_t *keys = host_keyboard_state();
 
     key_state[0xA0] = keys[SDL_SCANCODE_LSHIFT] ? 0x80 : 0;
     key_state[0xA1] = keys[SDL_SCANCODE_RSHIFT] ? 0x80 : 0;
@@ -321,8 +321,7 @@ static void update_modifier_vks(void)
     key_state[0x10] = (key_state[0xA0] | key_state[0xA1]) | (key_state[0x10] & 1);
     key_state[0x11] = (key_state[0xA2] | key_state[0xA3]) | (key_state[0x11] & 1);
     key_state[0x12] = (key_state[0xA4] | key_state[0xA5]) | (key_state[0x12] & 1);
-    key_state[0x14] = (key_state[0x14] & 0x80) | ((mod & KMOD_CAPS) ? 1 : 0);
-    key_state[0x90] = (key_state[0x90] & 0x80) | ((mod & KMOD_NUM) ? 1 : 0);
+    // Caps Lock and Num Lock keep the toggle state handle_key gives them
 }
 
 static void handle_key(SDL_KeyboardEvent *ev, int down)
@@ -338,11 +337,7 @@ static void handle_key(SDL_KeyboardEvent *ev, int down)
     // Alt+Enter: toggle full screen (handled here, not passed to the game)
     if (down && (k->vk == 0x0D) && (ev->keysym.mod & KMOD_ALT))
     {
-        SDL_Window *sw = SDL_GetWindowFromID(ev->windowID);
-        if (sw != NULL)
-        {
-            SDL_SetWindowFullscreen(sw, (SDL_GetWindowFlags(sw) & SDL_WINDOW_FULLSCREEN_DESKTOP) ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
-        }
+        host_toggle_fullscreen();
         return;
     }
 
@@ -401,7 +396,7 @@ int16_t CCALL GetAsyncKeyState_c(int32_t nVirtKey)
     // mouse buttons
     if (vk >= 1 && vk <= 4)
     {
-        uint32_t b = SDL_GetMouseState(NULL, NULL);
+        uint32_t b = host_mouse_state(NULL, NULL);
         if (script_buttons & MK_LBUTTON) b |= SDL_BUTTON_LMASK;
         if (script_buttons & MK_RBUTTON) b |= SDL_BUTTON_RMASK;
         int down = (vk == 1) ? (b & SDL_BUTTON_LMASK) : (vk == 2) ? (b & SDL_BUTTON_RMASK) : (vk == 4) ? (b & SDL_BUTTON_MMASK) : 0;
@@ -594,7 +589,7 @@ static void run_script(void)
         {
             int x, y, wx, wy, down = (e->cmd[1] == 'd');
             script_mouse_active = 0;
-            SDL_GetMouseState(&wx, &wy);
+            host_mouse_state(&wx, &wy);
             display_window_to_client(wx, wy, &x, &y);
             if (down) script_buttons |= MK_LBUTTON; else script_buttons &= ~MK_LBUTTON;
             if (main_window != NULL) post_message(main_window, down ? WM_LBUTTONDOWN : WM_LBUTTONUP, script_buttons, ((uint32_t)(uint16_t)y << 16) | (uint16_t)x);
@@ -611,12 +606,12 @@ static int cursor_show_count;
 
 static void update_cursor_visibility(void)
 {
-    SDL_ShowCursor((cursor_show_count >= 0) ? SDL_ENABLE : SDL_DISABLE);
+    host_show_cursor(cursor_show_count >= 0);
 }
 
 static uint32_t mouse_wparam(void)
 {
-    uint32_t b = SDL_GetMouseState(NULL, NULL);
+    uint32_t b = host_mouse_state(NULL, NULL);
     uint32_t w = script_buttons;
     if (b & SDL_BUTTON_LMASK) w |= MK_LBUTTON;
     if (b & SDL_BUTTON_RMASK) w |= MK_RBUTTON;
@@ -656,7 +651,7 @@ void winapi_process_events(void)
     SDL_Event ev;
     int x, y;
 
-    while (SDL_PollEvent(&ev))
+    while (host_poll_event(&ev))
     {
         dinput_event(&ev);
         switch (ev.type)
@@ -1032,16 +1027,9 @@ void * CCALL GetDesktopWindow_c(void)
     static window *desktop;
     if (desktop == NULL)
     {
-        SDL_DisplayMode mode;
         desktop = (window *) game_calloc(1, sizeof(window));
         desktop->magic = WINDOW_MAGIC;
-        desktop->width = 1920;
-        desktop->height = 1080;
-        if (SDL_GetDesktopDisplayMode(0, &mode) == 0)
-        {
-            desktop->width = mode.w;
-            desktop->height = mode.h;
-        }
+        host_desktop_size(&desktop->width, &desktop->height);
         strcpy(desktop->title, "Desktop");
     }
     return desktop;
@@ -1170,7 +1158,7 @@ uint32_t CCALL EndPaint_c(void *hWnd, const paintstruct *lpPaint)
 typedef struct {
     uint32_t magic;
     uint32_t system_id;         // IDC_* of a system cursor, 0 for a cursor from resources
-    SDL_Cursor *sdl;
+    void *host;                 // the window system's cursor
     int32_t hot_x, hot_y, width, height;
 } win_cursor;
 
@@ -1186,13 +1174,13 @@ static uint32_t rd16u(const uint8_t *p) { return p[0] | (p[1] << 8); }
 static uint32_t rd32u(const uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
 
 // a cursor resource (RT_CURSOR): hotspot, then a DIB of double height (XOR image above the AND mask)
-static SDL_Cursor *cursor_from_dib(const uint8_t *data, uint32_t size, int32_t *hot_x, int32_t *hot_y, int32_t *pw, int32_t *ph)
+static void *cursor_from_dib(const uint8_t *data, uint32_t size, int32_t *hot_x, int32_t *hot_y, int32_t *pw, int32_t *ph)
 {
     const uint8_t *bi = data + 4, *colors, *xor_bits, *and_bits;
     uint32_t hdr, ncolors, xor_pitch, and_pitch;
     int32_t w, h, bpp, x, y;
-    SDL_Surface *surf;
-    SDL_Cursor *c;
+    uint32_t *argb;
+    void *c;
 
     if (size < 4 + 40) return NULL;
     *hot_x = (int32_t)rd16u(data);
@@ -1211,14 +1199,14 @@ static SDL_Cursor *cursor_from_dib(const uint8_t *data, uint32_t size, int32_t *
     and_pitch = ((w + 31) / 32) * 4;
     if (and_bits + and_pitch * h > data + size) return NULL;
 
-    surf = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
-    if (surf == NULL) return NULL;
+    argb = (uint32_t *) malloc((size_t)w * h * 4);
+    if (argb == NULL) return NULL;
     for (y = 0; y < h; y++)
     {
         // DIB rows are bottom-up
         const uint8_t *xr = xor_bits + xor_pitch * (h - 1 - y);
         const uint8_t *ar = and_bits + and_pitch * (h - 1 - y);
-        uint32_t *out = (uint32_t *)((uint8_t *)surf->pixels + surf->pitch * y);
+        uint32_t *out = argb + w * y;
         for (x = 0; x < w; x++)
         {
             uint32_t rgb, a = 0xff, mask = (ar[x >> 3] >> (7 - (x & 7))) & 1;
@@ -1240,8 +1228,8 @@ static SDL_Cursor *cursor_from_dib(const uint8_t *data, uint32_t size, int32_t *
             out[x] = (a << 24) | rgb;
         }
     }
-    c = SDL_CreateColorCursor(surf, *hot_x, *hot_y);
-    SDL_FreeSurface(surf);
+    c = host_create_cursor(argb, w, h, *hot_x, *hot_y);
+    free(argb);
     *pw = w;
     *ph = h;
     return c;
@@ -1271,7 +1259,7 @@ static win_cursor *system_cursor(uint32_t id)
     {
         cache[i] = new_cursor();
         cache[i]->system_id = map[i].id;
-        cache[i]->sdl = SDL_CreateSystemCursor(map[i].sdl);
+        cache[i]->host = host_system_cursor(map[i].sdl);
     }
     return cache[i];
 }
@@ -1295,8 +1283,8 @@ static win_cursor *load_cursor_resource(void *hInstance, const char *name)
     cur = (const uint8_t *)pe_resource_data(image, e, &size);
 
     c = new_cursor();
-    c->sdl = cursor_from_dib(cur, size, &c->hot_x, &c->hot_y, &c->width, &c->height);
-    if (winapi_debug) eprintf("cursor resource %p: %dx%d hotspot %d,%d%s\n", (void *)name, c->width, c->height, c->hot_x, c->hot_y, (c->sdl != NULL) ? "" : " (no SDL cursor)");
+    c->host = cursor_from_dib(cur, size, &c->hot_x, &c->hot_y, &c->width, &c->height);
+    if (winapi_debug) eprintf("cursor resource %p: %dx%d hotspot %d,%d%s\n", (void *)name, c->width, c->height, c->hot_x, c->hot_y, (c->host != NULL) ? "" : " (no host cursor)");
     return c;
 }
 
@@ -1342,7 +1330,7 @@ void * CCALL SetCursor_c(void *hCursor)
 {
     win_cursor *old = current_cursor, *c = get_cursor(hCursor);
     current_cursor = c;
-    if ((c != NULL) && (c->sdl != NULL)) SDL_SetCursor(c->sdl);
+    if ((c != NULL) && (c->host != NULL)) host_set_cursor(c->host);
     return old;
 }
 
@@ -1365,7 +1353,7 @@ uint32_t CCALL GetCursorPos_c(win_point *lpPoint)
         lpPoint->y = script_mouse_y;
         return 1;
     }
-    SDL_GetMouseState(&x, &y);
+    host_mouse_state(&x, &y);
     // window coordinates -> client coordinates of the (letterboxed, scaled) picture
     display_window_to_client(x, y, &x, &y);
     if (x < 0) x = 0;
