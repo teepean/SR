@@ -20,7 +20,9 @@
  *  mesh per system, rebuilt each frame).
  *  The sky (SceneDesc's sky objects seen from the sky box, behind the world, in their order) and fog (the engine's
  *  Fog* console variables: by distance, the sky's by depth from the sky camera).
- *  To do: poly grids, lines, canvases, dynamic light on the world, animated light, shadow-map light animations,
+ *  Dynamic lights on the world (per pixel, d3d.ren's formulas: LMDynamic's added light texture on lightmapped polies,
+ *  vertex light on the others).
+ *  To do: poly grids, lines, canvases, animated light, shadow-map light animations,
  *  vertical fog, detail and environment textures, model LODs and static lights for models, sprite-animated
  *  surfaces (SURF_SPRITEANIMATE).
  *
@@ -35,6 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <map>
+#include <algorithm>
 #include <vector>
 #include <string>
 
@@ -376,6 +379,12 @@ enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
 // the fog (global shader parameters, set each frame from the console variables FogEnable, FogNearZ, FogFarZ,
 // FogR/G/B, SkyFogNearZ, SkyFogFarZ)
 #define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\n"
+// the dynamic lights that light the world: a 32 x 2 float texture (position (Godot), radius; colour 0-255), count
+#define DL_MAX 32
+#define DL_UNIFORMS "global uniform sampler2D lt_lights;\nglobal uniform vec4 lt_light_count;\n"
+
+static Ref<Image> dl_image;
+static Ref<ImageTexture> dl_texture;
 
 static void fog_init(void)
 {
@@ -383,6 +392,10 @@ static void fog_init(void)
     rs->global_shader_parameter_add("lt_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 2000, 0));
     rs->global_shader_parameter_add("lt_fog_color", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(1, 1, 1, 1));
     rs->global_shader_parameter_add("lt_sky_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 2000, 0, 0));
+    dl_image = Image::create_empty(DL_MAX, 2, false, Image::FORMAT_RGBAF);
+    dl_texture = ImageTexture::create_from_image(dl_image);
+    rs->global_shader_parameter_add("lt_lights", RenderingServer::GLOBAL_VAR_TYPE_SAMPLER2D, dl_texture);
+    rs->global_shader_parameter_add("lt_light_count", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 0, 0));
 }
 
 static void fog_update(void)
@@ -413,7 +426,7 @@ static const char *shader_code(int kind)
         std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
             "uniform sampler2D albedo : filter_linear_mipmap_anisotropic, repeat_enable;\n"
             "uniform sampler2D lightmap : filter_linear, repeat_disable;\n"
-            "uniform float use_lightmap = 0.0;\n" + std::string(scales) + FOG_UNIFORMS +
+            "uniform float use_lightmap = 0.0;\n" + std::string(scales) + FOG_UNIFORMS + DL_UNIFORMS +
             "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n";
         // reverse z (near 1, far 0): the really close objects get [0.9, 1]
         if (kind & MAT_REALLYCLOSE)
@@ -430,7 +443,31 @@ static const char *shader_code(int kind)
         c += "void fragment() {\n"
             "  vec4 t = texture(albedo, UV);\n"
             "  vec3 light = (use_lightmap > 0.5) ? texture(lightmap, UV2).rgb * LM_SCALE : COLOR.rgb * VC_SCALE;\n"
-            "  vec3 col = clamp(t.rgb * light, 0.0, 1.0);\n";
+            "  vec3 add = vec3(0.0);\n";
+        // dynamic lights (not on the sky): on lightmapped polies d3d.ren adds a texture of the light (LMDynamic,
+        // BuildDynamicLightmapPixels: (max(c, 127) - 127) x (1 - (in-plane distance / 1.25 r)^2 - (plane distance / r)^2),
+        // not times the surface's texture); on vertex lit polies the vertex colours get (2c - 255) x (1 - d / r)
+        if (!(kind & MAT_SKY))
+            c += "  if (lt_light_count.x > 0.5) {\n"
+                 "    vec3 wp = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
+                 "    vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));\n"
+                 "    for (int i = 0; i < int(lt_light_count.x); i++) {\n"
+                 "      vec4 lp = texelFetch(lt_lights, ivec2(i, 0), 0);\n"
+                 "      vec3 lc = texelFetch(lt_lights, ivec2(i, 1), 0).rgb;\n"
+                 "      vec3 d = lp.xyz - wp;\n"
+                 "      float d2 = dot(d, d);\n"
+                 "      if (d2 >= lp.w * lp.w * 1.5625) continue;\n"
+                 "      if (use_lightmap > 0.5) {\n"
+                 "        float pd = dot(d, n);\n"
+                 "        float a = 1.0 - (d2 - pd * pd) / (lp.w * lp.w * 1.5625) - (pd * pd) / (lp.w * lp.w);\n"
+                 "        if (a > 0.0) add += max(lc - 127.0, vec3(0.0)) / 255.0 * a;\n"
+                 "      } else {\n"
+                 "        float a = 1.0 - sqrt(d2) / lp.w;\n"
+                 "        if (a > 0.0) light += (2.0 * lc - 255.0) / 255.0 * a;\n"
+                 "      }\n"
+                 "    }\n"
+                 "  }\n";
+        c += "  vec3 col = clamp(t.rgb * clamp(light, 0.0, 2.0) + add, 0.0, 1.0);\n";
         if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  col = t.rgb;\n";
         // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
         // surfaces fade to black)
@@ -1468,6 +1505,42 @@ static void update_attachments(uint32_t mw)
     }
 }
 
+// the dynamic lights for the world's shader (the nearest DL_MAX that light the world)
+#define FLAG_ONLYLIGHTOBJECTS (1 << 7)
+
+static void update_world_lights(uint32_t mw)
+{
+    if (dl_image.is_null()) return;
+    Vector3 cam = gs->camera->get_transform().origin;
+    std::vector<std::pair<float, uint32_t>> lights;
+    for_objects(mw, OT_LIGHT, [&](uint32_t l) {
+        uint32_t flags = g32(l + OB_FLAGS);
+        float r = gf(l + DL_RADIUS);
+        if (!(flags & FLAG_VISIBLE) || (flags & FLAG_ONLYLIGHTOBJECTS) || !(r > 0.0f)) return;
+        if ((g8(l + OB_COLOR) == 0) && (g8(l + OB_COLOR + 1) == 0) && (g8(l + OB_COLOR + 2) == 0)) return;
+        float d = (lt_pos(l + OB_POS) - cam).length() - r * 1.25f;
+        if (d < 8000.0f) lights.push_back(std::make_pair(d, l));
+    });
+    std::sort(lights.begin(), lights.end());
+    int n = (lights.size() > DL_MAX) ? DL_MAX : (int)lights.size();
+    for (int i = 0; i < n; i++)
+    {
+        uint32_t l = lights[i].second;
+        Vector3 p = lt_pos(l + OB_POS);
+        dl_image->set_pixel(i, 0, Color(p.x, p.y, p.z, gf(l + DL_RADIUS)));
+        dl_image->set_pixel(i, 1, Color(g8(l + OB_COLOR), g8(l + OB_COLOR + 1), g8(l + OB_COLOR + 2), 0));
+    }
+    if (n > 0) dl_texture->update(dl_image);
+    if ((winapi_debug >= 2) && ((gs->frame % 600) == 300))
+        for (int i = 0; i < n; i++)
+        {
+            uint32_t l = lights[i].second;
+            eprintf("render3d: world light %d: %08x at %.0f %.0f %.0f radius %.0f colour %u %u %u flags %08x\n", i, l, gf(l + OB_POS), gf(l + OB_POS + 4), gf(l + OB_POS + 8),
+                    gf(l + DL_RADIUS), g8(l + OB_COLOR), g8(l + OB_COLOR + 1), g8(l + OB_COLOR + 2), g32(l + OB_FLAGS));
+        }
+    RenderingServer::get_singleton()->global_shader_parameter_set("lt_light_count", Vector4((float)n, 0, 0, 0));
+}
+
 static void update_models(uint32_t mw, uint32_t sd)
 {
     Transform3D cam = gs->camera->get_transform();
@@ -2013,6 +2086,7 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         update_attachments(ctx->world);
         update_world_models(ctx->world);
         update_sky(ctx->world, sd);
+        update_world_lights(ctx->world);
         update_models(ctx->world, sd);
         update_sprites(ctx->world, sd);
         update_particles(ctx->world);

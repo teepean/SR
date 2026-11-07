@@ -273,3 +273,8 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   RenderStruct::GetParameter + GetParameterValueString (the float getter returns in st0); Godot global shader
   parameters. Linear by distance (d3d_CalcDistanceFogAlpha), the sky's by depth (d3d_CalcSkyFogAlpha: m1s1's
   0..150 turns the clouds into the dark blue (8, 16, 24) of the original); additive surfaces fade to black.
+- Dynamic lights on the world (OT_LIGHT without FLAG_ONLYLIGHTOBJECTS; m1s1: the marines' shoulder lamps, radius
+  100): per pixel in the world shader, the nearest 32 in a 32 x 2 float texture (global shader parameter).
+  d3d.ren's formulas: lightmapped polies get an added light texture (LMDynamic: (max(c, 127) - 127) x (1 -
+  (in-plane distance / 1.25 r)^2 - (plane distance / r)^2), not times the surface's texture: BuildDynamicLightmap-
+  Pixels, LMDynamicScale 2.5), vertex lit ones (2c - 255) x (1 - d / r) in their vertex colours.
