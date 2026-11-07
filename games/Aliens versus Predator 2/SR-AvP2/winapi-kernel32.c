@@ -1372,6 +1372,25 @@ static const module_export cshell_exports[] = {
     { NULL, NULL }
 };
 
+extern char object_DllMainCRTStartup[], object_GetServerShellFunctions[], object_GetServerShellVersion[], object_ObjectDLLSetup[], object_SetInstanceHandle[];
+
+static const module_export object_exports[] = {
+    { "GetServerShellFunctions", (void *) object_GetServerShellFunctions },
+    { "GetServerShellVersion", (void *) object_GetServerShellVersion },
+    { "ObjectDLLSetup", (void *) object_ObjectDLLSetup },
+    { "SetInstanceHandle", (void *) object_SetInstanceHandle },
+    { NULL, NULL }
+};
+
+// the engine's server (recompiled; lithtech.exe loads it for local and hosted games)
+extern char server_DllMainCRTStartup[], server_CreateServer[], server_DeleteServer[];
+
+static const module_export server_exports[] = {
+    { "CreateServer", (void *) server_CreateServer },
+    { "DeleteServer", (void *) server_DeleteServer },
+    { NULL, NULL }
+};
+
 // the renderer (render.c): native, replaces d3d.ren
 extern char RenderDLLSetup_asm2c[], GetSupportedModes_asm2c[], FreeModeList_asm2c[];
 
@@ -1385,6 +1404,8 @@ static const module_export render_exports[] = {
 // AvP2's modules: the engine loads the game DLLs from temporary copies (any path, matched by name)
 static module_info modules[] = {
     { 0, "cshell.dll", cshell_exports, (void *) cshell_DllMainCRTStartup, 0, NULL },
+    { 0, "object.lto", object_exports, (void *) object_DllMainCRTStartup, 0, NULL },
+    { 0, "server.dll", server_exports, (void *) server_DllMainCRTStartup, 0, NULL },
     { 0, "d3d.ren", render_exports, NULL, 0, NULL },
 };
 

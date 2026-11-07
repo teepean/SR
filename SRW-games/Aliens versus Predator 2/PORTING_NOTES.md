@@ -163,3 +163,17 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   CoCreateInstance (no classes: DirectMusic's class is asked for).
 - Now: the main menu is drawn (frames dumped with AVP2_DUMP_FRAMES under SDL_VIDEODRIVER=offscreen).
   Starting a game needs server.dll and object.lto (both still original binaries) and the 3D renderer.
+
+### 2026-11-07 — a level runs (no 3D yet)
+- object.lto (server shell + game objects) and server.dll recompiled like CShell.DLL (SRW-object, SRW-server;
+  IDA + enumfuncs roots, CRT memcpy/memmove to the runtime, exports prefixed object_/server_). lithtech.exe
+  runs the server itself for single player; server.dll is the dedicated server's (AVP2Serv.exe).
+- SRW: x87 `ftst` (pass-through).
+- Roots, third round (tools/mkroots.py): code addresses taken by code (`mov [x], offset thunk`, e.g. the vcall
+  thunks of member function pointers - CHudMgr's draw functions) were emitted as data bytes. Relocations inside
+  .text whose target is an IDA instruction head are roots now (jump tables in .text are IDA data heads, their
+  case labels instruction heads); for lithtech.exe from relocations.csv.
+- `+runworld Worlds\SinglePlayer\m1s1` on the command line starts a level (GameClientShell.cpp).
+- user32: a focus change cancels the opposite one still queued (SDL reports a short focus loss while the window
+  is set up; the engine restarts the renderer on each WM_ACTIVATEAPP(0)).
+- Now: m1s1 runs with the HUD (motion tracker blips move, training messages); the world isn't drawn.

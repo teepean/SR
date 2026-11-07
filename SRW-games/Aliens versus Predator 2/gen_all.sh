@@ -12,7 +12,7 @@ REPO="$(cd "$HERE/../.." && pwd)"
 I76="$REPO/SRW-games/Interstate 76"
 RETAIL="${RETAIL:-/home/teemu/sorsa/avp2work/retail/avp2-eu}"
 WORK="${WORK:-/home/teemu/sorsa/avp2work}"
-SRWBIN="${SRW64:-/home/teemu/sorsa/avp2work/srw64-build-001/SRW64.exe}"
+SRWBIN="${SRW64:-/home/teemu/sorsa/avp2work/srw64-build-002/SRW64.exe}"
 DEST="$REPO/games/Aliens versus Predator 2/SR-AvP2/x64"
 
 n=1
@@ -47,3 +47,5 @@ want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 
 want lithtech && gen SRW-lithtech lithtech.exe lithtech
 want cshell   && gen SRW-cshell   CShell.DLL   cshell
+want server   && gen SRW-server   server.dll   server
+want object   && gen SRW-object   Object.LTO   object

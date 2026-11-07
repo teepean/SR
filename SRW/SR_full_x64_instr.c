@@ -1616,6 +1616,7 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
         case UD_Ifprem:
         case UD_Ifprem1:
         case UD_Ifxam:
+        case UD_Iftst:
         case UD_Ifscale:
         case UD_If2xm1:
         case UD_Ifsincos:

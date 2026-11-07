@@ -628,12 +628,27 @@ static uint32_t mouse_wparam(void)
 
 static void set_active(int active)
 {
+    int i;
+
     if (active == app_active) return;
     app_active = active;
-    if (main_window != NULL)
+    if (winapi_debug) eprintf("user32: application %s\n", active ? "activated" : "deactivated");
+    if (main_window == NULL) return;
+
+    // the opposite change still waiting in the queue: both cancel (the engine restarts its renderer on every
+    // deactivation, and the window system reports a short loss of focus while the window is being set up)
+    for (i = queue_count - 1; i >= 0; i--)
     {
-        post_message(main_window, WM_ACTIVATEAPP, active ? 1 : 0, 0);
+        win_msg *q = &queue[(queue_head + i) % QUEUE_SIZE];
+        if ((q->message == WM_ACTIVATEAPP) && (q->hwnd == main_window))
+        {
+            int j;
+            for (j = i; j < queue_count - 1; j++) queue[(queue_head + j) % QUEUE_SIZE] = queue[(queue_head + j + 1) % QUEUE_SIZE];
+            queue_count--;
+            return;
+        }
     }
+    post_message(main_window, WM_ACTIVATEAPP, active ? 1 : 0, 0);
 }
 
 void winapi_process_events(void)
