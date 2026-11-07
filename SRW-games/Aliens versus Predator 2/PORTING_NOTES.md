@@ -285,3 +285,17 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   UpdatePolyAnimatedLightmap (the first layer that is on as is, unless it follows a base layer; the others times
   their blend, saturating), vertex colours like d3d_AddLightAnimVertexColors (the frames that are on, unscaled).
 - 640x480 runs at ~185 frames/s here (RTX 3090).
+
+### 2026-11-07 — sound (Miles on SDL)
+- miles.c implements the 89 mss32.dll imports on the SDL mixer of the Interstate '76 port (mixer.c, 44.1 kHz stereo;
+  AVP2_AUDIO_DUMP=<file> writes the output as raw S16). The engine (AVP2-Reconstructed src/sound: soundmgr.cpp,
+  soundinstance.cpp, soundbuffer.cpp) brackets every call with AIL_lock/AIL_unlock (the mixer lock). AvP2 names no 3D
+  provider, so every sound is a 2D "software" sample whose volume and pan the engine computes; a provider ("Miles 2D
+  Stereo Positional Audio", the name the engine maps to its Miles 3D id) with simple 3D samples is listed anyway.
+- Samples: 8/16-bit PCM from AIL_set_sample_file (a WAV image) or AIL_set_sample_address + type, IMA ADPCM decoded
+  when set; playback rate, volume and pan 0-127, loop blocks and counts, master volume. Handles are game memory.
+- Streams: AIL_open_stream gets "\\\\<handle>" - the engine's file handle at a WAV file inside a REZ - read whole.
+- AIL_decompress_ADPCM / AIL_decompress_ASI (MP3, minimp3) return PCM WAV images in game memory.
+- m1s1: ambience loops and the motion tracker's beeps (pitch and volume by distance) play. Music ("musictype ima" =
+  DirectMusic, the Interactive Music Architecture) is still silent: CoCreateInstance has no DirectMusic classes.
+- Tests run with SDL_AUDIODRIVER=disk (SDL_DISKAUDIOFILE=/dev/null) so nothing is heard.
