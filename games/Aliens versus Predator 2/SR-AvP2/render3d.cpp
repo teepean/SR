@@ -23,7 +23,10 @@
  *  Dynamic lights on the world (per pixel, d3d.ren's formulas: LMDynamic's added light texture on lightmapped polies,
  *  vertex light on the others).
  *  Changing light animations (flickering lights: single frame, the blend changes) as layers the shader adds.
- *  To do: poly grids, lines, canvases, multi-frame light animations, shadow-map light animations,
+ *  The 3D picture is drawn in a SubViewport and put under the game's 2D frame through d3d.ren's last passes
+ *  (light scale or InvertHack, light add); DrawSky and LMFullBright (vision modes) are followed.
+ *  To do: per-texture state changes (vision modes' texture states), poly grids, lines, canvases, multi-frame light
+ *  animations, shadow-map light animations,
  *  vertical fog, detail and environment textures, model LODs and static lights for models, sprite-animated
  *  surfaces (SURF_SPRITEANIMATE).
  *
@@ -56,6 +59,10 @@
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/image_texture.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
+#include <godot_cpp/classes/sub_viewport.hpp>
+#include <godot_cpp/classes/canvas_layer.hpp>
+#include <godot_cpp/classes/texture_rect.hpp>
+#include <godot_cpp/classes/viewport_texture.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
@@ -195,6 +202,10 @@ struct sprite_instance
 
 struct godot_scene
 {
+    SubViewport *viewport;      // the 3D picture
+    CanvasLayer *layer;
+    TextureRect *picture;       // ... on the window, through the post passes
+    Ref<ShaderMaterial> post;
     Node3D *root;
     Camera3D *camera;
     world_context *current;
@@ -226,8 +237,39 @@ static int ready(void)
         gs->frame = 0;
         gs->shown = 0;
         SceneTree *tree = Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
+        // the 3D picture is drawn in a viewport of its own and put on the window (under the game's 2D frame) through
+        // the scene's last passes: d3d.ren's light scale (or the inverted picture, InvertHack) and light add
+        gs->viewport = memnew(SubViewport);
+        gs->viewport->set_update_mode(SubViewport::UPDATE_ALWAYS);
+        gs->viewport->set_size(tree->get_root()->get_size());
+        tree->get_root()->add_child(gs->viewport);
+        gs->layer = memnew(CanvasLayer);
+        gs->layer->set_layer(-1);
+        tree->get_root()->add_child(gs->layer);
+        gs->picture = memnew(TextureRect);
+        gs->picture->set_texture(gs->viewport->get_texture());
+        gs->picture->set_expand_mode(TextureRect::EXPAND_IGNORE_SIZE);
+        gs->picture->set_stretch_mode(TextureRect::STRETCH_SCALE);
+        gs->picture->set_position(Vector2(0, 0));
+        gs->picture->set_size(tree->get_root()->get_size());
+        Ref<Shader> post;
+        post.instantiate();
+        post->set_code("shader_type canvas_item;\n"
+                       "uniform vec3 scale = vec3(1.0);\n"
+                       "uniform vec3 add = vec3(0.0);\n"
+                       "uniform float invert = 0.0;\n"
+                       "void fragment() {\n"
+                       "  vec3 c = texture(TEXTURE, UV).rgb;\n"
+                       "  c = (invert > 0.5) ? scale * (vec3(1.0) - c) : min(c * scale, vec3(1.0));\n"
+                       "  COLOR = vec4(min(c + add, vec3(1.0)), 1.0);\n"
+                       "}\n");
+        gs->post.instantiate();
+        gs->post->set_shader(post);
+        gs->picture->set_material(gs->post);
+        gs->layer->add_child(gs->picture);
+        gs->picture->set_visible(false);
         gs->root = memnew(Node3D);
-        tree->get_root()->add_child(gs->root);
+        gs->viewport->add_child(gs->root);
         gs->sky_root = memnew(Node3D);
         gs->root->add_child(gs->sky_root);
         gs->camera = memnew(Camera3D);
@@ -380,7 +422,7 @@ enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
 
 // the fog (global shader parameters, set each frame from the console variables FogEnable, FogNearZ, FogFarZ,
 // FogR/G/B, SkyFogNearZ, SkyFogFarZ)
-#define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\n"
+#define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n"
 // the dynamic lights that light the world: a 32 x 2 float texture (position (Godot), radius; colour 0-255), count
 #define DL_MAX 32
 #define DL_UNIFORMS "global uniform sampler2D lt_lights;\nglobal uniform vec4 lt_light_count;\nglobal uniform sampler2D lt_anims;\n"
@@ -400,6 +442,7 @@ static void fog_init(void)
     rs->global_shader_parameter_add("lt_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 2000, 0));
     rs->global_shader_parameter_add("lt_fog_color", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(1, 1, 1, 1));
     rs->global_shader_parameter_add("lt_sky_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 2000, 0, 0));
+    rs->global_shader_parameter_add("lt_misc", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 0, 0));     // LMFullBright
     dl_image = Image::create_empty(DL_MAX, 2, false, Image::FORMAT_RGBAF);
     dl_texture = ImageTexture::create_from_image(dl_image);
     rs->global_shader_parameter_add("lt_lights", RenderingServer::GLOBAL_VAR_TYPE_SAMPLER2D, dl_texture);
@@ -418,6 +461,48 @@ static void fog_update(void)
     rs->global_shader_parameter_set("lt_fog", Vector4(on ? 1.0f : 0.0f, cvar("FogNearZ", 0), cvar("FogFarZ", 2000), 0));
     rs->global_shader_parameter_set("lt_fog_color", Vector4(cvar("FogR", 255) / 255.0f, cvar("FogG", 255) / 255.0f, cvar("FogB", 255) / 255.0f, 1));
     rs->global_shader_parameter_set("lt_sky_fog", Vector4(cvar("SkyFogNearZ", 0), cvar("SkyFogFarZ", 2000), 0, 0));
+}
+
+// the scene's last passes (d3d_DrawLightScalePoly with InvertHack, d3d_DrawLightAddPoly), DrawSky, LMFullBright
+static int cv_drawsky = 1, cv_invert = 0, cv_fullbright = 0;
+
+static void post_update(uint32_t sd)
+{
+    static int n;
+    if ((n++ % 15) == 0)
+    {
+        cv_drawsky = cvar("DrawSky", 1) != 0.0f;
+        cv_invert = cvar("InvertHack", 0) != 0.0f;
+        int fb = cvar("LMFullBright", 0) != 0.0f;
+        if (fb != cv_fullbright)
+        {
+            cv_fullbright = fb;
+            RenderingServer::get_singleton()->global_shader_parameter_set("lt_misc", Vector4((float)fb, 0, 0, 0));
+        }
+    }
+    // the light scale: the picture times the scale (DESTCOLOR x SRCCOLOR with the scale x 127.5), or the inverted
+    // picture times it (INVDESTCOLOR with the scale x 255)
+    Vector3 scale(gf(sd + 0x50), gf(sd + 0x54), gf(sd + 0x58)), add(gf(sd + 0x74), gf(sd + 0x78), gf(sd + 0x7c));
+    for (int i = 0; i < 3; i++)
+    {
+        float f = cv_invert ? scale[i] * 255.0f : scale[i] * 127.5f;
+        f = (f < 0.0f) ? 0.0f : ((f > 255.0f) ? 255.0f : floorf(f));
+        scale[i] = cv_invert ? f / 255.0f : 2.0f * f / 255.0f;
+        if ((gf(sd + 0x50 + 4 * i) > 0.99f) && (gf(sd + 0x50 + 4 * i) < 1.01f) && !cv_invert) scale[i] = 1.0f;
+        add[i] = (add[i] < 0.001f) ? 0.0f : floorf(fminf(add[i], 1.0f) * 255.0f) / 255.0f;
+    }
+    gs->post->set_shader_parameter("scale", scale);
+    gs->post->set_shader_parameter("add", add);
+    gs->post->set_shader_parameter("invert", cv_invert ? 1.0f : 0.0f);
+    // the picture follows the window's size
+    SceneTree *tree = Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
+    Vector2i size = tree->get_root()->get_size();
+    if (gs->viewport->get_size() != size)
+    {
+        gs->viewport->set_size(size);
+        gs->picture->set_size(Vector2(size));
+    }
+    gs->sky_root->set_visible(cv_drawsky != 0);
 }
 
 static const char *shader_code(int kind)
@@ -473,7 +558,7 @@ static const char *shader_code(int kind)
                  "      first = false;\n"
                  "      light += texture(lightmap, UV2 + vec2(v_lm.x * float(k + 1), 0.0)).rgb * w;\n"
                  "    }\n"
-                 "    light = min(light, vec3(1.0)) * LM_SCALE;\n"
+                 "    light = (lt_misc.x > 0.5) ? vec3(1.0) : min(light, vec3(1.0)) * LM_SCALE;\n"
                  "  } else {\n"
                  "    light = COLOR.rgb;\n"
                  "    for (int k = 0; k < 2; k++) {\n"
@@ -2257,6 +2342,7 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     gs->camera->set_far((farz > 10.0f) ? farz : 10000.0f);
 
     fog_update();
+    post_update(sd);
     if (winapi_debug)
     {
         // frame rate (debugging)
@@ -2291,6 +2377,7 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     if (!gs->shown)
     {
         gs->root->set_visible(true);
+        gs->picture->set_visible(true);
         gs->shown = 1;
     }
     return 1;
@@ -2302,6 +2389,7 @@ extern "C" void r3d_end_frame(int drawn)
     if (!drawn && gs->shown)
     {
         gs->root->set_visible(false);
+        gs->picture->set_visible(false);
         gs->shown = 0;
     }
 }

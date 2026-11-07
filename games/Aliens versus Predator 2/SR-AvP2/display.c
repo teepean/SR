@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <SDL.h>
+#include "sysmem.h"
 #include "display.h"
 #include "config.h"
 #include "platform.h"
@@ -33,6 +34,17 @@ int display_exists(void)
     return created && host_window_exists();
 }
 
+// the frame is in the low 2 GB: the engine gets it as a 32-bit pointer (RenderStruct::LockScreen)
+static uint32_t *frame_alloc(int width, int height)
+{
+    return (uint32_t *) sys_map_low((size_t)width * height * sizeof(uint32_t), -1, 0);
+}
+
+static void frame_free(uint32_t *pixels, int width, int height)
+{
+    if (pixels != NULL) sys_unmap(pixels, (size_t)width * height * sizeof(uint32_t));
+}
+
 int display_create(const char *title, int width, int height)
 {
     if (created)
@@ -43,7 +55,7 @@ int display_create(const char *title, int width, int height)
     }
     display_width = width;
     display_height = height;
-    display_pixels = (uint32_t *) calloc((size_t)width * height, sizeof(uint32_t));
+    display_pixels = frame_alloc(width, height);
     if (!host_create_window(title, width, height)) return 0;
     created = 1;
     display_present(1);
@@ -54,10 +66,10 @@ void display_resize(int width, int height)
 {
     if ((width == display_width) && (height == display_height)) return;
 
-    free(display_pixels);
+    frame_free(display_pixels, display_width, display_height);
     display_width = width;
     display_height = height;
-    display_pixels = (uint32_t *) calloc((size_t)width * height, sizeof(uint32_t));
+    display_pixels = frame_alloc(width, height);
     host_resize(width, height);
     dirty = 1;
 }

@@ -299,3 +299,16 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - m1s1: ambience loops and the motion tracker's beeps (pitch and volume by distance) play. Music ("musictype ima" =
   DirectMusic, the Interactive Music Architecture) is still silent: CoCreateInstance has no DirectMusic classes.
 - Tests run with SDL_AUDIODRIVER=disk (SDL_DISKAUDIOFILE=/dev/null) so nothing is heard.
+
+### 2026-11-07 — vision modes, other campaigns
+- p1s1 (Predator) and a1s1 (Alien) load and play their opening cutscenes (dialogue: MP3 streams); p1s1 plays after
+  the cutscene (V cycles the Predator's vision modes).
+- Vision modes (ClientShellDLL ViewModeMGR.cpp, Attributes/VisionModeButes.txt) set the renderer's console
+  variables InvertHack, DrawSky and LMFullBright, change the fog, and give textures D3D state changes per mode
+  (SharedTexture::m_pStateChange: colour ops, blend modes - not done yet). d3d.ren ends each scene with
+  d3d_DrawLightScalePoly (the picture x the light scale, or the inverted picture with InvertHack) and
+  d3d_DrawLightAddPoly: render3d now draws the 3D picture into a SubViewport shown under the 2D frame (a canvas
+  layer below the host's) through a post shader doing both.
+- Crash fixed: display.c allocated the frame with calloc - for 640x480 above 4 GB - and RenderStruct::LockScreen
+  handed it to the engine truncated to 32 bits (a full-screen fill when the vision mode changed wrote to it). The
+  frame is in low memory now (sys_map_low).
