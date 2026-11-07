@@ -1,0 +1,6 @@
+# relocations Interstate '76's gen_relocs.py heuristics rejected (round values look like constants) - checked by hand
+0x4d2018,0x410000   # __xc table: a C++ static initializer at 0x410000
+0x4c9490,0x4a0000   # vtable slot (relocated neighbours)
+0x4cbae4,0x4a0000   # vtable slot (relocated neighbours)
+0x4ccea8,0x4b4a50   # vtable slot (neighbours 0x4b4a70, 0x4b4ad0); IDA left the target unanalysed
+0x4d8788,0x475950   # console command table entry (name, handler)

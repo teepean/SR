@@ -106,3 +106,28 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   Interstate '76 DLLs; then server.dll.
 - LibGodot: Godot 4.7.2-stable (`/home/teemu/sorsa/godot`), `scons platform=linuxbsd target=template_debug
   library_type=shared_library` -> `bin/libgodot.linuxbsd.template_debug.x86_64.so` (2.5 minutes, 32 cores).
+
+### 2026-11-07 — milestone 2 (first part): the recompiled engine boots to the client shell
+- Code roots: SRW doesn't take the PE entry point (or anything only reachable from it) as code, so WinMain and
+  everything below it was never translated at first. `fixup_interpret_as_code.sci` = every IDA function start
+  + the entry; `global_aliases.sci` loc_4B9F1B = lithtech_start (main.c calls the CRT startup, which runs the
+  C++ constructors and WinMain as on Windows).
+- The statically linked CRT (libcmt, 0x4b73d0-0x4c6775, identified with avp2src's tools/libscan.py against
+  toolchains/msvc-6.00-8966/LIB/libcmt.lib) is translated as is; only memcpy/memmove (jump tables between the
+  code) go to the runtime (external_procedures.sci + ignored_areas.sci). 0x4c6290-0x4c64a0 is lithshared code.
+- Relocations: `relocations_include.csv` adds what gen_relocs.py's heuristics rejected but are real: a C++
+  initializer at 0x410000 (round values look like constants), three vtable slots, a console command entry.
+- SRW fix: `mov fs:[0], esp` (every SEH frame) was translated with the native esp instead of r11d
+  (X86REGSTR_ESP); I76 had it too, but nothing there dereferenced the SEH chain (the CRT's setjmp does).
+- Runtime (games/Aliens versus Predator 2/SR-AvP2, from I76's): lithtech.exe's image is mapped at 0x400000
+  as data (the CRT reads its headers, the resource functions its .rsrc); resource-only DLLs (ltmsg.dll) are
+  mapped by LoadLibrary (peimage.c); real threads (pthreads, each with its own emulated stack - asm-cpu.c's
+  stack is thread-local), events, waits, critical sections (mutex pointer in the struct's first dword), per
+  thread TLS and SEH frame, heap lock; the CRT startup's kernel32 functions; the launcher's command line
+  (-rez archives) is built when none is given.
+- Imports spec: tools/mkspec.py (IDA prototypes; reference: Interstate '76's spec). A pointer to a 64-bit type
+  is one stack slot (QueryPerformanceCounter was wrong and unbalanced the emulated stack).
+- avp2src's reconstructed engine source (src/engine/lithtech/clientwin.cpp ...) explains the code at each
+  address, but its AvP2 reference is again another build (addresses shifted).
+- Now: the engine opens all REZ archives, extracts cshell.dll from AVP2DLL.REZ into temp\ and calls its
+  GetClientShellFunctions - the game DLLs are next.

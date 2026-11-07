@@ -35,6 +35,8 @@
 #if (OUTPUT_TYPE == OUT_X64)
 
 #define X86REGSTR(x) ud_reg_tab[(x) - UD_R_AL]
+// the emulated stack pointer is r11d: register operands that name esp must use it (e.g. mov fs:[0], esp)
+#define X86REGSTR_ESP(x) (((x) == UD_R_ESP) ? "r11d" : X86REGSTR(x))
 #define HIGH2LOWREGSTR(x) ud_reg_tab[(x) - UD_R_AH]
 
 
@@ -900,7 +902,7 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
 
                         OUTPUT_PARAMSTRING("mov r10d, 0x%x\n", ud_obj.operand[1].lval.udword);
                         OUTPUT_STRING("CALL x86_read_fs_dword\n");
-                        OUTPUT_PARAMSTRING("mov %s, r9d", X86REGSTR(ud_obj.operand[0].base));
+                        OUTPUT_PARAMSTRING("mov %s, r9d", X86REGSTR_ESP(ud_obj.operand[0].base));
                     }
                     else if (ud_obj.mnemonic == UD_Imov &&
                         ud_obj.operand[1].type == UD_OP_MEM &&
@@ -914,9 +916,9 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
                     {
                         // mov reg, fs:[reg]
 
-                        OUTPUT_PARAMSTRING("mov r10d, %s\n", X86REGSTR(ud_obj.operand[1].base));
+                        OUTPUT_PARAMSTRING("mov r10d, %s\n", X86REGSTR_ESP(ud_obj.operand[1].base));
                         OUTPUT_STRING("CALL x86_read_fs_dword\n");
-                        OUTPUT_PARAMSTRING("mov %s, r9d", X86REGSTR(ud_obj.operand[0].base));
+                        OUTPUT_PARAMSTRING("mov %s, r9d", X86REGSTR_ESP(ud_obj.operand[0].base));
                     }
                     else if (ud_obj.operand[0].base >= UD_R_AH && ud_obj.operand[0].base <= UD_R_BH &&
                              ud_obj.operand[1].type == UD_OP_MEM &&
@@ -1005,7 +1007,7 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
                         // mov fs:[const], reg
 
                         OUTPUT_PARAMSTRING("mov r10d, 0x%x\n", ud_obj.operand[0].lval.udword);
-                        OUTPUT_PARAMSTRING("mov r9d, %s\n", X86REGSTR(ud_obj.operand[1].base));
+                        OUTPUT_PARAMSTRING("mov r9d, %s\n", X86REGSTR_ESP(ud_obj.operand[1].base));
                         OUTPUT_STRING("CALL x86_write_fs_dword");
                     }
                     else if (ud_obj.operand[0].base >= UD_R_EAX && ud_obj.operand[0].base <= UD_R_EDI &&
@@ -1020,8 +1022,8 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
                     {
                         // mov fs:[reg], reg
 
-                        OUTPUT_PARAMSTRING("mov r10d, %s\n", X86REGSTR(ud_obj.operand[0].base));
-                        OUTPUT_PARAMSTRING("mov r9d, %s\n", X86REGSTR(ud_obj.operand[1].base));
+                        OUTPUT_PARAMSTRING("mov r10d, %s\n", X86REGSTR_ESP(ud_obj.operand[0].base));
+                        OUTPUT_PARAMSTRING("mov r9d, %s\n", X86REGSTR_ESP(ud_obj.operand[1].base));
                         OUTPUT_STRING("CALL x86_write_fs_dword");
                     }
                     else if ((ud_obj.operand[0].base == UD_R_ESP || ud_obj.operand[0].index == UD_R_ESP) &&
