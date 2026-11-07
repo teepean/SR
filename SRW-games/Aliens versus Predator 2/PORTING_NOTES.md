@@ -278,3 +278,10 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   d3d.ren's formulas: lightmapped polies get an added light texture (LMDynamic: (max(c, 127) - 127) x (1 -
   (in-plane distance / 1.25 r)^2 - (plane distance / r)^2), not times the surface's texture: BuildDynamicLightmap-
   Pixels, LMDynamicScale 2.5), vertex lit ones (2c - 255) x (1 - d / r) in their vertex colours.
+- Light animations that change (m1s1: two "Flicker1WaveLightFX" layers over ~6700 polies each, single frame, the
+  game moves their blend): every animation but LightAnim_BASE with one frame is a layer of its own - up to 4 per
+  lightmapped poly, placed next to the poly's base lightmap in the page, 2 per vertex lit poly (vertex
+  attributes). The shader adds them with their current (blend, on) from a float texture: lightmaps like
+  UpdatePolyAnimatedLightmap (the first layer that is on as is, unless it follows a base layer; the others times
+  their blend, saturating), vertex colours like d3d_AddLightAnimVertexColors (the frames that are on, unscaled).
+- 640x480 runs at ~185 frames/s here (RTX 3090).
