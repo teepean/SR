@@ -71,6 +71,16 @@ if device == 'pc64-linux' and os.environ.get('NO_FFMPEG') is None:
     except (OSError, subprocess.CalledProcessError):
         print('FFmpeg (libavformat/libavcodec) not found: no movies')
 
+# GothicKit's dmusic (DirectMusic re-implementation, built static with the patches in dmusic-patches/) plays the music
+# (music.c): DMUSIC=<checkout> with build-static/libdmusic.a; without it there is no music
+dmusic_libs = []
+dmusic = os.environ.get('DMUSIC', '/home/teemu/sorsa/dmusic')
+if device == 'pc64-linux' and os.path.exists(os.path.join(dmusic, 'build-static', 'libdmusic.a')):
+    env.Append(CPPDEFINES = ['HAVE_DMUSIC', 'DM_STATIC=1'], CPPPATH = [os.path.join(dmusic, 'include')])
+    dmusic_libs = [File(os.path.join(dmusic, 'build-static', 'libdmusic.a')), File(os.path.join(dmusic, 'build-static', 'vendor', 'libdmusic-tsf.a'))]
+else:
+    print('dmusic not found: no music')
+
 common_objs, avp2_objs, ph_objs = SConscript('x64/SConscript', exports='device env')
 
 # Godot (LibGodot) as the window system and 3D renderer: host_godot.cpp with godot-cpp
@@ -100,8 +110,8 @@ else:
 # each game's recompiled modules)
 suffix = '-x64' if device == 'pc64-linux' else ''
 runtime_objs = [env.Object(f) for f in Glob('*.c') if not os.path.basename(str(f)).startswith('game_')]
-env.Program('SR-AvP2' + suffix, runtime_objs + [env.Object('game_avp2.c')] + common_objs + avp2_objs + godot_objs)
+env.Program('SR-AvP2' + suffix, runtime_objs + [env.Object('game_avp2.c')] + common_objs + avp2_objs + godot_objs + dmusic_libs)
 if ph_objs:
-    env.Program('SR-AvP2PH' + suffix, runtime_objs + [env.Object('game_ph.c')] + common_objs + ph_objs + godot_objs)
+    env.Program('SR-AvP2PH' + suffix, runtime_objs + [env.Object('game_ph.c')] + common_objs + ph_objs + godot_objs + dmusic_libs)
 else:
     print('Primal Hunt modules (x64/ph-*) not generated: SR-AvP2PH not built')

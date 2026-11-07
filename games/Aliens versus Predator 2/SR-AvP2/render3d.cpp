@@ -1159,9 +1159,11 @@ static void dump_objects(uint32_t mw)
                     gf(o + OB_SCALE), gf(o + OB_SCALE + 4), gf(o + OB_SCALE + 8), gf(o + OB_DIMS), gf(o + OB_DIMS + 4), gf(o + OB_DIMS + 8));
             if (t == OT_MODEL)
             {
-                uint32_t model = g32(o + 0x1f8), vt = g32(o);
+                // Primal Hunt: 4 bytes more before the tracker, 0x14 before the hidden pieces (MI_MODEL below)
+                uint32_t d1 = game.primal_hunt ? 4 : 0, d2 = game.primal_hunt ? 0x14 : 0;
+                uint32_t model = g32(o + 0x1f8 + d1), vt = g32(o);
                 eprintf("render3d:     vtable %08x [18] %08x model %08x skins %08x %08x %08x %08x hidden %08x transforms %08x/%u light %.2f %.2f %.2f\n", vt, vt ? g32(vt + 0x48) : 0, model,
-                        g32(o + 0x1c0), g32(o + 0x1c4), g32(o + 0x1c8), g32(o + 0x1cc), g32(o + 0x24c), g32(o + 0x238), g32(o + 0x23c), gf(o + 0x2c0), gf(o + 0x2c4), gf(o + 0x2c8));
+                        g32(o + 0x1c0), g32(o + 0x1c4), g32(o + 0x1c8), g32(o + 0x1cc), g32(o + 0x24c + d2), g32(o + 0x238 + d2), g32(o + 0x23c + d2), gf(o + 0x2c0 + d2), gf(o + 0x2c4 + d2), gf(o + 0x2c8 + d2));
                 if (model == 0) return;
                 uint32_t fn = g32(model + 4);
                 eprintf("render3d:     \"%s\" pieces %u nodes %u (flat %u) weights %u verts %u tris %u\n", fn ? (const char *)(uintptr_t)fn : "?", g32(model + 0x3c), g32(model + 0x78), g32(model + 0x2c),

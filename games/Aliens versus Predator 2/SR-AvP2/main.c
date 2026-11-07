@@ -33,6 +33,8 @@
 #include "peimage.h"
 #include "vfs.h"
 #include "game.h"
+#include "rezfs.h"
+#include "music.h"
 
 EXTERN_C_BEGIN
 
@@ -154,6 +156,31 @@ static void prepare_command_line(int argc, char *argv[])
     if (winapi_debug) eprintf("command line: %s\n", command_line);
 }
 
+// the archives of the final command line, for the runtime's own reads (rezfs.c)
+static void register_archives(void)
+{
+    const char *p = command_line;
+    char tok[1024];
+    int next_is_rez = 0;
+
+    while (*p)
+    {
+        int n = 0, quoted = 0;
+        while (*p == ' ') p++;
+        if (*p == 0) break;
+        if (*p == '"') { quoted = 1; p++; }
+        while (*p && (quoted ? (*p != '"') : (*p != ' ')))
+        {
+            if (n < (int)sizeof(tok) - 1) tok[n++] = *p;
+            p++;
+        }
+        if (quoted && (*p == '"')) p++;
+        tok[n] = 0;
+        if (next_is_rez) rezfs_add(tok);
+        next_is_rez = (strcasecmp(tok, "-rez") == 0);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     // log file (stderr of a Windows GUI program goes nowhere)
@@ -202,6 +229,10 @@ int main(int argc, char *argv[])
 
     prepare_command_line(argc, argv);
     winapi_set_command_line(command_line);
+    register_archives();
+
+    // the engine's DirectMusic manager -> music.c
+    music_install();
 
     app_exit(call_game((uint32_t)(uintptr_t) lithtech_start, 0, NULL));
     return 0;

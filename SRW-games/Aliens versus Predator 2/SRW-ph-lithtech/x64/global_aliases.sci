@@ -1,2 +1,3 @@
 loc_4C283B,lithtech_start
 loc_43B77D,lithtech_i_IntersectSegment
+loc_4D56A4,lithtech_DirectMusicMgr_vtbl

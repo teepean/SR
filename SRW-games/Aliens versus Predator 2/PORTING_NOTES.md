@@ -372,3 +372,23 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   frame, written opaque (it's premultiplied ARGB over the 3D picture).
 - AvP2 plays foxlogo, sierralogo, ltlogo and lithlogo at startup (with their sound). Primal Hunt has no movies
   (its Third Law logo is a bitmap).
+
+### 2026-11-08 — music
+- The music is DirectMusic (Music/<theme>/: a control file, style-based and sequence segments, styles with bands,
+  DLS instrument sets). The engine's CLTDirectMusicMgr (lithtech.exe) fails without DirectMusic; music.c replaces
+  it: at startup music_install points its vtable (23 slots, ILTDirectMusicMgr's order with the two two-argument
+  motif methods last; AvP2 0x4ca674, Primal Hunt 0x4d56a4, exported as lithtech_DirectMusicMgr_vtbl through
+  global_aliases.sci; it's in read-only data: mprotect) at x64/music-asm.asm's thiscall stubs.
+- Playback is GothicKit's dmusic (a C re-implementation of DirectMusic's segment/style/band/DLS playback, MIT),
+  built static from a checkout (SConstruct: DMUSIC=<dir>, HAVE_DMUSIC) with dmusic-patches/avp2.patch: sequence
+  tracks (48 AvP2 segments), GUID-only style references, missing instruments not fatal, empty style parts, and a
+  segment-end callback so the next segment starts exactly where one ends. All 168 segments render.
+- music.c does what the engine's manager did with the control file: intensities (segment lists, repeat count,
+  the intensity that follows), transitions (enact time; a manual transition's segment), ChangeIntensity from the
+  game, Stop/Pause/volume (hundredths of dB plus VOLUMEOFFSET). Each level gets its own performance and loader;
+  rendering is a mixer source. Secondary segments and motifs aren't played (no control file uses them but one
+  MOTIF line). AVP2_MUSIC_INTENSITY=<n> starts a level with that intensity (testing); setting music = 0 or
+  AVP2_NOMUSIC leaves the engine's (silent) manager.
+- rezfs.c: the runtime reads the archives itself (the engine's -rez list from the final command line, later ones
+  override, custom is a directory).
+- Test directories: autoexec.cfg's MusicVolume was 0 (the retail default is 50).
