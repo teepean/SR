@@ -16,8 +16,10 @@
  *  transforms (ModelInstance::GetTransforms), lit like d3d.ren (the world's light grid, the sun through ray casts at
  *  the sky, dynamic lights), attachments placed by the engine (RenderStruct::ProcessAttachment), the player's
  *  weapon (FLAG_REALLYCLOSE) in the camera's space in front of everything.
- *  To do: sprites, particles, poly grids, lines, canvases, dynamic light on the world, animated light, shadow-map
- *  light animations, sky, fog, detail and environment textures, model LODs and static lights for models.
+ *  Sprites (camera facing or rotatable quads, glow and depth bias in the vertex shader) and particle systems (one
+ *  mesh per system, rebuilt each frame).
+ *  To do: poly grids, lines, canvases, dynamic light on the world, animated light, shadow-map light animations,
+ *  sky, fog, detail and environment textures, model LODs and static lights for models.
  *
  *  Debugging: AVP2_R3D_FULLBRIGHT=1 (textures only), AVP2_R3D_LMSCALE / AVP2_R3D_VCSCALE (light scales),
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
@@ -171,6 +173,18 @@ struct model_instance
     float sun = -1.0f;          // how much of the sun reaches it (< 0: not known yet)
 };
 
+// a sprite object's quad
+struct sprite_instance
+{
+    MeshInstance3D *mi = NULL;
+    Ref<ArrayMesh> mesh;        // particle systems
+    uint32_t tex = 0;
+    int variant = -1;
+    uint32_t frame = 0;
+    int shown = 0;
+    int close = 0;
+};
+
 struct godot_scene
 {
     Node3D *root;
@@ -180,6 +194,9 @@ struct godot_scene
     std::map<uint32_t, Ref<ArrayMesh>> bsp_meshes;  // world models' BSPs, by WorldBsp*
     std::map<uint32_t, wm_instance> wm_instances;   // by object (LTObject*)
     std::map<uint32_t, model_instance> models;        // by object
+    std::map<uint32_t, sprite_instance> sprites;      // by object
+    std::map<uint32_t, sprite_instance> particles;    // by object
+    std::map<uint64_t, Ref<ShaderMaterial>> sprite_materials;  // by texture and shader variant
     std::map<uint32_t, texture_entry> textures;     // by SharedTexture*
     uint32_t frame;
     int shown;
@@ -736,6 +753,11 @@ static void clear_world(void)
     gs->wm_instances.clear();
     for (auto &kv : gs->models) kv.second.mi->queue_free();
     gs->models.clear();
+    for (auto &kv : gs->sprites) kv.second.mi->queue_free();
+    gs->sprites.clear();
+    for (auto &kv : gs->particles) kv.second.mi->queue_free();
+    gs->particles.clear();
+    gs->sprite_materials.clear();
     gs->bsp_meshes.clear();
     delete wm;
     wm = new world_materials();
@@ -1374,6 +1396,326 @@ static void update_models(uint32_t mw, uint32_t sd)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* sprites                                                             */
+
+// SpriteInstance: its SpriteTracker (+0x1b0: sprite, current animation, current frame (SpriteEntry*: the texture))
+#define SP_CURFRAME 0x1b8
+
+#define FLAG_SPRITEBIAS (1 << 2)
+#define FLAG_ROTATEABLESPRITE (1 << 3)
+#define FLAG_SPRITE_NOZ (1 << 4)
+#define FLAG_GLOWSPRITE (1 << 5)
+#define FLAG2_MULTIPLY (1 << 3)
+
+// shader variants of the sprites (and particles)
+enum
+{
+    SPR_ADD = 1, SPR_MUL = 2,       // else alpha blended
+    SPR_NOZ = 4,                    // no depth test, over everything
+    SPR_ROTATABLE = 8,              // placed by the object's rotation, else facing the camera
+    SPR_GLOW = 16,                  // FLAG_GLOWSPRITE: smaller when near (10 .. 500 units: x0.1 .. x2)
+    SPR_BIAS = 32,                  // FLAG_SPRITEBIAS: depth 20 units nearer
+    SPR_CLOSE = 64,                 // FLAG_REALLYCLOSE
+    SPR_PARTICLES = 128,            // a particle system: each quad's centre in its vertices, the corner offset in UV2
+};
+
+static Ref<Shader> sprite_shader(int v)
+{
+    static std::map<int, Ref<Shader>> shaders;
+    auto it = shaders.find(v);
+    if (it != shaders.end()) return it->second;
+    std::string modes = "unshaded, cull_disabled, depth_draw_never";
+    if (v & SPR_ADD) modes += ", blend_add";
+    else if (v & SPR_MUL) modes += ", blend_mul";
+    if (v & SPR_NOZ) modes += ", depth_test_disabled";
+    std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
+        "uniform sampler2D albedo : filter_linear_mipmap, repeat_disable;\n"
+        "instance uniform vec4 color = vec4(1.0);\n"
+        "instance uniform vec2 half_size = vec2(1.0);\n"
+        "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
+        "void vertex() {\n";
+    if (v & SPR_PARTICLES)
+        c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
+             "  vec3 p = ctr + vec3(UV2, 0.0);\n";
+    else if (v & SPR_ROTATABLE)
+        c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
+             "  vec3 p = (MODELVIEW_MATRIX * vec4(VERTEX.xy * half_size, 0.0, 1.0)).xyz;\n";
+    else
+    {
+        c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
+             "  vec2 h = half_size;\n";
+        if (v & SPR_GLOW) c += "  h *= 0.1 + 1.9 * clamp((-ctr.z - 10.0) / 490.0, 0.0, 1.0);\n";
+        c += "  vec3 p = ctr + vec3(VERTEX.xy * h, 0.0);\n";
+    }
+    c += "  POSITION = PROJECTION_MATRIX * vec4(p, 1.0);\n";
+    if (v & SPR_BIAS)
+        c += "  vec3 pb = p;\n  pb.z = -max(-ctr.z - 20.0, 1.0) + (p.z - ctr.z);\n"
+             "  vec4 q = PROJECTION_MATRIX * vec4(pb, 1.0);\n  POSITION.z = q.z / q.w * POSITION.w;\n";
+    if (v & SPR_CLOSE) c += "  POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n";
+    c += "}\n"
+         "void fragment() {\n"
+         "  vec4 t = texture(albedo, UV) * color * COLOR;\n"
+         "  ALBEDO = to_linear(clamp(t.rgb, 0.0, 1.0));\n"
+         "  ALPHA = t.a;\n"
+         "}\n";
+    Ref<Shader> sh;
+    sh.instantiate();
+    sh->set_code(c.c_str());
+    shaders[v] = sh;
+    return sh;
+}
+
+static Ref<ShaderMaterial> sprite_material(uint32_t tex, int v)
+{
+    uint64_t key = ((uint64_t)tex << 8) | (uint64_t)v;
+    auto it = gs->sprite_materials.find(key);
+    if (it != gs->sprite_materials.end()) return it->second;
+    Ref<ShaderMaterial> m;
+    m.instantiate();
+    m->set_shader(sprite_shader(v));
+    texture_entry &t = get_texture(tex);
+    if (t.texture.is_valid()) m->set_shader_parameter("albedo", t.texture);
+    gs->sprite_materials[key] = m;
+    return m;
+}
+
+// a quad (-1..1), UVs with v down
+static Ref<ArrayMesh> unit_quad(void)
+{
+    static Ref<ArrayMesh> q;
+    if (q.is_valid()) return q;
+    PackedVector3Array v;
+    PackedVector2Array uv;
+    static const float c[6][2] = { { -1, 1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } };
+    for (int i = 0; i < 6; i++)
+    {
+        v.push_back(Vector3(c[i][0], c[i][1], 0));
+        uv.push_back(Vector2((c[i][0] + 1) * 0.5f, (1 - c[i][1]) * 0.5f));
+    }
+    Array arrays;
+    arrays.resize(Mesh::ARRAY_MAX);
+    arrays[Mesh::ARRAY_VERTEX] = v;
+    arrays[Mesh::ARRAY_TEX_UV] = uv;
+    q.instantiate();
+    q->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
+    return q;
+}
+
+// the colour of a sprite (d3d.ren's SpriteGetColor): its colour times the light grid unless FLAG_NOLIGHT
+static Color sprite_color(uint32_t mw, uint32_t sd, uint32_t o)
+{
+    uint32_t flags = g32(o + OB_FLAGS);
+    float tint[3] = { gf(sd + SD_VERTEXTINT), gf(sd + SD_VERTEXTINT + 4), gf(sd + SD_VERTEXTINT + 8) };
+    float c[3];
+    if (!(flags & FLAG_NOLIGHT))
+    {
+        float p[3] = { gf(o + OB_POS), gf(o + OB_POS + 4), gf(o + OB_POS + 8) }, lg[3];
+        light_table(mw, p, lg);
+        for (int i = 0; i < 3; i++) c[i] = g8(o + OB_COLOR + i) * tint[i] * (lg[i] / 255.0f);
+    }
+    else for (int i = 0; i < 3; i++) c[i] = g8(o + OB_COLOR + i) * tint[i];
+    for (int i = 0; i < 3; i++) c[i] = (c[i] < 0) ? 0 : ((c[i] > 255) ? 1 : c[i] / 255.0f);
+    return Color(c[0], c[1], c[2], g8(o + OB_COLOR + 3) / 255.0f);
+}
+
+static void draw_sprite(uint32_t mw, uint32_t sd, uint32_t o)
+{
+    uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
+    uint32_t frame = g32(o + SP_CURFRAME);
+    uint32_t tex = frame ? g32(frame) : 0;
+    if (tex == 0) return;
+    texture_entry &te = get_texture(tex);
+    if (te.texture.is_null()) return;
+    int close = (flags & FLAG_REALLYCLOSE) != 0;
+    int v = 0;
+    if (flags2 & FLAG2_ADDITIVE) v |= SPR_ADD;
+    else if (flags2 & FLAG2_MULTIPLY) v |= SPR_MUL;
+    if (flags & FLAG_SPRITE_NOZ) v |= SPR_NOZ;
+    if (flags & FLAG_ROTATEABLESPRITE) v |= SPR_ROTATABLE;
+    else
+    {
+        if (flags & FLAG_GLOWSPRITE) v |= SPR_GLOW;
+        if (flags & FLAG_SPRITEBIAS) v |= SPR_BIAS;
+    }
+    if (close) v |= SPR_CLOSE;
+
+    sprite_instance &si = gs->sprites[o];
+    if (si.mi == NULL)
+    {
+        si.mi = memnew(MeshInstance3D);
+        si.mi->set_mesh(unit_quad());
+        (close ? (Node *)gs->camera : (Node *)gs->root)->add_child(si.mi);
+        si.close = close;
+    }
+    else if (si.close != close)
+    {
+        si.mi->get_parent()->remove_child(si.mi);
+        (close ? (Node *)gs->camera : (Node *)gs->root)->add_child(si.mi);
+        si.close = close;
+    }
+    if ((si.tex != tex) || (si.variant != v))
+    {
+        si.mi->set_material_override(sprite_material(tex, v));
+        si.tex = tex;
+        si.variant = v;
+    }
+    // half the texture's size times the scale, in world units
+    float hx = (1.0f / te.inv_w) * gf(o + OB_SCALE), hy = (1.0f / te.inv_h) * gf(o + OB_SCALE + 4);
+    Transform3D xf;
+    if (v & SPR_ROTATABLE)
+    {
+        Quaternion q(-gf(o + OB_ROTATION), -gf(o + OB_ROTATION + 4), gf(o + OB_ROTATION + 8), gf(o + OB_ROTATION + 12));
+        if (q.length_squared() < 1e-6f) q = Quaternion();
+        xf = Transform3D(Basis(q.normalized()), lt_pos(o + OB_POS));
+    }
+    else xf = Transform3D(Basis(), lt_pos(o + OB_POS));
+    si.mi->set_transform(xf);
+    float r = fmaxf(fabsf(hx), fabsf(hy)) * 2.0f + 1.0f;
+    si.mi->set_custom_aabb(AABB(Vector3(-r, -r, -r), Vector3(2 * r, 2 * r, 2 * r)));
+    si.mi->set_instance_shader_parameter("half_size", Vector2(hx, hy));
+    si.mi->set_instance_shader_parameter("color", sprite_color(mw, sd, o));
+    si.frame = gs->frame;
+    if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
+}
+
+static void update_sprites(uint32_t mw, uint32_t sd)
+{
+    for_objects(mw, OT_SPRITE, [&](uint32_t o) {
+        uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
+        if (!(flags & FLAG_VISIBLE) || (flags2 & FLAG2_SKYOBJECT)) return;
+        draw_sprite(mw, sd, o);
+    });
+    for (auto &kv : gs->sprites)
+    {
+        sprite_instance &si = kv.second;
+        if ((si.frame != gs->frame) && si.shown) { si.mi->set_visible(false); si.shown = 0; }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* particle systems                                                    */
+
+// LTParticleSystem: the particles are a ring through a sentinel (m_ParticleHead), in the system's space
+#define PS_HEAD 0x1b0
+#define PS_TEXTURE 0x1f0
+#define PS_SPRITEFRAME 0x204        // m_SpriteTracker.m_pCurFrame
+#define PS_NPARTICLES 0x230
+// PSParticle (0x3c bytes)
+#define PP_COLOR 0x0c               // 0-255
+#define PP_ALPHA 0x18               // 0-1
+#define PP_SIZE 0x1c
+#define PP_NEXT 0x20
+#define PP_POS 0x24
+
+static void draw_particles(uint32_t o)
+{
+    uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
+    uint32_t n = g32(o + PS_NPARTICLES);
+    if ((n == 0) || (n > 100000)) return;
+    uint32_t tex = g32(o + PS_TEXTURE);
+    if ((tex == 0) && g32(o + PS_SPRITEFRAME)) tex = g32(g32(o + PS_SPRITEFRAME));
+    int close = (flags & FLAG_REALLYCLOSE) != 0;
+    int v = SPR_PARTICLES;
+    if (flags2 & FLAG2_ADDITIVE) v |= SPR_ADD;
+    else if (flags2 & FLAG2_MULTIPLY) v |= SPR_MUL;
+    if (close) v |= SPR_CLOSE;
+
+    sprite_instance &si = gs->particles[o];
+    if (si.mi == NULL)
+    {
+        si.mi = memnew(MeshInstance3D);
+        si.mesh.instantiate();
+        si.mi->set_mesh(si.mesh);
+        (close ? (Node *)gs->camera : (Node *)gs->root)->add_child(si.mi);
+        si.close = close;
+    }
+    else if (si.close != close)
+    {
+        si.mi->get_parent()->remove_child(si.mi);
+        (close ? (Node *)gs->camera : (Node *)gs->root)->add_child(si.mi);
+        si.close = close;
+    }
+    si.mi->set_transform(lt_object_transform(o));
+
+    // the quads: the centre in each vertex, the corner offset (view space, 2 x the particle's size) in UV2
+    float sr = g8(o + OB_COLOR) / 255.0f, sg = g8(o + OB_COLOR + 1) / 255.0f, sb = g8(o + OB_COLOR + 2) / 255.0f, sa = g8(o + OB_COLOR + 3) / 255.0f;
+    PackedVector3Array pv;
+    PackedVector2Array uv, uv2;
+    PackedColorArray col;
+    pv.resize((int64_t)n * 6);
+    uv.resize((int64_t)n * 6);
+    uv2.resize((int64_t)n * 6);
+    col.resize((int64_t)n * 6);
+    Vector3 *P = pv.ptrw();
+    Vector2 *U = uv.ptrw(), *U2 = uv2.ptrw();
+    Color *C = col.ptrw();
+    static const float corner[6][2] = { { -1, 1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } };
+    uint32_t head = o + PS_HEAD, k = 0;
+    AABB box;
+    float maxsize = 0.0f;
+    for (uint32_t p = g32(head + PP_NEXT); (p != head) && (p != 0) && (k < n); p = g32(p + PP_NEXT))
+    {
+        Vector3 c = lt_pos(p + PP_POS);
+        float h = 2.0f * gf(p + PP_SIZE);
+        Color cc(sr * gf(p + PP_COLOR) / 255.0f, sg * gf(p + PP_COLOR + 4) / 255.0f, sb * gf(p + PP_COLOR + 8) / 255.0f, sa * gf(p + PP_ALPHA));
+        for (int j = 0; j < 6; j++)
+        {
+            int i = k * 6 + j;
+            P[i] = c;
+            U[i] = Vector2((corner[j][0] + 1) * 0.5f, (1 - corner[j][1]) * 0.5f);
+            U2[i] = Vector2(corner[j][0] * h, corner[j][1] * h);
+            C[i] = cc;
+        }
+        if (k == 0) box = AABB(c, Vector3());
+        else box.expand_to(c);
+        if (h > maxsize) maxsize = h;
+        k++;
+    }
+    si.mesh->clear_surfaces();
+    if (k > 0)
+    {
+        pv.resize((int64_t)k * 6); uv.resize((int64_t)k * 6); uv2.resize((int64_t)k * 6); col.resize((int64_t)k * 6);
+        Array arrays;
+        arrays.resize(Mesh::ARRAY_MAX);
+        arrays[Mesh::ARRAY_VERTEX] = pv;
+        arrays[Mesh::ARRAY_TEX_UV] = uv;
+        arrays[Mesh::ARRAY_TEX_UV2] = uv2;
+        arrays[Mesh::ARRAY_COLOR] = col;
+        si.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
+        si.mesh->surface_set_material(0, sprite_material(tex, v));
+        si.mi->set_custom_aabb(box.grow(maxsize + 1.0f));
+    }
+    si.frame = gs->frame;
+    if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
+}
+
+static void update_particles(uint32_t mw)
+{
+    uint32_t nsys = 0, nparts = 0;
+    for_objects(mw, OT_PARTICLESYSTEM, [&](uint32_t o) {
+        uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
+        if (!(flags & FLAG_VISIBLE) || (flags2 & FLAG2_SKYOBJECT)) return;
+        draw_particles(o);
+        if ((winapi_debug >= 2) && ((gs->frame % 900) == 400) && g32(o + PS_NPARTICLES))
+        {
+            uint32_t pp = g32(o + PS_HEAD + PP_NEXT);
+            eprintf("render3d:   particles %08x flags %08x/%08x color %08x n %u texture %08x pos %.0f %.0f %.0f, first at %.1f %.1f %.1f size %.2f color %.0f %.0f %.0f alpha %.2f\n",
+                    o, flags, flags2, g32(o + OB_COLOR), g32(o + PS_NPARTICLES), g32(o + PS_TEXTURE), gf(o + OB_POS), gf(o + OB_POS + 4), gf(o + OB_POS + 8),
+                    gf(pp + PP_POS), gf(pp + PP_POS + 4), gf(pp + PP_POS + 8), gf(pp + PP_SIZE), gf(pp + PP_COLOR), gf(pp + PP_COLOR + 4), gf(pp + PP_COLOR + 8), gf(pp + PP_ALPHA));
+        }
+        nsys++;
+        nparts += g32(o + PS_NPARTICLES);
+    });
+    if ((winapi_debug >= 2) && ((gs->frame % 300) == 10))
+        eprintf("render3d: %u visible particle systems, %u particles; %zu sprites, %zu models\n", nsys, nparts, gs->sprites.size(), gs->models.size());
+    for (auto &kv : gs->particles)
+    {
+        sprite_instance &si = kv.second;
+        if ((si.frame != gs->frame) && si.shown) { si.mi->set_visible(false); si.shown = 0; }
+    }
+}
+
 // the engine keeps a context in 32 bits: handles are 1-based indices into this table
 static std::vector<world_context *> &contexts(void)
 {
@@ -1444,6 +1786,8 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         update_attachments(ctx->world);
         update_world_models(ctx->world);
         update_models(ctx->world, sd);
+        update_sprites(ctx->world, sd);
+        update_particles(ctx->world);
     }
     float qx = gf(sd + SD_ROTATION), qy = gf(sd + SD_ROTATION + 4), qz = gf(sd + SD_ROTATION + 8), qw = gf(sd + SD_ROTATION + 12);
     Quaternion q(-qx, -qy, qz, qw);

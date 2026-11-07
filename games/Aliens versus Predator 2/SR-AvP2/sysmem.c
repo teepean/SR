@@ -104,12 +104,70 @@ void sys_install_crash_handler(void)
 
 #else
 
+#include <errno.h>
+#include <signal.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#if defined(__x86_64__)
+#include <ucontext.h>
+#endif
+
+/* Stray reads (Linux, 64-bit build): the game sometimes reads a little outside its blocks (e.g. object.lto's
+ * sub_1018A370 indexes a per-character table with -1 for a character without an id). On Windows the heap is
+ * contiguous and such a read returns garbage; here the heap is made of separate mappings and the read can hit an
+ * unmapped page. A read (not a write) of an unmapped page below 2 GB gets a page of zeros and continues. */
+#if defined(__x86_64__) && !defined(__SANITIZE_ADDRESS__)
+static struct sigaction old_segv;
+static volatile int stray_pages;
+
+static void segv_handler(int sig, siginfo_t *info, void *ctx)
+{
+    ucontext_t *uc = (ucontext_t *) ctx;
+    uintptr_t addr = (uintptr_t) info->si_addr;
+    int is_write = (uc->uc_mcontext.gregs[REG_ERR] & 2) != 0;
+
+    if (!is_write && (addr >= 0x10000) && (addr < 0x80000000u) && (stray_pages < 256))
+    {
+        void *page = (void *)(addr & ~(uintptr_t) 4095);
+        void *m = mmap(page, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+        if (m == page)
+        {
+            static const char hex[] = "0123456789abcdef";
+            char msg[112] = "memory: read of unmapped game memory at 0x";
+            size_t n = strlen(msg);
+            int i;
+            for (i = 7; i >= 0; i--) msg[n++] = hex[(addr >> (i * 4)) & 15];
+            memcpy(msg + n, " (rip 0x", 8);
+            n += 8;
+            for (i = 15; i >= 0; i--) msg[n++] = hex[((uint64_t) uc->uc_mcontext.gregs[REG_RIP] >> (i * 4)) & 15];
+            memcpy(msg + n, "): zeros\n", 9);
+            n += 9;
+            if (write(2, msg, n) < 0) { }
+            stray_pages = stray_pages + 1;
+            return;     // the instruction runs again
+        }
+        if (m != MAP_FAILED) munmap(m, 4096);
+    }
+    // a real crash: the previous handler (the default one: core dump)
+    sigaction(SIGSEGV, &old_segv, NULL);
+    (void) sig;
+}
+
+void sys_install_crash_handler(void)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = segv_handler;
+    sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGSEGV, &sa, &old_segv);
+}
+#else
 void sys_install_crash_handler(void)
 {
 }
-
-#include <errno.h>
-#include <sys/mman.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {

@@ -252,3 +252,13 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - FLAG_REALLYCLOSE (the player's weapon): its position is in the camera's space; drawn as a child of the camera
   with its depth squeezed to [0.9, 1] (reverse z) so the world never covers it.
 - AVP2_INPUT_SCRIPT `rel <dx> <dy>` (relative mouse for DirectInput), AVP2_R3D_CAMERA (a fixed debugging camera).
+- Sprites (OT_SPRITE): the SpriteTracker's current frame (+0x1b8) is the texture; a quad of 2 x the texture's base
+  size x the scale (world units), facing the camera in the vertex shader (FLAG_GLOWSPRITE: x0.1 at 10 units ..
+  x2 at 500; FLAG_SPRITEBIAS: depth 20 units nearer), or turned by the object (FLAG_ROTATEABLESPRITE); colour
+  times the light grid unless FLAG_NOLIGHT; FLAG2_ADDITIVE / FLAG2_MULTIPLY blending.
+- Particle systems: a ring of PSParticle through m_ParticleHead (+0x1b0), positions in the system's space; each
+  a square of 4 x m_Size (d3d_DrawParticleBatch's screen extent), colour = system colour x particle colour.
+- Stray reads: object.lto's sub_1018A370 can index a per-character table with -1 (a character without an id).
+  Windows' contiguous heap makes that a harmless garbage read; here the 32-bit heap is separate mappings and it
+  crashed once while m1s1 loaded. sysmem.c's SIGSEGV handler (Linux, 64-bit) maps a page of zeros under a read
+  of unmapped memory below 2 GB (logged "memory: read of unmapped game memory"); writes still crash.
