@@ -59,6 +59,11 @@ static int SR_disassemble_fixup_operand(unsigned int Entry, const char *ostr, fi
     {
         sprintf(cAdr, "0x%x", (unsigned int)(fixup->sofs + section[Entry].start + 4));
     }
+    else if (fixup->type == FT_IMAGEBASE)
+    {
+        // tsec holds the image base, tofs the offset from it (SRW_loader.c)
+        sprintf(cAdr, "0x%x", (unsigned int)(fixup->tsec + fixup->tofs));
+    }
     else
     {
         sprintf(cAdr, "0x%x", (unsigned int)(section[fixup->tsec].start + fixup->tofs));
@@ -1593,8 +1598,11 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
         case UD_Ifcompp:
         case UD_Ifcos:
         case UD_Ifld1:
+        case UD_Ifldl2e:
+        case UD_Ifldl2t:
         case UD_Ifldlg2:
         case UD_Ifldln2:
+        case UD_Ifldpi:
         case UD_Ifldz:
         case UD_Ifninit:
         case UD_Ifptan:
@@ -1603,7 +1611,9 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
         case UD_Ifucompp:
         case UD_Ifyl2x:
         case UD_Ifpatan:
+        case UD_Ifprem:
         case UD_Ifprem1:
+        case UD_Ifxam:
         case UD_Ifscale:
         case UD_If2xm1:
         case UD_Ifsincos:
@@ -1639,6 +1649,8 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
             /* no flags affected */
         case UD_Ifrstor:
         case UD_Ifnsave:
+        case UD_Ifldenv:
+        case UD_Ifnstenv:
             /* no flags affected */
         case UD_Ifnstcw:
         case UD_Ifnstsw:
