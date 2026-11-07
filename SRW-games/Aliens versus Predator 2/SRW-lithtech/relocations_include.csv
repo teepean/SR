@@ -1,4 +1,5 @@
 # relocations Interstate '76's gen_relocs.py heuristics rejected (round values look like constants) - checked by hand
+# (relocations.csv = gen_relocs.py's output - relocations_exclude.csv + this file)
 0x4d2018,0x410000   # __xc table: a C++ static initializer at 0x410000
 0x4c9490,0x4a0000   # vtable slot (relocated neighbours)
 0x4cbae4,0x4a0000   # vtable slot (relocated neighbours)

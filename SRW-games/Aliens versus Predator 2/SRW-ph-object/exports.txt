@@ -1,0 +1,4 @@
+GetServerShellFunctions
+GetServerShellVersion
+ObjectDLLSetup
+SetInstanceHandle

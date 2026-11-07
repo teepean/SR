@@ -178,6 +178,7 @@ extern GetTextCharacterExtra_c
 extern GetTextExtentPoint32A_c
 extern GetTickCount_c
 extern GetTimeZoneInformation_c
+extern GetUserNameA_c
 extern GetVersion_c
 extern GetVersionExA_c
 extern GetWindowLongA_c
@@ -532,6 +533,7 @@ global GetTextCharacterExtra_asm2c
 global GetTextExtentPoint32A_asm2c
 global GetTickCount_asm2c
 global GetTimeZoneInformation_asm2c
+global GetUserNameA_asm2c
 global GetVersion_asm2c
 global GetVersionExA_asm2c
 global GetWindowLongA_asm2c
@@ -4769,6 +4771,28 @@ GetTimeZoneInformation_asm2c:
         mov edi, [r11d+12]
         call GetTimeZoneInformation_c
         Call_Asm_Epilogue_0 1
+%endif
+
+; GetUserNameA (std2, ADVAPI32.dll)
+align 16
+GetUserNameA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetUserNameA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call GetUserNameA_c
+        Call_Asm_Epilogue_0 2
 %endif
 
 ; GetVersion (std0, KERNEL32.dll)

@@ -110,6 +110,8 @@ static struct
 } want;
 
 static void apply_wanted(void);
+static int req_w, req_h;            // the window size last asked for
+static uint32_t req_time;
 static int tex_w, tex_h;
 static uint32_t last_iteration;
 
@@ -564,6 +566,11 @@ static void present_frame(const uint32_t *pixels, int w, int h)
             char name[1024];
             snprintf(name, sizeof(name), "%s/godot%04d.png", dir, dump_index++);
             shot->save_png(name);
+            if (winapi_debug >= 2)
+            {
+                Vector2i ws = DisplayServer::get_singleton()->window_get_size();
+                eprintf("host: dump %s: window %dx%d, viewport %dx%d, requested %dx%d\n", name, ws.x, ws.y, shot->get_width(), shot->get_height(), req_w, req_h);
+            }
         }
     }
 }
@@ -755,8 +762,22 @@ static void apply_wanted(void)
         {
             int scale = config_get_int("window_scale", 1);
             if (scale < 1) scale = 1;
-            ds->window_set_size(Vector2i(w.size_w * scale, w.size_h * scale));
+            req_w = w.size_w * scale;
+            req_h = w.size_h * scale;
+            req_time = SDL_GetTicks();
+            ds->window_set_size(Vector2i(req_w, req_h));
         }
+    }
+    else if ((req_w > 0) && (SDL_GetTicks() - req_time < 2000) && (ds->window_get_mode() == DisplayServer::WINDOW_MODE_WINDOWED))
+    {
+        // X11 resizes asynchronously: after two quick requests (the engine's initial 320x200, then the render mode)
+        // Godot can be left with the window at the new size but the root viewport at the old one (no resize event
+        // for the second) - ask again, or nudge the size by a pixel, for a while (later the user may resize)
+        Vector2i s = ds->window_get_size();
+        SceneTree *tree = Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
+        Vector2i v = (tree != NULL) ? tree->get_root()->get_size() : s;
+        if ((s.x != req_w) || (s.y != req_h)) ds->window_set_size(Vector2i(req_w, req_h));
+        else if ((v.x != req_w) || (v.y != req_h)) ds->window_set_size(Vector2i(req_w, req_h + 1));
     }
     if (w.mouse_mode)
         Input::get_singleton()->set_mouse_mode(relative_mouse ? Input::MOUSE_MODE_CAPTURED : (cursor_hidden ? Input::MOUSE_MODE_HIDDEN : Input::MOUSE_MODE_VISIBLE));

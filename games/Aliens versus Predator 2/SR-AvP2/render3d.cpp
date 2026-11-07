@@ -74,6 +74,7 @@
 #include <godot_cpp/variant/array.hpp>
 
 #include "render3d.h"
+#include "game.h"
 
 using namespace godot;
 
@@ -1488,8 +1489,10 @@ static void update_world_models(uint32_t mw)
 
 // ModelInstance
 #define MI_SKINS 0x1c0              // SharedTexture*[4]
-#define MI_MODEL 0x1f8              // m_AnimTracker.m_TimeRef.m_pModel
-#define MI_HIDDENPIECES 0x24c
+// Primal Hunt's ModelInstance has an environment map after the skins (+0x1d0): the tracker is 4 bytes later, the
+// hidden pieces 0x14 (avp2src: server/commonmodel.h, d3d/ph/drawmodel_env.cpp, d3d/ph/d3d_modelvb.cpp)
+#define MI_MODEL (game.primal_hunt ? 0x1fc : 0x1f8)                 // m_AnimTracker.m_TimeRef.m_pModel
+#define MI_HIDDENPIECES (game.primal_hunt ? 0x260 : 0x24c)
 #define MI_VT_GETTRANSFORMS 0x48    // virtual LTMatrix *GetTransforms() (thiscall): the node transforms in model space
 // Model
 #define MD_PIECES 0x34              // CMoArray<ModelPiece*>

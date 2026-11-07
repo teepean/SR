@@ -6,7 +6,8 @@
 SRW translates only what it reaches from its roots, and a function referenced only from data (vtables,
 interface tables filled at run time) would otherwise be emitted as data bytes and then run as x64 code.
 Roots = IDA's function starts + avp2src tools/enumfuncs.py's starts + every code address stored in data
-(found through the base relocations) + the entry point, minus external_procedures.sci and ignored_areas.sci.
+(found through the base relocations; for an EXE without them the module's relocations.csv) + the entry point,
+minus external_procedures.sci and ignored_areas.sci.
 With IDA's heads.csv also the code addresses that code takes (relocations inside .text whose target is an IDA
 instruction head - e.g. `mov [x], offset thunk` for member function pointers; MSVC's jump tables inside .text
 point at case labels, also instruction heads; the tables themselves are IDA data heads and are left out)."""
@@ -50,18 +51,24 @@ if heads:
         if len(r) >= 3 and r[2] == 'c': code_heads.add(int(r[0], 16))
 
 img = pe.get_memory_mapped_image()
-ndata = ncode = 0
+relocs = []
 for e in getattr(pe, 'DIRECTORY_ENTRY_BASERELOC', []):
     for r in e.entries:
         if r.type != 3: continue            # IMAGE_REL_BASED_HIGHLOW
-        a = base + r.rva
-        v = struct.unpack_from('<I', img, r.rva)[0]
-        if not (text[0] <= v < text[1]) or v in roots: continue
-        if text[0] <= a < text[1]:
-            if v in code_heads:
-                roots.add(v); ncode += 1
-        else:
-            roots.add(v); ndata += 1
+        relocs.append((base + r.rva, struct.unpack_from('<I', img, r.rva)[0]))
+if not relocs and os.path.exists(os.path.join(d, 'relocations.csv')):
+    for l in open(os.path.join(d, 'relocations.csv')):
+        p = l.split('#')[0].strip().split(',')
+        if len(p) < 2 or (len(p) > 2 and p[2].strip()): continue     # imagebase etc.
+        relocs.append((int(p[0], 16), int(p[1], 16)))
+ndata = ncode = 0
+for a, v in relocs:
+    if not (text[0] <= v < text[1]) or v in roots: continue
+    if text[0] <= a < text[1]:
+        if v in code_heads:
+            roots.add(v); ncode += 1
+    else:
+        roots.add(v); ndata += 1
 roots.add(base + pe.OPTIONAL_HEADER.AddressOfEntryPoint)
 
 roots = {a for a in roots if text[0] <= a < text[1] and a not in ext and not any(x <= a < x + k for x, k in ign)}

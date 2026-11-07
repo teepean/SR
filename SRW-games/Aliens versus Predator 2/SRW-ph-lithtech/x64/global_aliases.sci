@@ -1,0 +1,2 @@
+loc_4C283B,lithtech_start
+loc_43B77D,lithtech_i_IntersectSegment

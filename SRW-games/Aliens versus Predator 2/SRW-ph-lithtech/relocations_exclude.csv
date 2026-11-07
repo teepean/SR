@@ -1,0 +1,7 @@
+# relocations gen_relocs.py accepted that are not pointers: the C runtime's _getch key translation table
+# (scan code/character words; 0x4ef104 would even point past .data)
+0x4ef0dc
+0x4ef0fa
+0x4ef104
+0x4ef1f8
+0x4ef2c0

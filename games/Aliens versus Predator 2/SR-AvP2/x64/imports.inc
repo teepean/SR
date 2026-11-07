@@ -350,6 +350,8 @@ extern GetTickCount_asm2c
 %define GetTickCount GetTickCount_asm2c
 extern GetTimeZoneInformation_asm2c
 %define GetTimeZoneInformation GetTimeZoneInformation_asm2c
+extern GetUserNameA_asm2c
+%define GetUserNameA GetUserNameA_asm2c
 extern GetVersion_asm2c
 %define GetVersion GetVersion_asm2c
 extern GetVersionExA_asm2c

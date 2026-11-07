@@ -1,0 +1,5 @@
+# relocations gen_relocs.py's heuristics rejected but are real - checked by hand (Primal Hunt lithtech.exe)
+# (relocations.csv = gen_relocs.py's output - relocations_exclude.csv + this file)
+0x4d8020,0x4bf6b8   # CRT function pointer table (neighbours relocated); IDA: function start, no xref
+0x4d81f0,0x4c4656   # SEH scope table handler (CallCatchBlock)
+0x4d8228,0x4c4b46   # SEH scope table handler (terminate)

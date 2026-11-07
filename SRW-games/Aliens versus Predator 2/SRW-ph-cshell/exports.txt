@@ -1,0 +1,3 @@
+GetClientShellFunctions
+GetClientShellVersion
+SetInstanceHandle

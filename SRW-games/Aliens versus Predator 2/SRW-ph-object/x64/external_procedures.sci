@@ -1,0 +1,2 @@
+loc_10256610,memcpy
+loc_10258E00,memmove

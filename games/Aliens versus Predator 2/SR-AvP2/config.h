@@ -1,6 +1,6 @@
 /**
  *
- *  Settings: SR-I76.cfg in the game directory ("key = value"), overridden by environment variables
+ *  Settings: SR-AvP2.cfg in the game directory ("key = value"), overridden by environment variables
  *  AVP2_<KEY> (upper case).
  *
  */

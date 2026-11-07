@@ -2,6 +2,8 @@
 # Regenerates the assembler versions of the recompiled Aliens versus Predator 2 modules (x86-64, SRW OUT_X64).
 # Every run goes into a new directory $WORK/gen-NNN (nothing is deleted); the results are copied into
 # games/Aliens versus Predator 2/SR-AvP2/x64/<module>/.
+# GAME=ph: Primal Hunt's binaries instead (SRW-ph-<module>, RETAIL default avp2-ph-eu, into x64/ph-<module>/;
+# the modules keep their names - the same exported symbols - and SConstruct links them into SR-AvP2PH).
 #
 # SRW64=<SRW built with OUTPUT_TYPE OUT_X64> (SRW-games/Interstate 76/build_srw64.sh),
 # RETAIL=<directory with lithtech.exe, server.dll, ... (CShell.DLL/Object.LTO extracted from AVP2DLL.REZ)>.
@@ -10,7 +12,13 @@
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 I76="$REPO/SRW-games/Interstate 76"
-RETAIL="${RETAIL:-/home/teemu/sorsa/avp2work/retail/avp2-eu}"
+if [ "$GAME" = ph ]; then
+    RETAIL="${RETAIL:-/home/teemu/sorsa/avp2work/retail/avp2-ph-eu}"
+    PFX=ph-
+else
+    RETAIL="${RETAIL:-/home/teemu/sorsa/avp2work/retail/avp2-eu}"
+    PFX=
+fi
 WORK="${WORK:-/home/teemu/sorsa/avp2work}"
 SRWBIN="${SRW64:-/home/teemu/sorsa/avp2work/srw64-build-002/SRW64.exe}"
 DEST="$REPO/games/Aliens versus Predator 2/SR-AvP2/x64"
@@ -25,6 +33,7 @@ gen() {
     # gen <SRW-games subdir> <original file> <module name>
     sub="$1"; orig="$2"; mod="$3"
     dir="$RUN/$mod"
+    out="$DEST/$PFX$mod"
     mkdir "$dir"
     cp "$SRWBIN" "$dir/SRW.exe"
     cp "$RETAIL/$orig" "$HERE/$sub/SR.cfg" "$I76/SRW/compact_source.py" "$I76/SRW/repair_short_jumps.py" "$dir/"
@@ -33,19 +42,26 @@ gen() {
     (cd "$dir" && ./SRW.exe "$orig" "$mod.asm" > srw.out 2> srw.err; echo "$mod: SRW rc=$?"; grep -E "^Error|disassembly error" srw.err; python3 compact_source.py > /dev/null; python3 "$I76/fix_import_names.py" "$mod.asm" seg*.inc > /dev/null; [ -e "$HERE/$sub/exports.txt" ] && python3 "$HERE/tools/prefix_exports.py" "$mod" "$HERE/$sub/exports.txt" "$mod.asm" seg*.inc)
     # assemble and repair out-of-range short jumps until nasm is happy
     for pass in 1 2 3 4 5; do
-        (cd "$dir" && nasm -felf64 -O1 -w+orphan-labels -w-number-overflow -i"$DEST/$mod/" -i"$DEST/" "$mod.asm" -o "$mod.o" 2> a.a)
+        (cd "$dir" && nasm -felf64 -O1 -w+orphan-labels -w-number-overflow -i"$out/" -i"$DEST/" "$mod.asm" -o "$mod.o" 2> a.a)
         if ! grep -q "short jump is out of range" "$dir/a.a"; then break; fi
         (cd "$dir" && python3 repair_short_jumps.py > /dev/null)
     done
     grep -v "short jump is out of range" "$dir/a.a" | head -20
-    mkdir -p "$DEST/$mod"
-    cp "$dir/$mod.asm" "$dir/"seg*.inc "$DEST/$mod/"
+    mkdir -p "$out"
+    cp "$dir/$mod.asm" "$dir/"seg*.inc "$out/"
 }
 
 # ONLY=<module> regenerates one module
 want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 
-want lithtech && gen SRW-lithtech lithtech.exe lithtech
-want cshell   && gen SRW-cshell   CShell.DLL   cshell
-want server   && gen SRW-server   server.dll   server
-want object   && gen SRW-object   Object.LTO   object
+if [ "$GAME" = ph ]; then
+    want lithtech && gen SRW-ph-lithtech lithtech.exe lithtech
+    want cshell   && gen SRW-ph-cshell   CSHELL.DLL   cshell
+    want server   && gen SRW-ph-server   server.dll   server
+    want object   && gen SRW-ph-object   OBJECT.LTO   object
+else
+    want lithtech && gen SRW-lithtech lithtech.exe lithtech
+    want cshell   && gen SRW-cshell   CShell.DLL   cshell
+    want server   && gen SRW-server   server.dll   server
+    want object   && gen SRW-object   Object.LTO   object
+fi

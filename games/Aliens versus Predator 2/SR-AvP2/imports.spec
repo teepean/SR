@@ -173,6 +173,7 @@ GetTextCharacterExtra        std1   -     GDI32.dll      # lithtech | int (__std
 GetTextExtentPoint32A        std4   -     GDI32.dll      # lithtech | BOOL (__stdcall *)(HDC hdc, LPCSTR lpString, int c, LPSIZE psizl)
 GetTickCount                 std0   -     KERNEL32.dll   # lithtech | DWORD (__stdcall *)()
 GetTimeZoneInformation       std1   -     KERNEL32.dll   # lithtech | DWORD (__stdcall *)(LPTIME_ZONE_INFORMATION lpTimeZoneInformation)
+GetUserNameA                 std2   -     ADVAPI32.dll   # cshell (Primal Hunt) | BOOL (__stdcall *)(LPSTR lpBuffer, LPDWORD pcbBuffer)
 GetVersion                   std0   -     KERNEL32.dll   # lithtech | DWORD (__stdcall *)()
 GetVersionExA                std1   -     KERNEL32.dll   # lithtech | BOOL (__stdcall *)(LPOSVERSIONINFOA lpVersionInformation)
 GetWindowLongA               std2   -     USER32.dll     # cshell | LONG (__stdcall *)(HWND hWnd, int nIndex)

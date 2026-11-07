@@ -272,6 +272,22 @@ int32_t CCALL RegCreateKeyExA_c(uint32_t hKey, const char *lpSubKey, uint32_t Re
     return ERROR_SUCCESS;
 }
 
+// Primal Hunt's client shell skips the intro movies for one developer's user name; any other name will do
+int32_t CCALL GetUserNameA_c(char *lpBuffer, uint32_t *pcbBuffer)
+{
+    static const char name[] = "Player";
+
+    if (pcbBuffer == NULL) return 0;
+    if ((lpBuffer == NULL) || (*pcbBuffer < sizeof(name)))
+    {
+        *pcbBuffer = sizeof(name);
+        return 0;
+    }
+    memcpy(lpBuffer, name, sizeof(name));
+    *pcbBuffer = sizeof(name);
+    return 1;
+}
+
 int32_t CCALL RegCloseKey_c(uint32_t hKey)
 {
     if (root_name(hKey) != NULL) return ERROR_SUCCESS;

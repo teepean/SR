@@ -25,6 +25,7 @@
 #include "ptr32.h"
 #include "winapi.h"
 #include "display.h"
+#include "game.h"
 #include "config.h"
 #include "host.h"
 #include "render3d.h"
@@ -225,7 +226,7 @@ int32_t CCALL ren_Init_c(RenderStructInit32 *pInit)
     screen_w = (int)pInit->mode.width;
     screen_h = (int)pInit->mode.height;
     if ((screen_w <= 0) || (screen_h <= 0)) { screen_w = 640; screen_h = 480; }
-    if (!display_create("Aliens versus Predator 2", screen_w, screen_h))
+    if (!display_create(game.title, screen_w, screen_h))
     {
         eprintf("render: can't create the display\n");
         return RENDER_ERROR;

@@ -62,7 +62,7 @@ if 'PATH_INC' in os.environ:
 if 'PATH_LIB' in os.environ:
     env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
 
-arch_objs = SConscript('x64/SConscript', exports='device env')
+common_objs, avp2_objs, ph_objs = SConscript('x64/SConscript', exports='device env')
 
 # Godot (LibGodot) as the window system and 3D renderer: host_godot.cpp with godot-cpp
 # (GODOT_CPP=<godot-cpp checkout with bin/libgodot-cpp.*.a built for the libgodot used>). libgodot itself is
@@ -87,4 +87,12 @@ if godot_lib is not None:
 else:
     print('Godot (godot-cpp) not found: SDL window only')
 
-env.Program('SR-AvP2' + ('-x64' if device == 'pc64-linux' else ''), Glob('*.c') + arch_objs + godot_objs)
+# two programs from the same runtime: Aliens versus Predator 2 and Primal Hunt (game_avp2.c / game_ph.c and
+# each game's recompiled modules)
+suffix = '-x64' if device == 'pc64-linux' else ''
+runtime_objs = [env.Object(f) for f in Glob('*.c') if not os.path.basename(str(f)).startswith('game_')]
+env.Program('SR-AvP2' + suffix, runtime_objs + [env.Object('game_avp2.c')] + common_objs + avp2_objs + godot_objs)
+if ph_objs:
+    env.Program('SR-AvP2PH' + suffix, runtime_objs + [env.Object('game_ph.c')] + common_objs + ph_objs + godot_objs)
+else:
+    print('Primal Hunt modules (x64/ph-*) not generated: SR-AvP2PH not built')

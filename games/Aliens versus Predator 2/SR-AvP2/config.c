@@ -1,7 +1,7 @@
 /**
  *
- *  Settings: SR-I76.cfg in the game directory, overridden by environment variables AVP2_<KEY>.
- *  A commented default file is written if none exists.
+ *  Settings: SR-AvP2.cfg in the game directory, overridden by environment variables AVP2_<KEY>.
+ *  A commented default file (game.h: the game's) is written if none exists.
  *
  */
 
@@ -11,6 +11,7 @@
 #include <string.h>
 #include <strings.h>
 #include "config.h"
+#include "game.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,42 +22,6 @@ extern "C" {
 
 static struct { char key[32]; char value[128]; } entries[MAX_ENTRIES];
 static int num_entries, loaded;
-
-static const char default_config[] =
-    "# Interstate '76 (SR-I76) settings. Environment variables AVP2_<KEY> override these.\n"
-    "\n"
-    "# renderer: glide (hardware 3D) or software\n"
-    "renderer = glide\n"
-    "# Windows: graphics API: d3d11 (default) or opengl (OpenGL 3.3 is always used on Linux)\n"
-    "graphics_api = d3d11\n"
-    "# Glide internal resolution = 640x480 * glide_scale (1-8)\n"
-    "glide_scale = 2\n"
-    "# Direct3D 11: anisotropic texture filtering (1 = off, 2-16 = filter quality); sharpens textures\n"
-    "# seen at a grazing angle (roads, walls). Ignored by OpenGL.\n"
-    "anisotropy = 8\n"
-    "# initial window size = game resolution * window_scale\n"
-    "window_scale = 2\n"
-    "# start in full screen (Alt+Enter toggles)\n"
-    "fullscreen = 0\n"
-    "# frame rate limit: the game logic was made for ~20 FPS (physics, AI and weapons misbehave at high\n"
-    "# frame rates); 0 = unlimited\n"
-    "fps = 20\n"
-    "# Linux video driver: x11 (default, also on Wayland desktops via XWayland), wayland or auto\n"
-    "video_driver = x11\n"
-    "# vertical sync (1 = on, 0 = off)\n"
-    "vsync = 1\n"
-    "# sound (1 = on, 0 = off)\n"
-    "sound = 1\n"
-    "# CD drive: 2 = audio CD (music from music/*.mp3), 1 = game CD, 0 = no CD drive\n"
-    "cd = 2\n"
-    "# joystick / gamepad (1 = on, 0 = off)\n"
-    "joystick = 1\n"
-    "# joystick backend: sdl, or evdev (Linux: read /dev/input directly)\n"
-    "joystick_backend = sdl\n"
-    "# multiplayer: net_nat = 1 (default) works through NAT routers (only the host forwards UDP port 21155;\n"
-    "# every player needs SR-I76 with net_nat = 1); 0 = the original network addresses (LAN or VPN, compatible\n"
-    "# with the original game)\n"
-    "net_nat = 1\n";
 
 static void trim(char *s)
 {
@@ -110,10 +75,10 @@ void config_load(void)
         f = fopen(CONFIG_FILE, "wb");
         if (f != NULL)
         {
-            fputs(default_config, f);
+            fputs(game.default_config, f);
             fclose(f);
         }
-        parse(default_config);
+        parse(game.default_config);
         return;
     }
     fseek(f, 0, SEEK_END);

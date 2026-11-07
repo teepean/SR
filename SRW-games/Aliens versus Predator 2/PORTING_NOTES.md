@@ -329,3 +329,31 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - Poly grids and line systems are drawn too (no level seen with poly grids yet: AvP2's water is translucent world
   geometry). Lines: d3d_DrawLineSystem's colours, alpha x the object's alpha, no fog.
 - Memory over a 4-minute m1s1 run stays at ~860 MB RSS.
+
+### 2026-11-08 — Primal Hunt
+- Primal Hunt (1.0.2.2) has its own engine (lithtech.exe, server.dll) and game DLLs (CSHELL.DLL, OBJECT.LTO in its
+  AVP2DLL.REZ): recompiled the same way into x64/ph-<module>/ (`GAME=ph gen_all.sh`; SRW-ph-<module>/, IDA exports
+  in avp2work/ida-ph-*, avp2src enumfuncs roots). The modules keep their names and exported symbols, so the whole
+  runtime is shared: SConstruct links a second program, SR-AvP2PH, with game_ph.c instead of game_avp2.c
+  (game.h: title, the launcher's archive list, default settings, layout differences).
+- PH engine: entry 0x4c283b, i_IntersectSegment 0x43B77D (same code as AvP2's 0x438C9D), CRT memcpy/memmove
+  0x4c0b10/0x4c3530, `cmp esi, fs:[0]` in _longjmp at 0x4c1b25. Three relocations gen_relocs.py rejected are
+  real (a CRT function table entry, two SEH scope handlers).
+- relocations_exclude.csv (both engines): gen_relocs.py took words in the CRT's _getch key table for pointers
+  (one even pointed past .data and SRW refused it); relocations.csv = gen_relocs.py's output - exclude + include.
+- bssborder: SRW splits .data at the border into two sections that the linker doesn't keep together. PH's .data
+  raw size ends (0x4f0000) inside a 0x101-byte table at 0x4effbc, whose memset then ran into the client shell's
+  C++ initializer table (the next section in the executable) - the border is 0x4f00c0, after the table.
+- Archives: PH runs on AvP2's install. PrimalHunt.exe (avp2src's launcher, PRIMAL_HUNT) puts AvP2's AVP2.REZ and
+  SOUNDS.REZ (and the campaigns' if there) first, then its own AVP2X, MULTI, AVP2DLL, AVP2L, DIALOGUE, the patch
+  archives and custom. Setting avp2_dir = AvP2's directory (relative, or absolute - turned into ..\ up to the root,
+  as every game path is inside the game directory); default the game directory.
+- PH's client shell calls GetUserNameA (a developer's name skips the intro movies): "Player".
+- render3d: PH's ModelInstance has an environment map after the four skins (+0x1d0), so the animation tracker
+  (model pointer 0x1fc) and the hidden pieces (0x260) moved (avp2src d3d/ph/drawmodel_env.cpp, d3d_modelvb.cpp);
+  the other object layouts render3d reads are the same in avp2src's PH d3d.ren.
+- The default settings file (SR-AvP2.cfg) was still Interstate '76's text: now each game's (game.h).
+- host_godot: with window_scale 1 the root viewport kept the engine's first window size (320x200) - the window
+  went 320x200 and back to 640x480 before Godot saw the first resize, and no event came for the second; the
+  size is asked again (or nudged by a pixel) while window and viewport differ in the 2 s after a change.
+- Now: exp1s1 (Predator campaign) plays with HUD and the wrist blades at ~170 frames/s.

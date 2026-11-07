@@ -36,10 +36,17 @@ env2 = env1.Clone()
 env1.Append(ASFLAGS = ' -Ox')
 env2.Append(ASFLAGS = ' -O1')
 
-module_objs = []
-for module in ['lithtech', 'cshell', 'server', 'object']:
-    module_objs += SConscript(module + '/SConscript', exports='device env2')
+# the recompiled modules: AvP2's in <module>/, Primal Hunt's in ph-<module>/ (each set is linked into its own
+# program; Primal Hunt's only when gen_all.sh has generated them)
+modules = ['lithtech', 'cshell', 'server', 'object']
+avp2_objs = []
+for module in modules:
+    avp2_objs += SConscript(module + '/SConscript', exports='device env2')
+ph_objs = []
+if all(os.path.exists(os.path.join(Dir('.').srcnode().abspath, 'ph-' + module, module + '.asm')) for module in modules):
+    for module in modules:
+        ph_objs += SConscript('ph-' + module + '/SConscript', exports='device env2')
 
-obj = env1.Object(Glob('*.asm')) + env.Object(Glob('*.c')) + module_objs
+common_objs = env1.Object(Glob('*.asm')) + env.Object(Glob('*.c'))
 
-Return('obj')
+Return('common_objs avp2_objs ph_objs')

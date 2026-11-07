@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 #include <SDL.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -30,6 +31,8 @@
 #include "display.h"
 #include "host.h"
 #include "peimage.h"
+#include "vfs.h"
+#include "game.h"
 
 EXTERN_C_BEGIN
 
@@ -81,16 +84,42 @@ static void add_arg(const char *arg)
 
 static int file_exists(const char *name)
 {
-    FILE *f = fopen(name, "rb");
-    if (f == NULL) return 0;
-    fclose(f);
-    return 1;
+    char host[1024];
+    return vfs_resolve(name, host, sizeof(host));
+}
+
+// "avp2:<name>": <name> in AvP2's install (avp2_dir) as a path the game can use: relative to the game directory
+// (the virtual file system maps every path into it; an absolute directory becomes ../.. up to the root)
+static void avp2_path(const char *name, char *path, size_t size)
+{
+    const char *dir = config_get("avp2_dir");
+    char cwd[1024];
+    size_t len;
+    const char *p;
+
+    path[0] = 0;
+    if ((dir == NULL) || (dir[0] == 0))
+    {
+        snprintf(path, size, "%s", name);
+        return;
+    }
+    if (dir[0] == '/')
+    {
+        if (getcwd(cwd, sizeof(cwd)) == NULL) cwd[0] = 0;
+        for (p = cwd; *p; p++)
+        {
+            if ((*p == '/') && (p[1] != 0) && (p[1] != '/')) strncat(path, "..\\", size - strlen(path) - 1);
+        }
+        dir++;
+    }
+    len = strlen(path);
+    snprintf(path + len, size - len, "%s\\%s", dir, name);
+    for (p = path; *p; p++) if (*p == '/') *(char *)p = '\\';
 }
 
 static void prepare_command_line(int argc, char *argv[])
 {
-    static const char *const rez[] = { "AVP2.REZ", "SOUNDS.REZ", "ALIEN.REZ", "MARINE.REZ", "PREDATOR.REZ", "MULTI.REZ",
-                                       "AVP2DLL.REZ", "AVP2L.REZ", "custom", "AVP2P.REZ" };
+    char path[1024];
     int i, launcher = 1;
 
     // the program name first, as Windows passes it
@@ -102,19 +131,27 @@ static void prepare_command_line(int argc, char *argv[])
     if (launcher)
     {
         add_arg("-windowtitle");
-        add_arg(config_get("window_title") != NULL ? config_get("window_title") : "Aliens versus Predator 2");
-        for (i = 0; i < (int)(sizeof(rez) / sizeof(rez[0])); i++)
+        add_arg(config_get("window_title") != NULL ? config_get("window_title") : game.title);
+        for (i = 0; game.rez[i] != NULL; i++)
         {
-            // case-insensitive game directory: the archives are found by vfs_resolve's lookup too, but only add
-            // the ones that exist (custom is a directory and always added)
-            if ((strcmp(rez[i], "custom") == 0) || file_exists(rez[i]))
+            if (strncmp(game.rez[i], "avp2:", 5) == 0) avp2_path(game.rez[i] + 5, path, sizeof(path));
+            else if (strncmp(game.rez[i], "avp2?:", 6) == 0) avp2_path(game.rez[i] + 6, path, sizeof(path));
+            else snprintf(path, sizeof(path), "%s", game.rez[i]);
+            // case-insensitive game directory: only add the archives that exist (custom is a directory and
+            // always added)
+            if ((strcmp(path, "custom") == 0) || file_exists(path))
             {
                 add_arg("-rez");
-                add_arg(rez[i]);
+                add_arg(path);
+            }
+            else if (strncmp(game.rez[i], "avp2:", 5) == 0)
+            {
+                eprintf("Warning: %s not found (setting avp2_dir: Aliens versus Predator 2's directory)\n", path);
             }
         }
     }
     for (i = 1; i < argc; i++) add_arg(argv[i]);
+    if (winapi_debug) eprintf("command line: %s\n", command_line);
 }
 
 int main(int argc, char *argv[])
