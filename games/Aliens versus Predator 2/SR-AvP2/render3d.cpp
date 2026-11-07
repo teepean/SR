@@ -18,8 +18,11 @@
  *  weapon (FLAG_REALLYCLOSE) in the camera's space in front of everything.
  *  Sprites (camera facing or rotatable quads, glow and depth bias in the vertex shader) and particle systems (one
  *  mesh per system, rebuilt each frame).
+ *  The sky (SceneDesc's sky objects seen from the sky box, behind the world, in their order) and fog (the engine's
+ *  Fog* console variables: by distance, the sky's by depth from the sky camera).
  *  To do: poly grids, lines, canvases, dynamic light on the world, animated light, shadow-map light animations,
- *  sky, fog, detail and environment textures, model LODs and static lights for models.
+ *  vertical fog, detail and environment textures, model LODs and static lights for models, sprite-animated
+ *  surfaces (SURF_SPRITEANIMATE).
  *
  *  Debugging: AVP2_R3D_FULLBRIGHT=1 (textures only), AVP2_R3D_LMSCALE / AVP2_R3D_VCSCALE (light scales),
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
@@ -192,6 +195,9 @@ struct godot_scene
     world_context *current;
     std::vector<MeshInstance3D *> world_meshes;     // the static world
     std::map<uint32_t, Ref<ArrayMesh>> bsp_meshes;  // world models' BSPs, by WorldBsp*
+    std::map<uint32_t, std::vector<uint64_t>> bsp_keys;    // their surfaces' material keys (texture, kind, page)
+    Node3D *sky_root;                               // the sky's objects, moved with the camera
+    std::map<uint32_t, wm_instance> sky_instances;  // by object
     std::map<uint32_t, wm_instance> wm_instances;   // by object (LTObject*)
     std::map<uint32_t, model_instance> models;        // by object
     std::map<uint32_t, sprite_instance> sprites;      // by object
@@ -202,6 +208,8 @@ struct godot_scene
     int shown;
 };
 static godot_scene *gs;
+
+static void fog_init(void);
 
 static int ready(void)
 {
@@ -215,11 +223,14 @@ static int ready(void)
         SceneTree *tree = Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
         gs->root = memnew(Node3D);
         tree->get_root()->add_child(gs->root);
+        gs->sky_root = memnew(Node3D);
+        gs->root->add_child(gs->sky_root);
         gs->camera = memnew(Camera3D);
         gs->root->add_child(gs->camera);
         gs->camera->set_current(true);
         gs->camera->set_keep_aspect_mode(Camera3D::KEEP_HEIGHT);
         RenderingServer::get_singleton()->set_default_clear_color(Color(0, 0, 0));
+        fog_init();
         gs->root->set_visible(false);
     }
     return 1;
@@ -228,6 +239,27 @@ static int ready(void)
 extern "C" void r3d_set_render_struct(uint8_t *rs)
 {
     render_struct = rs;
+}
+
+/* ------------------------------------------------------------------ */
+/* console variables                                                   */
+
+// RenderStruct::GetParameter(name) (an HLTPARAM, 0 if the variable doesn't exist) and GetParameterValueString:
+// the value as text (the float one returns in st0, which call_game doesn't give back)
+#define RS_GETPARAMETER 0x18
+#define RS_GETPARAMETERVALUESTRING 0x20
+
+static float cvar(const char *name, float def)
+{
+    static char buf[64];    // in 32-bit memory for the engine
+    if (render_struct == NULL) return def;
+    strncpy(buf, name, sizeof(buf) - 1);
+    uint32_t args[1] = { (uint32_t)(uintptr_t)buf };
+    uint32_t h = call_game(*(uint32_t *)(render_struct + RS_GETPARAMETER), 1, args);
+    if (h == 0) return def;
+    args[0] = h;
+    uint32_t str = call_game(*(uint32_t *)(render_struct + RS_GETPARAMETERVALUESTRING), 1, args);
+    return str ? (float)atof((const char *)(uintptr_t)str) : def;
 }
 
 /* ------------------------------------------------------------------ */
@@ -337,7 +369,32 @@ extern "C" void r3d_unbind_texture(void *texture)
 enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
 // "really close" objects (the player's weapon): their depth is squeezed in front of everything else
 #define MAT_REALLYCLOSE 4
-#define MAT_KINDS 8
+// the sky's objects: at the far plane (behind everything), no depth writes, drawn in their order (render priority)
+#define MAT_SKY 8
+#define MAT_KINDS 16
+
+// the fog (global shader parameters, set each frame from the console variables FogEnable, FogNearZ, FogFarZ,
+// FogR/G/B, SkyFogNearZ, SkyFogFarZ)
+#define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\n"
+
+static void fog_init(void)
+{
+    RenderingServer *rs = RenderingServer::get_singleton();
+    rs->global_shader_parameter_add("lt_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 2000, 0));
+    rs->global_shader_parameter_add("lt_fog_color", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(1, 1, 1, 1));
+    rs->global_shader_parameter_add("lt_sky_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 2000, 0, 0));
+}
+
+static void fog_update(void)
+{
+    static int n;
+    if ((n++ % 15) != 0) return;
+    RenderingServer *rs = RenderingServer::get_singleton();
+    float on = (getenv("AVP2_R3D_NOFOG") == NULL) && (cvar("FogEnable", 0) != 0.0f);
+    rs->global_shader_parameter_set("lt_fog", Vector4(on ? 1.0f : 0.0f, cvar("FogNearZ", 0), cvar("FogFarZ", 2000), 0));
+    rs->global_shader_parameter_set("lt_fog_color", Vector4(cvar("FogR", 255) / 255.0f, cvar("FogG", 255) / 255.0f, cvar("FogB", 255) / 255.0f, 1));
+    rs->global_shader_parameter_set("lt_sky_fog", Vector4(cvar("SkyFogNearZ", 0), cvar("SkyFogFarZ", 2000), 0, 0));
+}
 
 static const char *shader_code(int kind)
 {
@@ -347,6 +404,7 @@ static const char *shader_code(int kind)
         int blend = kind & 3;
         std::string modes = "unshaded, cull_disabled";
         if (blend == MAT_ADD) modes += ", blend_add";
+        if (kind & MAT_SKY) modes += ", depth_draw_never";
         // D3D's arithmetic: texture * light in the stored (sRGB) values, the lightmap stage 2x (MODULATE2X, as
         // d3d.ren uses when the card has it), the vertex colour 1x; the result is converted for Godot (linear)
         char scales[160];
@@ -355,7 +413,7 @@ static const char *shader_code(int kind)
         std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
             "uniform sampler2D albedo : filter_linear_mipmap_anisotropic, repeat_enable;\n"
             "uniform sampler2D lightmap : filter_linear, repeat_disable;\n"
-            "uniform float use_lightmap = 0.0;\n" + std::string(scales) +
+            "uniform float use_lightmap = 0.0;\n" + std::string(scales) + FOG_UNIFORMS +
             "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n";
         // reverse z (near 1, far 0): the really close objects get [0.9, 1]
         if (kind & MAT_REALLYCLOSE)
@@ -363,11 +421,24 @@ static const char *shader_code(int kind)
                  "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
                  "  POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n"
                  "}\n";
+        // the sky: just in front of the far plane (0), behind any world geometry (near / far >= 1 / 30000)
+        if (kind & MAT_SKY)
+            c += "void vertex() {\n"
+                 "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
+                 "  POSITION.z = POSITION.w * 1e-7;\n"
+                 "}\n";
         c += "void fragment() {\n"
             "  vec4 t = texture(albedo, UV);\n"
             "  vec3 light = (use_lightmap > 0.5) ? texture(lightmap, UV2).rgb * LM_SCALE : COLOR.rgb * VC_SCALE;\n"
-            "  ALBEDO = to_linear(clamp(t.rgb * light, 0.0, 1.0));\n";
-        if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  ALBEDO = to_linear(t.rgb);\n";
+            "  vec3 col = clamp(t.rgb * light, 0.0, 1.0);\n";
+        if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  col = t.rgb;\n";
+        // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
+        // surfaces fade to black)
+        c += (kind & MAT_SKY) ? "  float f = lt_fog.x * clamp((-VERTEX.z - lt_sky_fog.x) / max(lt_sky_fog.y - lt_sky_fog.x, 0.001), 0.0, 1.0);\n"
+                              : "  float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n";
+        c += (blend == MAT_ADD) ? "  col *= 1.0 - f;\n" : "  col = mix(col, lt_fog_color.rgb, f);\n";
+        c += "  ALBEDO = to_linear(col);\n";
+        if ((kind & MAT_SKY) && (blend == MAT_OPAQUE)) c += "  ALPHA = 1.0;\n";
         if (blend == MAT_ALPHA_TEST) c += "  ALPHA = t.a;\n  ALPHA_SCISSOR_THRESHOLD = 0.5;\n";
         if (blend == MAT_BLEND) c += "  ALPHA = t.a * COLOR.a;\n";
         if (blend == MAT_ADD) c += "  ALPHA = 1.0;\n";
@@ -389,6 +460,7 @@ struct world_materials
 {
     Ref<Shader> shaders[MAT_KINDS];
     std::map<uint64_t, Ref<ShaderMaterial>> materials;
+    std::map<uint64_t, Ref<ShaderMaterial>> sky_materials;
     std::vector<lm_page> pages;
 };
 static world_materials *wm;
@@ -415,6 +487,21 @@ static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page)
         m->set_shader_parameter("use_lightmap", 1.0f);
     }
     wm->materials[key] = m;
+    return m;
+}
+
+// a sky object's version of a material (its order among the sky objects in the render priority)
+static Ref<ShaderMaterial> sky_material(uint64_t key, int index)
+{
+    uint64_t k = (key << 8) | (uint64_t)(index & 0xff);
+    auto it = wm->sky_materials.find(k);
+    if (it != wm->sky_materials.end()) return it->second;
+    int kind = (int)(key & 0xf) | MAT_SKY;
+    // d3d_DrawSkyObjects draws the surfaces that aren't translucent without blending or alpha test
+    if ((kind & 3) == MAT_ALPHA_TEST) kind &= ~3;
+    Ref<ShaderMaterial> m = get_material((uint32_t)(key >> 16), kind, (int)((key >> 4) & 0xfff) - 1)->duplicate();
+    m->set_render_priority(-120 + ((index < 200) ? index : 200));
+    wm->sky_materials[k] = m;
     return m;
 }
 
@@ -759,6 +846,9 @@ static void clear_world(void)
     gs->particles.clear();
     gs->sprite_materials.clear();
     gs->bsp_meshes.clear();
+    gs->bsp_keys.clear();
+    for (auto &kv : gs->sky_instances) kv.second.mi->queue_free();
+    gs->sky_instances.clear();
     delete wm;
     wm = new world_materials();
 }
@@ -917,6 +1007,8 @@ static void build_world(world_context *ctx)
     {
         std::vector<Ref<ArrayMesh>> m = make_meshes(kv.second);
         if (!m.empty()) gs->bsp_meshes[kv.first] = m[0];
+        std::vector<uint64_t> &keys = gs->bsp_keys[kv.first];
+        for (auto &b : kv.second) keys.push_back(b.first);    // the surfaces' materials, in their order
     }
     ctx->built = 1;
     if (winapi_debug) eprintf("render3d: built %u polies (%u lightmapped, %zu lightmap pages), %u triangles, %zu static batches, %zu world model meshes, %zu textures\n",
@@ -1406,6 +1498,7 @@ static void update_models(uint32_t mw, uint32_t sd)
 #define FLAG_ROTATEABLESPRITE (1 << 3)
 #define FLAG_SPRITE_NOZ (1 << 4)
 #define FLAG_GLOWSPRITE (1 << 5)
+#define FLAG_FOGDISABLE (1 << 7)
 #define FLAG2_MULTIPLY (1 << 3)
 
 // shader variants of the sprites (and particles)
@@ -1418,6 +1511,7 @@ enum
     SPR_BIAS = 32,                  // FLAG_SPRITEBIAS: depth 20 units nearer
     SPR_CLOSE = 64,                 // FLAG_REALLYCLOSE
     SPR_PARTICLES = 128,            // a particle system: each quad's centre in its vertices, the corner offset in UV2
+    SPR_NOFOG = 256,                // FLAG_FOGDISABLE
 };
 
 static Ref<Shader> sprite_shader(int v)
@@ -1432,7 +1526,7 @@ static Ref<Shader> sprite_shader(int v)
     std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
         "uniform sampler2D albedo : filter_linear_mipmap, repeat_disable;\n"
         "instance uniform vec4 color = vec4(1.0);\n"
-        "instance uniform vec2 half_size = vec2(1.0);\n"
+        "instance uniform vec2 half_size = vec2(1.0);\n" FOG_UNIFORMS
         "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
         "void vertex() {\n";
     if (v & SPR_PARTICLES)
@@ -1456,7 +1550,14 @@ static Ref<Shader> sprite_shader(int v)
     c += "}\n"
          "void fragment() {\n"
          "  vec4 t = texture(albedo, UV) * color * COLOR;\n"
-         "  ALBEDO = to_linear(clamp(t.rgb, 0.0, 1.0));\n"
+         "  vec3 col = clamp(t.rgb, 0.0, 1.0);\n";
+    if (!(v & SPR_NOFOG))
+    {
+        // fog: additive fades to black, multiplied to white (d3d_DrawSprite's fog colours)
+        c += "  float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n";
+        c += (v & SPR_ADD) ? "  col *= 1.0 - f;\n" : (v & SPR_MUL) ? "  col = mix(col, vec3(1.0), f);\n" : "  col = mix(col, lt_fog_color.rgb, f);\n";
+    }
+    c += "  ALBEDO = to_linear(col);\n"
          "  ALPHA = t.a;\n"
          "}\n";
     Ref<Shader> sh;
@@ -1468,7 +1569,7 @@ static Ref<Shader> sprite_shader(int v)
 
 static Ref<ShaderMaterial> sprite_material(uint32_t tex, int v)
 {
-    uint64_t key = ((uint64_t)tex << 8) | (uint64_t)v;
+    uint64_t key = ((uint64_t)tex << 16) | (uint64_t)v;
     auto it = gs->sprite_materials.find(key);
     if (it != gs->sprite_materials.end()) return it->second;
     Ref<ShaderMaterial> m;
@@ -1539,6 +1640,7 @@ static void draw_sprite(uint32_t mw, uint32_t sd, uint32_t o)
         if (flags & FLAG_SPRITEBIAS) v |= SPR_BIAS;
     }
     if (close) v |= SPR_CLOSE;
+    if (flags & FLAG_FOGDISABLE) v |= SPR_NOFOG;
 
     sprite_instance &si = gs->sprites[o];
     if (si.mi == NULL)
@@ -1620,6 +1722,7 @@ static void draw_particles(uint32_t o)
     if (flags2 & FLAG2_ADDITIVE) v |= SPR_ADD;
     else if (flags2 & FLAG2_MULTIPLY) v |= SPR_MUL;
     if (close) v |= SPR_CLOSE;
+    if (flags & FLAG_FOGDISABLE) v |= SPR_NOFOG;
 
     sprite_instance &si = gs->particles[o];
     if (si.mi == NULL)
@@ -1716,6 +1819,94 @@ static void update_particles(uint32_t mw)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* the sky                                                             */
+
+// SceneDesc
+#define SD_SKYDEF 0x84              // box min, max, view min, view max
+#define SD_SKYOBJECTS 0xb4
+#define SD_NSKYOBJECTS 0xb8
+// MainWorld
+#define MW_EXTENTSMIN 0x144
+#define MW_EXTENTSMAX 0x150
+
+// The sky's objects (SceneDesc::m_SkyObjects: world models) seen from the sky camera, which is in the sky box
+// where the viewer is in the world (d3d_SetupSkyStuff: ViewMin + (ViewMax - ViewMin) x the viewer's place in the
+// world's extents) and turned like the camera: copies of their meshes, moved by (camera - sky camera), with
+// materials at the far plane in the objects' order (d3d_DrawSkyObjects draws them without the z buffer, in order).
+// The world covers them except where its sky polies (SURF_SKY, not drawn) are.
+static void update_sky(uint32_t mw, uint32_t sd)
+{
+    int n = (int)g32(sd + SD_NSKYOBJECTS);
+    uint32_t list = g32(sd + SD_SKYOBJECTS);
+    Vector3 cam = gs->camera->get_transform().origin;
+    float c[3] = { cam.x, cam.y, -cam.z }, sky[3];
+    for (int i = 0; i < 3; i++)
+    {
+        float mn = gf(mw + MW_EXTENTSMIN + 4 * i), mx = gf(mw + MW_EXTENTSMAX + 4 * i);
+        float f = (mx != mn) ? (c[i] - mn) / (mx - mn) : 0.5f;
+        float vmin = gf(sd + SD_SKYDEF + 24 + 4 * i), vmax = gf(sd + SD_SKYDEF + 36 + 4 * i);
+        sky[i] = vmin + (vmax - vmin) * f;
+    }
+    gs->sky_root->set_transform(Transform3D(Basis(), cam - Vector3(sky[0], sky[1], -sky[2])));
+
+    for (int i = 0; (i < n) && (i < 200) && list; i++)
+    {
+        uint32_t o = g32(list + 4 * i);
+        if ((o == 0) || !(g32(o + OB_FLAGS) & FLAG_VISIBLE) || (g8(o + OB_TYPE) != OT_WORLDMODEL)) continue;
+        uint32_t bsp = g32(o + WM_ORIGINALBSP);
+        auto mit = gs->bsp_meshes.find(bsp);
+        if (mit == gs->bsp_meshes.end()) continue;
+        wm_instance &wi = gs->sky_instances[o];
+        if (wi.mi == NULL)
+        {
+            wi.mi = memnew(MeshInstance3D);
+            gs->sky_root->add_child(wi.mi);
+            wi.bsp = 0;
+            // the sky is far from everything: never culled
+            wi.mi->set_extra_cull_margin(16384.0f);
+            if (winapi_debug >= 2)
+            {
+                std::map<uint64_t, int> seen;
+                for (uint32_t p = 0; p < g32(bsp + WB_NPOLIES); p++)
+                {
+                    uint32_t poly = g32(g32(bsp + WB_POLIES) + 4 * p), surf = poly ? g32(poly + WP_SURFACE) : 0;
+                    if (surf) seen[((uint64_t)g32(surf + SF_FLAGS) << 32) | g32(surf + SF_TEXTURE)]++;
+                    if (p < 2)
+                    {
+                        uint32_t vv = g32(poly + WP_PVERTICES);
+                        eprintf("render3d: sky %d poly %u vertex colours %08x %08x %08x uv %.1f %.1f\n", i, p, g32(vv + PV_COLOR), g32(vv + PV_SIZE + PV_COLOR), g32(vv + 2 * PV_SIZE + PV_COLOR),
+                                gf(vv + PV_U), gf(vv + PV_V));
+                    }
+                }
+                for (auto &e : seen)
+                {
+                    texture_entry &te = get_texture((uint32_t)e.first);
+                    eprintf("render3d: sky %d \"%s\": %d polies surface flags %08x texture %08x (%.0f x %.0f, alpha %d)\n", i, (const char *)(uintptr_t)(bsp + 4), e.second,
+                            (uint32_t)(e.first >> 32), (uint32_t)e.first, 1.0f / te.inv_w, 1.0f / te.inv_h, te.has_alpha);
+                }
+            }
+        }
+        if ((wi.bsp != bsp) || (wi.alpha != (uint8_t)i))
+        {
+            wi.mi->set_mesh(mit->second);
+            std::vector<uint64_t> &keys = gs->bsp_keys[bsp];
+            for (size_t k = 0; (k < keys.size()) && ((int64_t)k < mit->second->get_surface_count()); k++)
+                wi.mi->set_surface_override_material((int)k, sky_material(keys[k], i));
+            wi.bsp = bsp;
+            wi.alpha = (uint8_t)i;      // (its place in the sky's order)
+        }
+        wi.mi->set_transform(lt_matrix(o + WM_TRANSFORM));
+        if (!wi.shown) { wi.mi->set_visible(true); wi.shown = 1; }
+        wi.frame = gs->frame;
+    }
+    for (auto &kv : gs->sky_instances)
+    {
+        wm_instance &wi = kv.second;
+        if ((wi.frame != gs->frame) && wi.shown) { wi.mi->set_visible(false); wi.shown = 0; }
+    }
+}
+
 // the engine keeps a context in 32 bits: handles are 1-based indices into this table
 static std::vector<world_context *> &contexts(void)
 {
@@ -1780,14 +1971,20 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         for (auto &e : v) eprintf("render3d: scene %s %.3f %.3f %.3f\n", e.name, gf(sd + e.ofs), gf(sd + e.ofs + 4), gf(sd + e.ofs + 8));
         eprintf("render3d: scene frame time %.4f, draw mode %u, sky objects %u\n", gf(sd + 0x80), g32(sd), g32(sd + 0xb8));
     }
-    if ((winapi_debug >= 2) && (ctx != NULL) && (ctx->world != 0) && ((ncam == 2) || (ncam == 900))) dump_objects(ctx->world);
-    if ((ctx != NULL) && (ctx->world != 0) && (ctx == gs->current))
+    if ((winapi_debug >= 2) && (ctx != NULL) && (ctx->world != 0) && ((ncam == 2) || (ncam == 900)))
     {
-        update_attachments(ctx->world);
-        update_world_models(ctx->world);
-        update_models(ctx->world, sd);
-        update_sprites(ctx->world, sd);
-        update_particles(ctx->world);
+        eprintf("render3d: FogEnable %.0f FogNearZ %.0f FogFarZ %.0f FogR/G/B %.0f %.0f %.0f SkyFogNearZ %.0f SkyFogFarZ %.0f\n", cvar("FogEnable", -1), cvar("FogNearZ", -1),
+                cvar("FogFarZ", -1), cvar("FogR", -1), cvar("FogG", -1), cvar("FogB", -1), cvar("SkyFogNearZ", -1), cvar("SkyFogFarZ", -1));
+        dump_objects(ctx->world);
+        eprintf("render3d: sky box %.0f %.0f %.0f - %.0f %.0f %.0f view %.0f %.0f %.0f - %.0f %.0f %.0f, %d sky objects, world extents %.0f %.0f %.0f - %.0f %.0f %.0f\n",
+                gf(sd + 0x84), gf(sd + 0x88), gf(sd + 0x8c), gf(sd + 0x90), gf(sd + 0x94), gf(sd + 0x98), gf(sd + 0x9c), gf(sd + 0xa0), gf(sd + 0xa4), gf(sd + 0xa8), gf(sd + 0xac), gf(sd + 0xb0),
+                (int)g32(sd + 0xb8), gf(ctx->world + 0x144), gf(ctx->world + 0x148), gf(ctx->world + 0x14c), gf(ctx->world + 0x150), gf(ctx->world + 0x154), gf(ctx->world + 0x158));
+        for (uint32_t i = 0; (i < g32(sd + 0xb8)) && (i < 64); i++)
+        {
+            uint32_t o = g32(g32(sd + 0xb4) + 4 * i);
+            eprintf("render3d:   sky %08x type %u flags %08x/%08x color %08x pos %.0f %.0f %.0f %s\n", o, g8(o + OB_TYPE), g32(o + OB_FLAGS), g32(o + OB_FLAGS2), g32(o + OB_COLOR),
+                    gf(o + OB_POS), gf(o + OB_POS + 4), gf(o + OB_POS + 8), ((g8(o + OB_TYPE) == OT_WORLDMODEL) && g32(o + WM_ORIGINALBSP)) ? (const char *)(uintptr_t)(g32(o + WM_ORIGINALBSP) + 4) : "");
+        }
     }
     float qx = gf(sd + SD_ROTATION), qy = gf(sd + SD_ROTATION + 4), qz = gf(sd + SD_ROTATION + 8), qw = gf(sd + SD_ROTATION + 12);
     Quaternion q(-qx, -qy, qz, qw);
@@ -1807,6 +2004,19 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     gs->camera->set_fov(yfov * 180.0f / 3.14159265f);
     gs->camera->set_near(1.0f);
     gs->camera->set_far((farz > 10.0f) ? farz : 10000.0f);
+
+    fog_update();
+
+    // the objects (after the camera: models are culled and lit with it)
+    if ((ctx != NULL) && (ctx->world != 0) && (ctx == gs->current))
+    {
+        update_attachments(ctx->world);
+        update_world_models(ctx->world);
+        update_sky(ctx->world, sd);
+        update_models(ctx->world, sd);
+        update_sprites(ctx->world, sd);
+        update_particles(ctx->world);
+    }
 
     if (!gs->shown)
     {

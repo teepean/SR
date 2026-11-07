@@ -262,3 +262,14 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   Windows' contiguous heap makes that a harmless garbage read; here the 32-bit heap is separate mappings and it
   crashed once while m1s1 loaded. sysmem.c's SIGSEGV handler (Linux, 64-bit) maps a page of zeros under a read
   of unmapped memory below 2 GB (logged "memory: read of unmapped game memory"); writes still crash.
+- Sky: SceneDesc::m_SkyObjects (+0xb4, count +0xb8; m1s1: 11 world models - sky box, cloud layers, a tint) are
+  drawn from the sky camera: SkyDef's ViewMin + (ViewMax - ViewMin) x the viewer's place in the world's extents
+  (MainWorld+0x144/0x150), turned like the camera (d3d_SetupSkyStuff). In Godot: copies of their meshes under a
+  node moved by (camera - sky camera), materials at the far plane (POSITION.z = 1e-7 w, reverse z) without depth
+  writes, ordered by render priority (d3d_DrawSkyObjects draws them without the z buffer, in order); surfaces
+  that aren't translucent are opaque even with an alpha texture, like the original. SURF_SKY polies of the world
+  aren't drawn, so the sky shows through them.
+- Fog: the renderer's console variables (FogEnable, FogNearZ/FarZ, FogR/G/B, SkyFogNearZ/FarZ) come from
+  RenderStruct::GetParameter + GetParameterValueString (the float getter returns in st0); Godot global shader
+  parameters. Linear by distance (d3d_CalcDistanceFogAlpha), the sky's by depth (d3d_CalcSkyFogAlpha: m1s1's
+  0..150 turns the clouds into the dark blue (8, 16, 24) of the original); additive surfaces fade to black.
