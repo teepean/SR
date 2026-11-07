@@ -321,3 +321,11 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   ("NoFog": unlit, unfogged), FOGENABLE 1 + FOGCOLOR with FOGSTART = FOGEND = 0 (the surface becomes that colour:
   heat vision's blue world), and two blend overrides (not done). Materials get the state as uniforms, updated
   when a texture's m_pStateChange changes.
+- Canvases (OT_CANVAS: the game's PolyLineFX etc. draw with their own function): d3d.ren hands the draw function
+  (Canvas+0x1b0, cdecl (ILTCustomDraw *, HLOCALOBJ, void *user)) an ILTCustomDraw, a C++ interface - its five
+  virtual methods are thiscall. x64/canvas-asm.asm has thiscall stubs (ecx = this to the C function's first
+  argument, the callee pops) behind a vtable in 32-bit memory; render3d collects the triangle fans by state
+  (blend, z read, texture by name through RenderStruct::GetSharedTexture) into the canvas's mesh each frame.
+- Poly grids and line systems are drawn too (no level seen with poly grids yet: AvP2's water is translucent world
+  geometry). Lines: d3d_DrawLineSystem's colours, alpha x the object's alpha, no fog.
+- Memory over a 4-minute m1s1 run stays at ~860 MB RSS.

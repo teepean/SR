@@ -27,8 +27,9 @@
  *  (light scale or InvertHack, light add); DrawSky and LMFullBright (vision modes) are followed.
  *  Textures' D3D state changes (SharedTexture::m_pStateChange, switched by the game per vision mode): their fog
  *  (none, all of a colour, a range) and colour op (texture only, add signed) as material uniforms.
- *  Line systems (tracers, beams): lines in the object's space.
- *  To do: the state changes' blend modes, poly grids, canvases, multi-frame light
+ *  Line systems (tracers, beams): lines in the object's space. Poly grids (height grids with a colour table).
+ *  Canvases: the game's draw functions get an ILTCustomDraw whose methods are native (x64/canvas-asm.asm).
+ *  To do: the state changes' blend modes, multi-frame light
  *  animations, shadow-map light animations,
  *  vertical fog, detail and environment textures, model LODs and static lights for models, sprite-animated
  *  surfaces (SURF_SPRITEANIMATE).
@@ -233,6 +234,8 @@ struct godot_scene
     std::map<uint32_t, sprite_instance> sprites;      // by object
     std::map<uint32_t, sprite_instance> particles;    // by object
     std::map<uint32_t, sprite_instance> lines;        // line systems, by object
+    std::map<uint32_t, sprite_instance> polygrids;    // by object
+    std::map<uint32_t, sprite_instance> canvases;     // by object
     std::map<uint64_t, Ref<ShaderMaterial>> sprite_materials;  // by texture and shader variant
     std::map<uint32_t, texture_entry> textures;     // by SharedTexture*
     uint32_t frame;
@@ -1217,6 +1220,10 @@ static void clear_world(void)
     gs->particles.clear();
     for (auto &kv : gs->lines) kv.second.mi->queue_free();
     gs->lines.clear();
+    for (auto &kv : gs->polygrids) kv.second.mi->queue_free();
+    gs->polygrids.clear();
+    for (auto &kv : gs->canvases) kv.second.mi->queue_free();
+    gs->canvases.clear();
     gs->sprite_materials.clear();
     for (auto &kv : gs->textures) kv.second.materials.clear();
     gs->bsp_meshes.clear();
@@ -1955,6 +1962,7 @@ enum
     SPR_CLOSE = 64,                 // FLAG_REALLYCLOSE
     SPR_PARTICLES = 128,            // a particle system: each quad's centre in its vertices, the corner offset in UV2
     SPR_NOFOG = 256,                // FLAG_FOGDISABLE
+    SPR_MESH = 512,                 // a mesh as it is (poly grids)
 };
 
 static Ref<Shader> sprite_shader(int v)
@@ -1972,7 +1980,10 @@ static Ref<Shader> sprite_shader(int v)
         "instance uniform vec2 half_size = vec2(1.0);\n" FOG_UNIFORMS STATE_UNIFORMS
         "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
         "void vertex() {\n";
-    if (v & SPR_PARTICLES)
+    if (v & SPR_MESH)
+        c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
+             "  vec3 p = ctr;\n";
+    else if (v & SPR_PARTICLES)
         c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
              "  vec3 p = ctr + vec3(UV2, 0.0);\n";
     else if (v & SPR_ROTATABLE)
@@ -2450,6 +2461,291 @@ static void update_lines(uint32_t mw)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* poly grids                                                          */
+
+// LTPolyGrid
+#define PG_DATA 0x1b0               // width x height bytes (heights; signed unless FLAG_UNSIGNED)
+#define PG_INDICES 0x1b4            // uint16 triangle list
+#define PG_SPRITE 0x1b8
+#define PG_SPRITEFRAME 0x1c4        // m_SpriteTracker.m_pCurFrame
+#define PG_XPAN 0x1d4
+#define PG_YPAN 0x1d8
+#define PG_XSCALE 0x1dc
+#define PG_YSCALE 0x1e0
+#define PG_NINDICES 0x1e8
+#define PG_WIDTH 0x1f8
+#define PG_HEIGHT 0x1fc
+#define PG_COLORTABLE 0x200         // 256 x (r, g, b, a) floats, 0-255
+#define FLAG_UNSIGNED (1 << 1)
+
+// d3d_DrawPolyGrid: a grid sample (column, height, row) goes through the object's transform with the scale
+// ((w + 1) / w, 1, (h + 1) / h) x m_Scale, centred; its colour from the colour table by its height; the texture
+// (the sprite's frame) panned and scaled
+static void draw_polygrid(uint32_t sd, uint32_t o)
+{
+    uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
+    uint32_t data = g32(o + PG_DATA), idx = g32(o + PG_INDICES), nidx = g32(o + PG_NINDICES);
+    uint32_t w = g32(o + PG_WIDTH), h = g32(o + PG_HEIGHT);
+    if ((data == 0) || (idx == 0) || (w < 2) || (h < 2) || (w * h > 65536) || (nidx == 0) || (nidx > 6 * 65536)) return;
+    uint32_t tex = 0;
+    if (g32(o + PG_SPRITE) && g32(o + PG_SPRITEFRAME)) tex = g32(g32(o + PG_SPRITEFRAME));
+    texture_entry &te = get_texture(tex);
+    float texw = 1.0f / te.inv_w, texh = 1.0f / te.inv_h;
+    float sx = gf(o + OB_SCALE), sy = gf(o + OB_SCALE + 4), sz = gf(o + OB_SCALE + 8);
+    float xs = gf(o + PG_XSCALE), ys = gf(o + PG_YSCALE);
+    float uofs = gf(o + PG_XPAN) / texw, vofs = gf(o + PG_YPAN) / texh;
+    float uscale = ((xs != 0.0f) ? 1.0f / xs : 1.0f) * sx / texw * ((float)w / (w - 1));
+    float vscale = ((ys != 0.0f) ? 1.0f / ys : 1.0f) * sz / texh * ((float)h / (h - 1));
+    float alpha = g8(o + OB_COLOR + 3) / 255.0f;
+    float tint[3] = { gf(sd + SD_VERTEXTINT), gf(sd + SD_VERTEXTINT + 4), gf(sd + SD_VERTEXTINT + 8) };
+    int is_unsigned = (flags & FLAG_UNSIGNED) != 0;
+    float cx = (w - 1) * 0.5f, cz = (h - 1) * 0.5f;
+    float gx = ((float)(w + 1) / w) * sx, gz = ((float)(h + 1) / h) * sz;
+
+    PackedVector3Array v;
+    PackedVector2Array uv;
+    PackedColorArray col;
+    PackedInt32Array ind;
+    v.resize((int64_t)w * h);
+    uv.resize((int64_t)w * h);
+    col.resize((int64_t)w * h);
+    Vector3 *P = v.ptrw();
+    Vector2 *U = uv.ptrw();
+    Color *C = col.ptrw();
+    for (uint32_t y = 0; y < h; y++)
+        for (uint32_t x = 0; x < w; x++)
+        {
+            uint32_t i = y * w + x;
+            int d = is_unsigned ? (int)g8(data + i) : (int)(int8_t)g8(data + i);
+            int ci = is_unsigned ? d : d + 128;
+            uint32_t ce = o + PG_COLORTABLE + 16 * ci;
+            float hy = (float)(is_unsigned ? d - 128 : d) * sy;
+            P[i] = Vector3((x - cx) * gx, hy, -((y - cz) * gz));
+            U[i] = Vector2((x + uofs) * uscale, (y + vofs) * vscale);
+            C[i] = Color(fminf(gf(ce) * tint[0], 255.0f) / 255.0f, fminf(gf(ce + 4) * tint[1], 255.0f) / 255.0f, fminf(gf(ce + 8) * tint[2], 255.0f) / 255.0f,
+                         fminf(alpha * gf(ce + 12), 255.0f) / 255.0f);
+        }
+    ind.resize(nidx);
+    int32_t *I = ind.ptrw();
+    for (uint32_t i = 0; i < nidx; i++)
+    {
+        uint32_t k = g16(idx + 2 * i);
+        I[i] = (int32_t)((k < w * h) ? k : 0);
+    }
+
+    int v_ = SPR_MESH;
+    if (flags2 & FLAG2_ADDITIVE) v_ |= SPR_ADD;
+    if (flags & FLAG_FOGDISABLE) v_ |= SPR_NOFOG;
+    sprite_instance &si = gs->polygrids[o];
+    if (si.mi == NULL)
+    {
+        si.mi = memnew(MeshInstance3D);
+        si.mesh.instantiate();
+        si.mi->set_mesh(si.mesh);
+        gs->root->add_child(si.mi);
+    }
+    // the object's position and rotation (the scale is in the vertices)
+    Quaternion q(-gf(o + OB_ROTATION), -gf(o + OB_ROTATION + 4), gf(o + OB_ROTATION + 8), gf(o + OB_ROTATION + 12));
+    if (q.length_squared() < 1e-6f) q = Quaternion();
+    si.mi->set_transform(Transform3D(Basis(q.normalized()), lt_pos(o + OB_POS)));
+    si.mesh->clear_surfaces();
+    Array arrays;
+    arrays.resize(Mesh::ARRAY_MAX);
+    arrays[Mesh::ARRAY_VERTEX] = v;
+    arrays[Mesh::ARRAY_TEX_UV] = uv;
+    arrays[Mesh::ARRAY_COLOR] = col;
+    arrays[Mesh::ARRAY_INDEX] = ind;
+    si.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
+    si.mesh->surface_set_material(0, sprite_material(tex, v_));
+    si.frame = gs->frame;
+    if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
+}
+
+static void update_polygrids(uint32_t mw, uint32_t sd)
+{
+    for_objects(mw, OT_POLYGRID, [&](uint32_t o) {
+        uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
+        if (!(flags & FLAG_VISIBLE) || (flags2 & FLAG2_SKYOBJECT)) return;
+        draw_polygrid(sd, o);
+    });
+    for (auto &kv : gs->polygrids)
+    {
+        sprite_instance &si = kv.second;
+        if ((si.frame != gs->frame) && si.shown) { si.mi->set_visible(false); si.shown = 0; }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* canvases                                                            */
+
+// Canvas: the game's draw function (+0x1b0, CanvasDrawFn(ILTCustomDraw *, HLOCALOBJ, void *user), user +0x1b4) draws
+// triangle fans through the renderer's ILTCustomDraw (d3d.ren's CanvasDrawMgr): this one's methods are native
+// (x64/canvas-asm.asm: thiscall stubs) and collect the fans, grouped by their state, into the canvas's mesh.
+#define CV_FN 0x1b0
+#define CV_USER 0x1b4
+#define RS_GETSHAREDTEXTURE 0x04
+
+enum { LTRSTATE_ALPHABLENDENABLE = 0, LTRSTATE_ZREADENABLE, LTRSTATE_ZWRITEENABLE, LTRSTATE_SRCBLEND, LTRSTATE_DESTBLEND, LTRSTATE_TEXADDR,
+       LTRSTATE_COLOROP, LTRSTATE_ALPHAOP, NUM_LTRSTATES };
+#define LTBLEND_ZERO 1
+#define LTBLEND_ONE 2
+#define LTBLEND_SRCCOLOR 3
+
+extern "C" void canvas_DrawPrimitive_asm2c(void);
+extern "C" void canvas_SetState_asm2c(void);
+extern "C" void canvas_GetState_asm2c(void);
+extern "C" void canvas_SetTexture_asm2c(void);
+extern "C" void canvas_GetTexelSize_asm2c(void);
+
+struct canvas_batch
+{
+    PackedVector3Array v;
+    PackedVector2Array uv;
+    PackedColorArray col;
+};
+
+static struct
+{
+    uint32_t object[4];         // the ILTCustomDraw the game gets (vtable pointer), in 32-bit memory
+    uint32_t vtable[5];
+    uint32_t states[NUM_LTRSTATES];
+    uint32_t texture;           // SharedTexture*
+    int close;                  // the canvas is really close: its vertices are in the camera's space
+    std::map<uint64_t, canvas_batch> *batches;  // by (texture, shader variant)
+} cdraw;
+
+extern "C" uint32_t canvas_DrawPrimitive_c(uint32_t self, uint32_t verts, uint32_t n, uint32_t flags)
+{
+    if ((n < 3) || (verts == 0) || (cdraw.batches == NULL)) return 1;
+    // the state as a sprite shader variant: additive (ONE, ONE), multiplied (ZERO, SRCCOLOR), else alpha blended
+    int v = SPR_MESH;
+    uint32_t src = cdraw.states[LTRSTATE_SRCBLEND], dst = cdraw.states[LTRSTATE_DESTBLEND];
+    if (cdraw.states[LTRSTATE_ALPHABLENDENABLE])
+    {
+        if ((src == LTBLEND_ONE) && (dst == LTBLEND_ONE)) v |= SPR_ADD;
+        else if ((src == LTBLEND_ZERO) && (dst == LTBLEND_SRCCOLOR)) v |= SPR_MUL;
+    }
+    if (!cdraw.states[LTRSTATE_ZREADENABLE]) v |= SPR_NOZ;
+    if (cdraw.close || (flags & FLAG_REALLYCLOSE)) v |= SPR_CLOSE;
+    canvas_batch &b = (*cdraw.batches)[((uint64_t)cdraw.texture << 16) | (uint64_t)v];
+    // LTVertex (0x20 bytes): position, rhw, colour b g r a, specular, u, v; a fan
+    auto vert = [&](uint32_t k) {
+        uint32_t p = verts + k * 0x20;
+        b.v.push_back(lt_pos(p));
+        b.uv.push_back(Vector2(gf(p + 0x18), gf(p + 0x1c)));
+        float a = cdraw.states[LTRSTATE_ALPHABLENDENABLE] ? g8(p + 0x13) / 255.0f : 1.0f;
+        b.col.push_back(Color(g8(p + 0x12) / 255.0f, g8(p + 0x11) / 255.0f, g8(p + 0x10) / 255.0f, a));
+    };
+    for (uint32_t k = 1; k + 1 < n; k++) { vert(0); vert(k + 1); vert(k); }
+    return 0;
+}
+
+extern "C" uint32_t canvas_SetState_c(uint32_t self, uint32_t state, uint32_t val)
+{
+    if (state >= NUM_LTRSTATES) return 1;
+    cdraw.states[state] = val;
+    return 0;
+}
+
+extern "C" uint32_t canvas_GetState_c(uint32_t self, uint32_t state, uint32_t pval)
+{
+    if ((state >= NUM_LTRSTATES) || (pval == 0)) return 1;
+    *(uint32_t *)(uintptr_t)pval = cdraw.states[state];
+    return 0;
+}
+
+extern "C" uint32_t canvas_SetTexture_c(uint32_t self, uint32_t name)
+{
+    cdraw.texture = 0;
+    if ((name == 0) || (render_struct == NULL)) return 1;
+    uint32_t args[1] = { name };
+    cdraw.texture = call_game(*(uint32_t *)(render_struct + RS_GETSHAREDTEXTURE), 1, args);
+    return (cdraw.texture != 0) ? 0 : 1;
+}
+
+extern "C" uint32_t canvas_GetTexelSize_c(uint32_t self, uint32_t pu, uint32_t pv)
+{
+    texture_entry &te = get_texture(cdraw.texture);
+    if (pu != 0) *(float *)(uintptr_t)pu = te.inv_w;
+    if (pv != 0) *(float *)(uintptr_t)pv = te.inv_h;
+    return 0;
+}
+
+static void draw_canvas(uint32_t o)
+{
+    uint32_t fn = g32(o + CV_FN), flags = g32(o + OB_FLAGS);
+    if (fn == 0) return;
+    if (cdraw.vtable[0] == 0)
+    {
+        cdraw.vtable[0] = (uint32_t)(uintptr_t)&canvas_DrawPrimitive_asm2c;
+        cdraw.vtable[1] = (uint32_t)(uintptr_t)&canvas_SetState_asm2c;
+        cdraw.vtable[2] = (uint32_t)(uintptr_t)&canvas_GetState_asm2c;
+        cdraw.vtable[3] = (uint32_t)(uintptr_t)&canvas_SetTexture_asm2c;
+        cdraw.vtable[4] = (uint32_t)(uintptr_t)&canvas_GetTexelSize_asm2c;
+        cdraw.object[0] = (uint32_t)(uintptr_t)cdraw.vtable;
+    }
+    // CanvasDrawMgr::SaveAndSetCanvasStates' defaults
+    static const uint32_t defaults[NUM_LTRSTATES] = { 0, 1, 1, 5, 6, 1, 3, 2 };
+    memcpy(cdraw.states, defaults, sizeof(defaults));
+    cdraw.texture = 0;
+    cdraw.close = (flags & FLAG_REALLYCLOSE) != 0;
+    std::map<uint64_t, canvas_batch> batches;
+    cdraw.batches = &batches;
+    uint32_t args[3] = { (uint32_t)(uintptr_t)cdraw.object, o, g32(o + CV_USER) };
+    call_game(fn, 3, args);
+    cdraw.batches = NULL;
+    if ((winapi_debug >= 2) && ((gs->frame % 300) == 0))
+    {
+        size_t nv = 0;
+        for (auto &kv : batches) nv += kv.second.v.size();
+        eprintf("render3d: canvas %08x drew %zu batches, %zu vertices\n", o, batches.size(), nv);
+    }
+
+    sprite_instance &si = gs->canvases[o];
+    if (si.mi == NULL)
+    {
+        si.mi = memnew(MeshInstance3D);
+        si.mesh.instantiate();
+        si.mi->set_mesh(si.mesh);
+        si.mi->set_extra_cull_margin(16384.0f);
+        gs->root->add_child(si.mi);
+    }
+    si.mesh->clear_surfaces();
+    int nsurf = 0;
+    for (auto &kv : batches)
+    {
+        if (kv.second.v.is_empty()) continue;
+        int v = (int)(kv.first & 0xffff);
+        if (flags & FLAG_FOGDISABLE) v |= SPR_NOFOG;
+        Array arrays;
+        arrays.resize(Mesh::ARRAY_MAX);
+        arrays[Mesh::ARRAY_VERTEX] = kv.second.v;
+        arrays[Mesh::ARRAY_TEX_UV] = kv.second.uv;
+        arrays[Mesh::ARRAY_COLOR] = kv.second.col;
+        si.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
+        si.mesh->surface_set_material(nsurf++, sprite_material((uint32_t)(kv.first >> 16), v));
+    }
+    // world space, or the camera's (really close)
+    si.mi->set_transform(cdraw.close ? gs->camera->get_transform() : Transform3D());
+    si.frame = gs->frame;
+    if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
+}
+
+static void update_canvases(uint32_t mw)
+{
+    for_objects(mw, OT_CANVAS, [&](uint32_t o) {
+        uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
+        if (!(flags & FLAG_VISIBLE) || (flags2 & FLAG2_SKYOBJECT)) return;
+        draw_canvas(o);
+    });
+    for (auto &kv : gs->canvases)
+    {
+        sprite_instance &si = kv.second;
+        if ((si.frame != gs->frame) && si.shown) { si.mi->set_visible(false); si.shown = 0; }
+    }
+}
+
 // the engine keeps a context in 32 bits: handles are 1-based indices into this table
 static std::vector<world_context *> &contexts(void)
 {
@@ -2608,6 +2904,8 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         update_sprites(ctx->world, sd);
         update_particles(ctx->world);
         update_lines(ctx->world);
+        update_polygrids(ctx->world, sd);
+        update_canvases(ctx->world);
     }
 
     if (!gs->shown)

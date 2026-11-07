@@ -292,6 +292,12 @@ void r3d_delete_context(uint32_t context) {}
 int r3d_render_scene(uint8_t *scene) { return 0; }
 void r3d_end_frame(int drawn) {}
 void r3d_unbind_texture(void *texture) {}
+// x64/canvas-asm.asm's targets (canvases are drawn by render3d.cpp)
+uint32_t canvas_DrawPrimitive_c(uint32_t self, uint32_t verts, uint32_t n, uint32_t flags) { return 1; }
+uint32_t canvas_SetState_c(uint32_t self, uint32_t state, uint32_t val) { return 1; }
+uint32_t canvas_GetState_c(uint32_t self, uint32_t state, uint32_t pval) { return 1; }
+uint32_t canvas_SetTexture_c(uint32_t self, uint32_t name) { return 1; }
+uint32_t canvas_GetTexelSize_c(uint32_t self, uint32_t pu, uint32_t pv) { return 1; }
 #endif
 
 static int scene_drawn;     // RenderScene in this frame
