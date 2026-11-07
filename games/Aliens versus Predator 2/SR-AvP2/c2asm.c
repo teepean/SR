@@ -16,6 +16,7 @@ EXTERNC _stack *x86_initialize_stack(void);
 EXTERN_C_BEGIN
 
 uint32_t c_call_asm_n(void *stack, uint32_t func, uint32_t nargs, const uint32_t *args);
+uint32_t c_call_asm_this(void *stack, uint32_t func, uint32_t nargs, const uint32_t *args);
 
 uint32_t call_game(uint32_t func, uint32_t nargs, const uint32_t *args)
 {
@@ -29,6 +30,20 @@ uint32_t call_game(uint32_t func, uint32_t nargs, const uint32_t *args)
     return result;
 #else
     return c_call_asm_n(0, func, nargs, args);
+#endif
+}
+
+// a thiscall member function: args[0] is `this`
+uint32_t call_game_this(uint32_t func, uint32_t nargs, const uint32_t *args)
+{
+#if defined(__x86_64__)
+    _stack *stack = x86_initialize_stack();
+    void *saved_esp = stack->esp;
+    uint32_t result = c_call_asm_this(stack, func, nargs, args);
+    stack->esp = saved_esp;
+    return result;
+#else
+    return 0;
 #endif
 }
 

@@ -17,6 +17,10 @@
 %include "x64inc.inc"
 
 global c_call_asm_n
+global c_call_asm_this
+
+;; uint32_t c_call_asm_this(_stack *stack, uint32_t func, uint32_t nargs, const uint32_t *args)
+;;   the same for a thiscall member function: args[0] is `this` (ecx), args[1..nargs-1] are pushed.
 
 %ifidn __OUTPUT_FORMAT__, elf64
 section .note.GNU-stack noalloc noexec nowrite progbits
@@ -51,6 +55,26 @@ c_call_asm_n:
         CALL r10
         SECTION_EPILOG
 
+align 16
+c_call_asm_this:
+        SECTION_PROLOG
+        mov [rsp+FIRST_PARAMETER_OFFSET], rcx
+        mov r11d, [rcx]         ; esp = stack->esp
+        mov r10d, edx           ; function
+        mov ecx, r8d
+.push:
+        cmp ecx, 1
+        jbe .call
+        mov eax, [r9+rcx*4-4]
+        sub r11d, byte 4
+        mov [r11d], eax
+        dec ecx
+        jmp .push
+.call:
+        mov ecx, [r9]           ; this
+        CALL r10
+        SECTION_EPILOG
+
 %else
 
 align 16
@@ -78,6 +102,38 @@ c_call_asm_n:
         mov r11d, r12d          ; restore esp (cdecl: the caller pops, stdcall: the callee already did)
         pop rdi
         mov [rdi], r11d         ; stack->esp = esp
+        pop r13
+        pop r12
+        pop rbx
+        pop rbp
+        ret
+
+align 16
+c_call_asm_this:
+        push rbp
+        push rbx
+        push r12
+        push r13
+        push rdi                ; [rsp] = _stack *
+        mov r11d, [rdi]         ; esp = stack->esp
+        mov r10d, esi           ; function
+        mov r13, rcx            ; args
+        mov r12d, r11d          ; saved esp
+        mov ecx, edx
+.push:
+        cmp ecx, 1
+        jbe .call
+        mov eax, [r13+rcx*4-4]
+        sub r11d, byte 4
+        mov [r11d], eax
+        dec ecx
+        jmp .push
+.call:
+        mov ecx, [r13]          ; this
+        CALL r10
+        mov r11d, r12d          ; restore esp (thiscall: the callee already popped its arguments)
+        pop rdi
+        mov [rdi], r11d
         pop r13
         pop r12
         pop rbx

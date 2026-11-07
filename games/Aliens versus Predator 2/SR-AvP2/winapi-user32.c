@@ -472,6 +472,7 @@ int32_t CCALL GetKeyboardType_c(int32_t nTypeFlag)
 /*   <ms> move <x> <y>            <ms> key|keydown|keyup <vk>          */
 /*   <ms> quit                    <ms> close (WM_CLOSE)               */
 /*   <ms> skey|sdown|sup <SDL key name> (also seen by DirectInput)     */
+/*   <ms> rel <dx> <dy> (relative mouse motion, DirectInput: looking)  */
 /* <vk>: hex/decimal number, a letter/digit, or ESCAPE RETURN SPACE    */
 /* UP DOWN LEFT RIGHT TAB F1..F12                                      */
 
@@ -588,6 +589,15 @@ static void run_script(void)
         else if (0 == strcmp(e->cmd, "skey")) { dinput_event_and_key((SDL_Scancode) e->a, 1); dinput_event_and_key((SDL_Scancode) e->a, 0); }
         else if (0 == strcmp(e->cmd, "sdown")) dinput_event_and_key((SDL_Scancode) e->a, 1);
         else if (0 == strcmp(e->cmd, "sup")) dinput_event_and_key((SDL_Scancode) e->a, 0);
+        else if (0 == strcmp(e->cmd, "rel"))
+        {
+            SDL_Event ev;
+            memset(&ev, 0, sizeof(ev));
+            ev.type = SDL_MOUSEMOTION;
+            ev.motion.xrel = e->a;
+            ev.motion.yrel = e->b;
+            dinput_event(&ev);
+        }
         // the window's close button (the game shuts down by itself)
         else if (0 == strcmp(e->cmd, "close")) { if (main_window != NULL) post_message(main_window, WM_CLOSE, 0, 0); }
         else if (0 == strcmp(e->cmd, "mflood"))

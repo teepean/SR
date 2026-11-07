@@ -232,3 +232,23 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - AVP2_INPUT_SCRIPT has `close` (WM_CLOSE, like the window's close button) and `skey|sdown|sup <SDL key name>`
   (synthetic key events through the same path as real keys, so DirectInput sees them). In m1s1 Escape opens
   the pause menu only after the level start (weapon select, fade-in) - ~30 s after launch here.
+
+### 2026-11-07 — milestone 4 (second part): world model objects, models
+- render3d walks the client's objects every frame: the world the renderer is bound to is CClientMgr::m_World, and
+  the ObjectMgr follows it (+0x1f0; its m_ObjectLists, an LTList per OT_ type, at +0x220). Layouts from
+  AVP2-Reconstructed's de_objects.h / model.h fit this build (checked with AVP2_DEBUG=2 dumps).
+- World models: only the main world (PhysicsBSP, WIF_MAINWORLD) and the terrain are static; every other BSP has its
+  own mesh, shown where its object (OT_WORLDMODEL / OT_CONTAINER, FLAG_VISIBLE) is: WorldModelInstance::m_Transform
+  (+0x1f8) takes the BSP from where it was placed to the object. The canyon walls of m1s1 are such an object.
+- Models: ModelInstance::GetTransforms (vtable slot 0x48, thiscall: c2asm's c_call_asm_this / call_game_this put
+  `this` in ecx) gives the node transforms in model space; a vertex is the sum of its weights' node-space offsets
+  through their nodes over the weight sum (d3d.ren's skinning). Light like d3d.ren's ModelDraw: ambient from the
+  world's light grid (MainWorld+0xfc, trilinear), lerped towards the sun's colour by N.L (rest pose normals) when
+  rays toward the sun reach a sky poly (the engine's i_IntersectSegment, 0x438C9D, exported from the recompiled
+  engine as lithtech_i_IntersectSegment through global_aliases.sci), dynamic lights with (r^2 - d^2) falloff.
+  Meshes are rebuilt only when the pose or the light changes.
+- Attachments (a marine's rifle and lamp) only move when the renderer calls RenderStruct::ProcessAttachment for
+  the objects it draws - done before drawing, like d3d_ProcessAttachments.
+- FLAG_REALLYCLOSE (the player's weapon): its position is in the camera's space; drawn as a child of the camera
+  with its depth squeezed to [0.9, 1] (reverse z) so the world never covers it.
+- AVP2_INPUT_SCRIPT `rel <dx> <dy>` (relative mouse for DirectInput), AVP2_R3D_CAMERA (a fixed debugging camera).

@@ -45,6 +45,7 @@ void heap_check_all(void);
 
 // c2asm.c: calls recompiled game code (cdecl or stdcall) with 32-bit arguments
 uint32_t call_game(uint32_t func, uint32_t nargs, const uint32_t *args);
+uint32_t call_game_this(uint32_t func, uint32_t nargs, const uint32_t *args);  // thiscall: args[0] = this
 
 // winapi-kernel32.c: the PE image (resources) of a module handle (NULL = lithtech.exe)
 const uint8_t *winapi_module_image(void *hModule);
