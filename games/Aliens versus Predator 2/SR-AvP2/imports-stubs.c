@@ -104,34 +104,31 @@ uint32_t CCALL AIL_stream_volume_c(uint32_t a0) { static int reported; unimpleme
 uint32_t CCALL AIL_unlock_c(void) { static int reported; unimplemented("_AIL_unlock@0", &reported); return 0; }
 uint32_t CCALL AIL_waveOutClose_c(uint32_t a0) { static int reported; unimplemented("_AIL_waveOutClose@4", &reported); return 0; }
 uint32_t CCALL AIL_waveOutOpen_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("_AIL_waveOutOpen@16", &reported); return 0; }
+uint32_t CCALL CallWindowProcA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4) { static int reported; unimplemented("CallWindowProcA", &reported); return 0; }
 uint32_t CCALL CoCreateInstance_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4) { static int reported; unimplemented("CoCreateInstance", &reported); return 0; }
+uint32_t CCALL CreateDirectoryA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("CreateDirectoryA", &reported); return 0; }
 uint32_t CCALL CreateFontA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7, uint32_t a8, uint32_t a9, uint32_t a10, uint32_t a11, uint32_t a12, uint32_t a13) { static int reported; unimplemented("CreateFontA", &reported); return 0; }
-uint32_t CCALL DirectInputCreateA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("DirectInputCreateA", &reported); return 0; }
+uint32_t CCALL CreateProcessA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6, uint32_t a7, uint32_t a8, uint32_t a9) { static int reported; unimplemented("CreateProcessA", &reported); return 0; }
 uint32_t CCALL GetClassLongA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("GetClassLongA", &reported); return 0; }
 uint32_t CCALL GetDesktopWindow_c(void) { static int reported; unimplemented("GetDesktopWindow", &reported); return 0; }
 uint32_t CCALL GetKeyboardState_c(uint32_t a0) { static int reported; unimplemented("GetKeyboardState", &reported); return 0; }
+uint32_t CCALL GetPrivateProfileStringA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("GetPrivateProfileStringA", &reported); return 0; }
 uint32_t CCALL GetTextCharacterExtra_c(uint32_t a0) { static int reported; unimplemented("GetTextCharacterExtra", &reported); return 0; }
 uint32_t CCALL IsIconic_c(uint32_t a0) { static int reported; unimplemented("IsIconic", &reported); return 0; }
 uint32_t CCALL LoadIconA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("LoadIconA", &reported); return 0; }
 uint32_t CCALL LoadImageA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("LoadImageA", &reported); return 0; }
-uint32_t CCALL recvfrom_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("recvfrom", &reported); return 0; }
-uint32_t CCALL setsockopt_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4) { static int reported; unimplemented("setsockopt", &reported); return 0; }
+uint32_t CCALL LocalFileTimeToFileTime_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("LocalFileTimeToFileTime", &reported); return 0; }
+uint32_t CCALL MapWindowPoints_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("MapWindowPoints", &reported); return 0; }
+uint32_t CCALL MoveFileA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("MoveFileA", &reported); return 0; }
+uint32_t CCALL OpenFile_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("OpenFile", &reported); return 0; }
+uint32_t CCALL RegDeleteKeyA_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("RegDeleteKeyA", &reported); return 0; }
+uint32_t CCALL RemoveDirectoryA_c(uint32_t a0) { static int reported; unimplemented("RemoveDirectoryA", &reported); return 0; }
+uint32_t CCALL SetErrorMode_c(uint32_t a0) { static int reported; unimplemented("SetErrorMode", &reported); return 0; }
+uint32_t CCALL SetFileTime_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("SetFileTime", &reported); return 0; }
 uint32_t CCALL SetTextCharacterExtra_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("SetTextCharacterExtra", &reported); return 0; }
-uint32_t CCALL ws2_32_bind_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("ws2_32.bind", &reported); return 0; }
-uint32_t CCALL ws2_32_closesocket_c(uint32_t a0) { static int reported; unimplemented("ws2_32.closesocket", &reported); return 0; }
-uint32_t CCALL ws2_32_gethostbyname_c(uint32_t a0) { static int reported; unimplemented("ws2_32.gethostbyname", &reported); return 0; }
-uint32_t CCALL ws2_32_gethostname_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("ws2_32.gethostname", &reported); return 0; }
-uint32_t CCALL ws2_32_getsockname_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("ws2_32.getsockname", &reported); return 0; }
-uint32_t CCALL ws2_32_htonl_c(uint32_t a0) { static int reported; unimplemented("ws2_32.htonl", &reported); return 0; }
-uint32_t CCALL ws2_32_htons_c(uint32_t a0) { static int reported; unimplemented("ws2_32.htons", &reported); return 0; }
-uint32_t CCALL ws2_32_inet_addr_c(uint32_t a0) { static int reported; unimplemented("ws2_32.inet_addr", &reported); return 0; }
-uint32_t CCALL ws2_32_ioctlsocket_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("ws2_32.ioctlsocket", &reported); return 0; }
-uint32_t CCALL ws2_32_ntohl_c(uint32_t a0) { static int reported; unimplemented("ws2_32.ntohl", &reported); return 0; }
-uint32_t CCALL ws2_32_ntohs_c(uint32_t a0) { static int reported; unimplemented("ws2_32.ntohs", &reported); return 0; }
-uint32_t CCALL ws2_32_sendto_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5) { static int reported; unimplemented("ws2_32.sendto", &reported); return 0; }
-uint32_t CCALL ws2_32_socket_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("ws2_32.socket", &reported); return 0; }
-uint32_t CCALL ws2_32_WSACleanup_c(void) { static int reported; unimplemented("ws2_32.WSACleanup", &reported); return 0; }
-uint32_t CCALL ws2_32_WSAGetLastError_c(void) { static int reported; unimplemented("ws2_32.WSAGetLastError", &reported); return 0; }
-uint32_t CCALL ws2_32_WSAStartup_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("ws2_32.WSAStartup", &reported); return 0; }
+uint32_t CCALL SystemTimeToFileTime_c(uint32_t a0, uint32_t a1) { static int reported; unimplemented("SystemTimeToFileTime", &reported); return 0; }
+uint32_t CCALL TlsFree_c(uint32_t a0) { static int reported; unimplemented("TlsFree", &reported); return 0; }
+uint32_t CCALL WaitForSingleObjectEx_c(uint32_t a0, uint32_t a1, uint32_t a2) { static int reported; unimplemented("WaitForSingleObjectEx", &reported); return 0; }
+uint32_t CCALL WritePrivateProfileStringA_c(uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) { static int reported; unimplemented("WritePrivateProfileStringA", &reported); return 0; }
 
 EXTERN_C_END

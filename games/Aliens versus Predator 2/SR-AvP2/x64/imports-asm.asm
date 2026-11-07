@@ -93,6 +93,7 @@ extern AIL_unlock_c
 extern AIL_waveOutClose_c
 extern AIL_waveOutOpen_c
 extern BeginPaint_c
+extern CallWindowProcA_c
 extern ClipCursor_c
 extern CloseHandle_c
 extern CoCreateInstance_c
@@ -102,15 +103,18 @@ extern CompareStringW_c
 extern CoUninitialize_c
 extern CreateCompatibleDC_c
 extern CreateDIBSection_c
+extern CreateDirectoryA_c
 extern CreateEventA_c
 extern CreateFileA_c
 extern CreateFontA_c
+extern CreateProcessA_c
 extern CreateThread_c
 extern CreateWindowExA_c
 extern DebugBreak_c
 extern DefWindowProcA_c
 extern DeleteCriticalSection_c
 extern DeleteDC_c
+extern DeleteFileA_c
 extern DeleteObject_c
 extern DestroyWindow_c
 extern DirectInputCreateA_c
@@ -156,8 +160,10 @@ extern GetLocalTime_c
 extern GetModuleFileNameA_c
 extern GetModuleHandleA_c
 extern GetOEMCP_c
+extern GetPrivateProfileStringA_c
 extern GetProcAddress_c
 extern GetProcessHeap_c
+extern getsockopt_c
 extern GetStartupInfoA_c
 extern GetStdHandle_c
 extern GetStockObject_c
@@ -174,6 +180,7 @@ extern GetTickCount_c
 extern GetTimeZoneInformation_c
 extern GetVersion_c
 extern GetVersionExA_c
+extern GetWindowLongA_c
 extern GetWindowRect_c
 extern GlobalMemoryStatus_c
 extern HeapAlloc_c
@@ -200,12 +207,16 @@ extern LoadImageA_c
 extern LoadLibraryA_c
 extern LoadResource_c
 extern LoadStringA_c
+extern LocalFileTimeToFileTime_c
 extern LocalFree_c
 extern LockResource_c
 extern lstrcpyA_c
 extern lstrlenA_c
+extern MapWindowPoints_c
 extern MessageBoxA_c
+extern MoveFileA_c
 extern MultiByteToWideChar_c
+extern OpenFile_c
 extern OutputDebugStringA_c
 extern PeekMessageA_c
 extern PostQuitMessage_c
@@ -215,9 +226,17 @@ extern QueryPerformanceFrequency_c
 extern RaiseException_c
 extern ReadFile_c
 extern Rectangle_c
+extern recv_c
 extern recvfrom_c
+extern RegCloseKey_c
+extern RegCreateKeyExA_c
+extern RegDeleteKeyA_c
 extern RegisterClassA_c
+extern RegOpenKeyExA_c
+extern RegQueryValueExA_c
+extern RegSetValueExA_c
 extern ReleaseDC_c
+extern RemoveDirectoryA_c
 extern ResetEvent_c
 extern ResumeThread_c
 extern RtlUnwind_c
@@ -229,8 +248,10 @@ extern SetCursor_c
 extern SetCursorPos_c
 extern SetEndOfFile_c
 extern SetEnvironmentVariableA_c
+extern SetErrorMode_c
 extern SetEvent_c
 extern SetFilePointer_c
+extern SetFileTime_c
 extern SetFocus_c
 extern SetHandleCount_c
 extern SetLastError_c
@@ -241,14 +262,18 @@ extern SetTextCharacterExtra_c
 extern SetTextColor_c
 extern SetThreadPriority_c
 extern SetUnhandledExceptionFilter_c
+extern SetWindowLongA_c
+extern SetWindowPos_c
 extern ShowCursor_c
 extern ShowWindow_c
 extern SizeofResource_c
 extern Sleep_c
+extern SystemTimeToFileTime_c
 extern TerminateProcess_c
 extern TextOutA_c
 extern timeGetTime_c
 extern TlsAlloc_c
+extern TlsFree_c
 extern TlsGetValue_c
 extern TlsSetValue_c
 extern ToAscii_c
@@ -260,20 +285,28 @@ extern VirtualFree_c
 extern VirtualQuery_c
 extern WaitForMultipleObjects_c
 extern WaitForSingleObject_c
+extern WaitForSingleObjectEx_c
 extern WideCharToMultiByte_c
 extern WriteFile_c
+extern WritePrivateProfileStringA_c
+extern ws2_32___WSAFDIsSet_c
 extern ws2_32_bind_c
 extern ws2_32_closesocket_c
+extern ws2_32_connect_c
 extern ws2_32_gethostbyname_c
 extern ws2_32_gethostname_c
 extern ws2_32_getsockname_c
 extern ws2_32_htonl_c
 extern ws2_32_htons_c
 extern ws2_32_inet_addr_c
+extern ws2_32_inet_ntoa_c
 extern ws2_32_ioctlsocket_c
 extern ws2_32_ntohl_c
 extern ws2_32_ntohs_c
+extern ws2_32_select_c
+extern ws2_32_send_c
 extern ws2_32_sendto_c
+extern ws2_32_shutdown_c
 extern ws2_32_socket_c
 extern ws2_32_WSACleanup_c
 extern ws2_32_WSAGetLastError_c
@@ -373,6 +406,7 @@ global AIL_unlock_asm2c
 global AIL_waveOutClose_asm2c
 global AIL_waveOutOpen_asm2c
 global BeginPaint_asm2c
+global CallWindowProcA_asm2c
 global ClipCursor_asm2c
 global CloseHandle_asm2c
 global CoCreateInstance_asm2c
@@ -382,15 +416,18 @@ global CompareStringW_asm2c
 global CoUninitialize_asm2c
 global CreateCompatibleDC_asm2c
 global CreateDIBSection_asm2c
+global CreateDirectoryA_asm2c
 global CreateEventA_asm2c
 global CreateFileA_asm2c
 global CreateFontA_asm2c
+global CreateProcessA_asm2c
 global CreateThread_asm2c
 global CreateWindowExA_asm2c
 global DebugBreak_asm2c
 global DefWindowProcA_asm2c
 global DeleteCriticalSection_asm2c
 global DeleteDC_asm2c
+global DeleteFileA_asm2c
 global DeleteObject_asm2c
 global DestroyWindow_asm2c
 global DirectInputCreateA_asm2c
@@ -436,8 +473,10 @@ global GetLocalTime_asm2c
 global GetModuleFileNameA_asm2c
 global GetModuleHandleA_asm2c
 global GetOEMCP_asm2c
+global GetPrivateProfileStringA_asm2c
 global GetProcAddress_asm2c
 global GetProcessHeap_asm2c
+global getsockopt_asm2c
 global GetStartupInfoA_asm2c
 global GetStdHandle_asm2c
 global GetStockObject_asm2c
@@ -454,6 +493,7 @@ global GetTickCount_asm2c
 global GetTimeZoneInformation_asm2c
 global GetVersion_asm2c
 global GetVersionExA_asm2c
+global GetWindowLongA_asm2c
 global GetWindowRect_asm2c
 global GlobalMemoryStatus_asm2c
 global HeapAlloc_asm2c
@@ -480,12 +520,16 @@ global LoadImageA_asm2c
 global LoadLibraryA_asm2c
 global LoadResource_asm2c
 global LoadStringA_asm2c
+global LocalFileTimeToFileTime_asm2c
 global LocalFree_asm2c
 global LockResource_asm2c
 global lstrcpyA_asm2c
 global lstrlenA_asm2c
+global MapWindowPoints_asm2c
 global MessageBoxA_asm2c
+global MoveFileA_asm2c
 global MultiByteToWideChar_asm2c
+global OpenFile_asm2c
 global OutputDebugStringA_asm2c
 global PeekMessageA_asm2c
 global PostQuitMessage_asm2c
@@ -495,9 +539,17 @@ global QueryPerformanceFrequency_asm2c
 global RaiseException_asm2c
 global ReadFile_asm2c
 global Rectangle_asm2c
+global recv_asm2c
 global recvfrom_asm2c
+global RegCloseKey_asm2c
+global RegCreateKeyExA_asm2c
+global RegDeleteKeyA_asm2c
 global RegisterClassA_asm2c
+global RegOpenKeyExA_asm2c
+global RegQueryValueExA_asm2c
+global RegSetValueExA_asm2c
 global ReleaseDC_asm2c
+global RemoveDirectoryA_asm2c
 global ResetEvent_asm2c
 global ResumeThread_asm2c
 global RtlUnwind_asm2c
@@ -509,8 +561,10 @@ global SetCursor_asm2c
 global SetCursorPos_asm2c
 global SetEndOfFile_asm2c
 global SetEnvironmentVariableA_asm2c
+global SetErrorMode_asm2c
 global SetEvent_asm2c
 global SetFilePointer_asm2c
+global SetFileTime_asm2c
 global SetFocus_asm2c
 global SetHandleCount_asm2c
 global SetLastError_asm2c
@@ -521,14 +575,18 @@ global SetTextCharacterExtra_asm2c
 global SetTextColor_asm2c
 global SetThreadPriority_asm2c
 global SetUnhandledExceptionFilter_asm2c
+global SetWindowLongA_asm2c
+global SetWindowPos_asm2c
 global ShowCursor_asm2c
 global ShowWindow_asm2c
 global SizeofResource_asm2c
 global Sleep_asm2c
+global SystemTimeToFileTime_asm2c
 global TerminateProcess_asm2c
 global TextOutA_asm2c
 global timeGetTime_asm2c
 global TlsAlloc_asm2c
+global TlsFree_asm2c
 global TlsGetValue_asm2c
 global TlsSetValue_asm2c
 global ToAscii_asm2c
@@ -540,20 +598,28 @@ global VirtualFree_asm2c
 global VirtualQuery_asm2c
 global WaitForMultipleObjects_asm2c
 global WaitForSingleObject_asm2c
+global WaitForSingleObjectEx_asm2c
 global WideCharToMultiByte_asm2c
 global WriteFile_asm2c
+global WritePrivateProfileStringA_asm2c
+global ws2_32___WSAFDIsSet_asm2c
 global ws2_32_bind_asm2c
 global ws2_32_closesocket_asm2c
+global ws2_32_connect_asm2c
 global ws2_32_gethostbyname_asm2c
 global ws2_32_gethostname_asm2c
 global ws2_32_getsockname_asm2c
 global ws2_32_htonl_asm2c
 global ws2_32_htons_asm2c
 global ws2_32_inet_addr_asm2c
+global ws2_32_inet_ntoa_asm2c
 global ws2_32_ioctlsocket_asm2c
 global ws2_32_ntohl_asm2c
 global ws2_32_ntohs_asm2c
+global ws2_32_select_asm2c
+global ws2_32_send_asm2c
 global ws2_32_sendto_asm2c
+global ws2_32_shutdown_asm2c
 global ws2_32_socket_asm2c
 global ws2_32_WSACleanup_asm2c
 global ws2_32_WSAGetLastError_asm2c
@@ -2576,6 +2642,37 @@ BeginPaint_asm2c:
         Call_Asm_Epilogue_0 2
 %endif
 
+; CallWindowProcA (std5, USER32.dll)
+align 16
+CallWindowProcA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CallWindowProcA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call CallWindowProcA_c
+        Call_Asm_Epilogue_0 5
+%endif
+
 ; ClipCursor (std1, USER32.dll)
 align 16
 ClipCursor_asm2c:
@@ -2807,6 +2904,28 @@ CreateDIBSection_asm2c:
         Call_Asm_Epilogue_0 6
 %endif
 
+; CreateDirectoryA (std2, KERNEL32.dll)
+align 16
+CreateDirectoryA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call CreateDirectoryA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call CreateDirectoryA_c
+        Call_Asm_Epilogue_0 2
+%endif
+
 ; CreateEventA (std4, KERNEL32.dll)
 align 16
 CreateEventA_asm2c:
@@ -2939,6 +3058,58 @@ CreateFontA_asm2c:
         call CreateFontA_c
         add rsp, 64
         Call_Asm_Epilogue_0 14
+%endif
+
+; CreateProcessA (std10, KERNEL32.dll)
+align 16
+CreateProcessA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 48
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov eax, [r11d+36]
+        mov [rsp+64], rax
+        mov eax, [r11d+40]
+        mov [rsp+72], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call CreateProcessA_c
+        add rsp, 48
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+40
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        sub rsp, 32
+        mov eax, [r11d+36]
+        mov [rsp+0], rax
+        mov eax, [r11d+40]
+        mov [rsp+8], rax
+        mov eax, [r11d+44]
+        mov [rsp+16], rax
+        mov eax, [r11d+48]
+        mov [rsp+24], rax
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call CreateProcessA_c
+        add rsp, 32
+        Call_Asm_Epilogue_0 10
 %endif
 
 ; CreateThread (std6, KERNEL32.dll)
@@ -3116,6 +3287,26 @@ DeleteDC_asm2c:
         Call_Asm_Prologue_0
         mov edi, [r11d+12]
         call DeleteDC_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; DeleteFileA (std1, KERNEL32.dll)
+align 16
+DeleteFileA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call DeleteFileA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call DeleteFileA_c
         Call_Asm_Epilogue_0 1
 %endif
 
@@ -4084,6 +4275,40 @@ GetOEMCP_asm2c:
         Call_Asm_Epilogue_0 0
 %endif
 
+; GetPrivateProfileStringA (std6, KERNEL32.dll)
+align 16
+GetPrivateProfileStringA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call GetPrivateProfileStringA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call GetPrivateProfileStringA_c
+        Call_Asm_Epilogue_0 6
+%endif
+
 ; GetProcAddress (std2, KERNEL32.dll)
 align 16
 GetProcAddress_asm2c:
@@ -4122,6 +4347,37 @@ GetProcessHeap_asm2c:
         Call_Asm_Prologue_0
         call GetProcessHeap_c
         Call_Asm_Epilogue_0 0
+%endif
+
+; getsockopt (std5, WSOCK32.dll)
+align 16
+getsockopt_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call getsockopt_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call getsockopt_c
+        Call_Asm_Epilogue_0 5
 %endif
 
 ; GetStartupInfoA (std1, KERNEL32.dll)
@@ -4469,6 +4725,28 @@ GetVersionExA_asm2c:
         mov edi, [r11d+12]
         call GetVersionExA_c
         Call_Asm_Epilogue_0 1
+%endif
+
+; GetWindowLongA (std2, USER32.dll)
+align 16
+GetWindowLongA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call GetWindowLongA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call GetWindowLongA_c
+        Call_Asm_Epilogue_0 2
 %endif
 
 ; GetWindowRect (std2, USER32.dll)
@@ -5077,6 +5355,28 @@ LoadStringA_asm2c:
         Call_Asm_Epilogue_0 4
 %endif
 
+; LocalFileTimeToFileTime (std2, KERNEL32.dll)
+align 16
+LocalFileTimeToFileTime_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call LocalFileTimeToFileTime_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call LocalFileTimeToFileTime_c
+        Call_Asm_Epilogue_0 2
+%endif
+
 ; LocalFree (std1, KERNEL32.dll)
 align 16
 LocalFree_asm2c:
@@ -5159,6 +5459,32 @@ lstrlenA_asm2c:
         Call_Asm_Epilogue_0 1
 %endif
 
+; MapWindowPoints (std4, USER32.dll)
+align 16
+MapWindowPoints_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call MapWindowPoints_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call MapWindowPoints_c
+        Call_Asm_Epilogue_0 4
+%endif
+
 ; MessageBoxA (std4, USER32.dll)
 align 16
 MessageBoxA_asm2c:
@@ -5183,6 +5509,28 @@ MessageBoxA_asm2c:
         mov ecx, [r11d+24]
         call MessageBoxA_c
         Call_Asm_Epilogue_0 4
+%endif
+
+; MoveFileA (std2, KERNEL32.dll)
+align 16
+MoveFileA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call MoveFileA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call MoveFileA_c
+        Call_Asm_Epilogue_0 2
 %endif
 
 ; MultiByteToWideChar (std6, KERNEL32.dll)
@@ -5217,6 +5565,30 @@ MultiByteToWideChar_asm2c:
         mov r9d, [r11d+32]
         call MultiByteToWideChar_c
         Call_Asm_Epilogue_0 6
+%endif
+
+; OpenFile (std3, KERNEL32.dll)
+align 16
+OpenFile_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call OpenFile_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call OpenFile_c
+        Call_Asm_Epilogue_0 3
 %endif
 
 ; OutputDebugStringA (std1, KERNEL32.dll)
@@ -5438,6 +5810,32 @@ Rectangle_asm2c:
         Call_Asm_Epilogue_0 5
 %endif
 
+; recv (std4, WSOCK32.dll)
+align 16
+recv_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call recv_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call recv_c
+        Call_Asm_Epilogue_0 4
+%endif
+
 ; recvfrom (std6, WSOCK32.dll)
 align 16
 recvfrom_asm2c:
@@ -5472,6 +5870,96 @@ recvfrom_asm2c:
         Call_Asm_Epilogue_0 6
 %endif
 
+; RegCloseKey (std1, ADVAPI32.dll)
+align 16
+RegCloseKey_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call RegCloseKey_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call RegCloseKey_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; RegCreateKeyExA (std9, ADVAPI32.dll)
+align 16
+RegCreateKeyExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 48
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov eax, [r11d+32]
+        mov [rsp+56], rax
+        mov eax, [r11d+36]
+        mov [rsp+64], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call RegCreateKeyExA_c
+        add rsp, 48
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+36
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        sub rsp, 32
+        mov eax, [r11d+36]
+        mov [rsp+0], rax
+        mov eax, [r11d+40]
+        mov [rsp+8], rax
+        mov eax, [r11d+44]
+        mov [rsp+16], rax
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call RegCreateKeyExA_c
+        add rsp, 32
+        Call_Asm_Epilogue_0 9
+%endif
+
+; RegDeleteKeyA (std2, ADVAPI32.dll)
+align 16
+RegDeleteKeyA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call RegDeleteKeyA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call RegDeleteKeyA_c
+        Call_Asm_Epilogue_0 2
+%endif
+
 ; RegisterClassA (std1, USER32.dll)
 align 16
 RegisterClassA_asm2c:
@@ -5490,6 +5978,105 @@ RegisterClassA_asm2c:
         mov edi, [r11d+12]
         call RegisterClassA_c
         Call_Asm_Epilogue_0 1
+%endif
+
+; RegOpenKeyExA (std5, ADVAPI32.dll)
+align 16
+RegOpenKeyExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call RegOpenKeyExA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call RegOpenKeyExA_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+; RegQueryValueExA (std6, ADVAPI32.dll)
+align 16
+RegQueryValueExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call RegQueryValueExA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call RegQueryValueExA_c
+        Call_Asm_Epilogue_0 6
+%endif
+
+; RegSetValueExA (std6, ADVAPI32.dll)
+align 16
+RegSetValueExA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call RegSetValueExA_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call RegSetValueExA_c
+        Call_Asm_Epilogue_0 6
 %endif
 
 ; ReleaseDC (std2, USER32.dll)
@@ -5512,6 +6099,26 @@ ReleaseDC_asm2c:
         mov esi, [r11d+16]
         call ReleaseDC_c
         Call_Asm_Epilogue_0 2
+%endif
+
+; RemoveDirectoryA (std1, KERNEL32.dll)
+align 16
+RemoveDirectoryA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call RemoveDirectoryA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call RemoveDirectoryA_c
+        Call_Asm_Epilogue_0 1
 %endif
 
 ; ResetEvent (std1, KERNEL32.dll)
@@ -5750,6 +6357,26 @@ SetEnvironmentVariableA_asm2c:
         Call_Asm_Epilogue_0 2
 %endif
 
+; SetErrorMode (std1, KERNEL32.dll)
+align 16
+SetErrorMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call SetErrorMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call SetErrorMode_c
+        Call_Asm_Epilogue_0 1
+%endif
+
 ; SetEvent (std1, KERNEL32.dll)
 align 16
 SetEvent_asm2c:
@@ -5793,6 +6420,32 @@ SetFilePointer_asm2c:
         mov edx, [r11d+20]
         mov ecx, [r11d+24]
         call SetFilePointer_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+; SetFileTime (std4, KERNEL32.dll)
+align 16
+SetFileTime_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SetFileTime_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call SetFileTime_c
         Call_Asm_Epilogue_0 4
 %endif
 
@@ -6017,6 +6670,70 @@ SetUnhandledExceptionFilter_asm2c:
         Call_Asm_Epilogue_0 1
 %endif
 
+; SetWindowLongA (std3, USER32.dll)
+align 16
+SetWindowLongA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call SetWindowLongA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call SetWindowLongA_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+; SetWindowPos (std7, USER32.dll)
+align 16
+SetWindowPos_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call SetWindowPos_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+28
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        sub rsp, 16
+        mov eax, [r11d+36]
+        mov [rsp+0], rax
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call SetWindowPos_c
+        add rsp, 16
+        Call_Asm_Epilogue_0 7
+%endif
+
 ; ShowCursor (std1, USER32.dll)
 align 16
 ShowCursor_asm2c:
@@ -6099,6 +6816,28 @@ Sleep_asm2c:
         mov edi, [r11d+12]
         call Sleep_c
         Call_Asm_Epilogue_0 1
+%endif
+
+; SystemTimeToFileTime (std2, KERNEL32.dll)
+align 16
+SystemTimeToFileTime_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call SystemTimeToFileTime_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call SystemTimeToFileTime_c
+        Call_Asm_Epilogue_0 2
 %endif
 
 ; TerminateProcess (std2, KERNEL32.dll)
@@ -6188,6 +6927,26 @@ TlsAlloc_asm2c:
         Call_Asm_Prologue_0
         call TlsAlloc_c
         Call_Asm_Epilogue_0 0
+%endif
+
+; TlsFree (std1, KERNEL32.dll)
+align 16
+TlsFree_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call TlsFree_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call TlsFree_c
+        Call_Asm_Epilogue_0 1
 %endif
 
 ; TlsGetValue (std1, KERNEL32.dll)
@@ -6445,6 +7204,30 @@ WaitForSingleObject_asm2c:
         Call_Asm_Epilogue_0 2
 %endif
 
+; WaitForSingleObjectEx (std3, KERNEL32.dll)
+align 16
+WaitForSingleObjectEx_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call WaitForSingleObjectEx_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call WaitForSingleObjectEx_c
+        Call_Asm_Epilogue_0 3
+%endif
+
 ; WideCharToMultiByte (std8, KERNEL32.dll)
 align 16
 WideCharToMultiByte_asm2c:
@@ -6520,6 +7303,54 @@ WriteFile_asm2c:
         Call_Asm_Epilogue_0 5
 %endif
 
+; WritePrivateProfileStringA (std4, KERNEL32.dll)
+align 16
+WritePrivateProfileStringA_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call WritePrivateProfileStringA_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call WritePrivateProfileStringA_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+; ws2_32.__WSAFDIsSet (std2, WSOCK32.dll)
+align 16
+ws2_32___WSAFDIsSet_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ws2_32___WSAFDIsSet_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call ws2_32___WSAFDIsSet_c
+        Call_Asm_Epilogue_0 2
+%endif
+
 ; ws2_32.bind (std3, WSOCK32.dll)
 align 16
 ws2_32_bind_asm2c:
@@ -6562,6 +7393,30 @@ ws2_32_closesocket_asm2c:
         mov edi, [r11d+12]
         call ws2_32_closesocket_c
         Call_Asm_Epilogue_0 1
+%endif
+
+; ws2_32.connect (std3, WSOCK32.dll)
+align 16
+ws2_32_connect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call ws2_32_connect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call ws2_32_connect_c
+        Call_Asm_Epilogue_0 3
 %endif
 
 ; ws2_32.gethostbyname (std1, WSOCK32.dll)
@@ -6690,6 +7545,26 @@ ws2_32_inet_addr_asm2c:
         Call_Asm_Epilogue_0 1
 %endif
 
+; ws2_32.inet_ntoa (std1, WSOCK32.dll)
+align 16
+ws2_32_inet_ntoa_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call ws2_32_inet_ntoa_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call ws2_32_inet_ntoa_c
+        Call_Asm_Epilogue_0 1
+%endif
+
 ; ws2_32.ioctlsocket (std3, WSOCK32.dll)
 align 16
 ws2_32_ioctlsocket_asm2c:
@@ -6754,6 +7629,63 @@ ws2_32_ntohs_asm2c:
         Call_Asm_Epilogue_0 1
 %endif
 
+; ws2_32.select (std5, WSOCK32.dll)
+align 16
+ws2_32_select_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call ws2_32_select_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call ws2_32_select_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+; ws2_32.send (std4, WSOCK32.dll)
+align 16
+ws2_32_send_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call ws2_32_send_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call ws2_32_send_c
+        Call_Asm_Epilogue_0 4
+%endif
+
 ; ws2_32.sendto (std6, WSOCK32.dll)
 align 16
 ws2_32_sendto_asm2c:
@@ -6786,6 +7718,28 @@ ws2_32_sendto_asm2c:
         mov r9d, [r11d+32]
         call ws2_32_sendto_c
         Call_Asm_Epilogue_0 6
+%endif
+
+; ws2_32.shutdown (std2, WSOCK32.dll)
+align 16
+ws2_32_shutdown_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call ws2_32_shutdown_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call ws2_32_shutdown_c
+        Call_Asm_Epilogue_0 2
 %endif
 
 ; ws2_32.socket (std3, WSOCK32.dll)

@@ -189,3 +189,48 @@ Initialize 3
 IsClipListChanged 2
 SetClipList 3
 SetHWnd 3
+
+# DirectInput 7 (dinput.c): IDirectInputA with IDirectInput2A/7A's methods
+interface IDirectInputA
+QueryInterface 3
+AddRef 1
+Release 1
+CreateDevice 4
+EnumDevices 5
+GetDeviceStatus 2
+RunControlPanel 3
+Initialize 3
+FindDevice 4
+CreateDeviceEx 5
+
+# IDirectInputDevice7A (a superset of IDirectInputDeviceA and IDirectInputDevice2A)
+interface IDirectInputDevice2A
+QueryInterface 3
+AddRef 1
+Release 1
+GetCapabilities 2
+EnumObjects 4
+GetProperty 3
+SetProperty 3
+Acquire 1
+Unacquire 1
+GetDeviceState 3
+GetDeviceData 5
+SetDataFormat 2
+SetEventNotification 2
+SetCooperativeLevel 3
+GetObjectInfo 4
+GetDeviceInfo 2
+RunControlPanel 3
+Initialize 4
+CreateEffect 5
+EnumEffects 4
+GetEffectInfo 3
+GetForceFeedbackState 2
+SendForceFeedbackCommand 2
+EnumCreatedEffectObjects 4
+Escape 2
+Poll 1
+SendDeviceData 5
+EnumEffectsInFile 5
+WriteEffectToFile 5

@@ -1178,6 +1178,7 @@ int SRW_LoadFile(const char *fname)
                             case 111: ProcName = "ws2_32.WSAGetLastError"; break;
                             case 115: ProcName = "ws2_32.WSAStartup"; break;
                             case 116: ProcName = "ws2_32.WSACleanup"; break;
+                            case 151: ProcName = "ws2_32.__WSAFDIsSet"; break;
                         }
                     }
 

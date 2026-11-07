@@ -1356,14 +1356,23 @@ typedef struct {
     uint32_t type;      // not a handle type - modules are identified by address
     const char *name;
     const module_export *exports;
-    uint32_t *xc_a;
-    uint32_t *xc_z;
+    void *entry;        // the DLL's entry point (its C runtime's _DllMainCRTStartup), recompiled
     int loaded;
 } module_info;
 
-// AvP2's modules (server.dll, the renderer, the game DLLs) are added here as they are linked in
+// recompiled game DLLs (stand-ins until the native builds from Monolith's source replace them)
+extern char cshell_DllMainCRTStartup[], cshell_GetClientShellFunctions[], cshell_GetClientShellVersion[], cshell_SetInstanceHandle[];
+
+static const module_export cshell_exports[] = {
+    { "GetClientShellFunctions", (void *) cshell_GetClientShellFunctions },
+    { "GetClientShellVersion", (void *) cshell_GetClientShellVersion },
+    { "SetInstanceHandle", (void *) cshell_SetInstanceHandle },
+    { NULL, NULL }
+};
+
+// AvP2's modules: the engine loads the game DLLs from temporary copies (any path, matched by name)
 static module_info modules[] = {
-    { 0, NULL, NULL, NULL, NULL, 0 },
+    { 0, "cshell.dll", cshell_exports, (void *) cshell_DllMainCRTStartup, 0 },
 };
 
 static module_info *find_module(const char *name)
@@ -1403,13 +1412,17 @@ void * CCALL LoadLibraryA_c(const char *lpLibFileName)
     if (!m->loaded)
     {
         m->loaded = 1;
-        // DllMain equivalent: run the module's C++ static constructors
-        if (m->xc_a != NULL)
+        // DllMain(hModule, DLL_PROCESS_ATTACH, NULL): the DLL's C runtime initializes itself and runs its C++
+        // static constructors
+        if (m->entry != NULL)
         {
-            uint32_t *p;
-            for (p = m->xc_a; p < m->xc_z; p++)
+            uint32_t args[3] = { (uint32_t)(uintptr_t)m, 1, 0 };
+            if (call_game((uint32_t)(uintptr_t)m->entry, 3, args) == 0)
             {
-                if (*p != 0) call_game(*p, 0, NULL);
+                eprintf("LoadLibraryA: %s: DllMain failed\n", m->name);
+                m->loaded = 0;
+                last_error = 1114;  // ERROR_DLL_INIT_FAILED
+                return NULL;
             }
         }
     }

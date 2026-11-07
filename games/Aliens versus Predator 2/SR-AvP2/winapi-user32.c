@@ -16,6 +16,7 @@
 #include "platform.h"
 #include "printf_x86.h"
 #include "display.h"
+#include "dinput.h"
 
 #include "winapi.h"
 #include "winapi-gdi32.h"
@@ -633,6 +634,7 @@ void winapi_process_events(void)
 
     while (SDL_PollEvent(&ev))
     {
+        dinput_event(&ev);
         switch (ev.type)
         {
             case SDL_QUIT:

@@ -173,6 +173,45 @@ extern IDirectDrawClipper_Initialize_c
 extern IDirectDrawClipper_IsClipListChanged_c
 extern IDirectDrawClipper_SetClipList_c
 extern IDirectDrawClipper_SetHWnd_c
+extern IDirectInputA_QueryInterface_c
+extern IDirectInputA_AddRef_c
+extern IDirectInputA_Release_c
+extern IDirectInputA_CreateDevice_c
+extern IDirectInputA_EnumDevices_c
+extern IDirectInputA_GetDeviceStatus_c
+extern IDirectInputA_RunControlPanel_c
+extern IDirectInputA_Initialize_c
+extern IDirectInputA_FindDevice_c
+extern IDirectInputA_CreateDeviceEx_c
+extern IDirectInputDevice2A_QueryInterface_c
+extern IDirectInputDevice2A_AddRef_c
+extern IDirectInputDevice2A_Release_c
+extern IDirectInputDevice2A_GetCapabilities_c
+extern IDirectInputDevice2A_EnumObjects_c
+extern IDirectInputDevice2A_GetProperty_c
+extern IDirectInputDevice2A_SetProperty_c
+extern IDirectInputDevice2A_Acquire_c
+extern IDirectInputDevice2A_Unacquire_c
+extern IDirectInputDevice2A_GetDeviceState_c
+extern IDirectInputDevice2A_GetDeviceData_c
+extern IDirectInputDevice2A_SetDataFormat_c
+extern IDirectInputDevice2A_SetEventNotification_c
+extern IDirectInputDevice2A_SetCooperativeLevel_c
+extern IDirectInputDevice2A_GetObjectInfo_c
+extern IDirectInputDevice2A_GetDeviceInfo_c
+extern IDirectInputDevice2A_RunControlPanel_c
+extern IDirectInputDevice2A_Initialize_c
+extern IDirectInputDevice2A_CreateEffect_c
+extern IDirectInputDevice2A_EnumEffects_c
+extern IDirectInputDevice2A_GetEffectInfo_c
+extern IDirectInputDevice2A_GetForceFeedbackState_c
+extern IDirectInputDevice2A_SendForceFeedbackCommand_c
+extern IDirectInputDevice2A_EnumCreatedEffectObjects_c
+extern IDirectInputDevice2A_Escape_c
+extern IDirectInputDevice2A_Poll_c
+extern IDirectInputDevice2A_SendDeviceData_c
+extern IDirectInputDevice2A_EnumEffectsInFile_c
+extern IDirectInputDevice2A_WriteEffectToFile_c
 global IDirectSoundVtbl_asm2c
 global IDirectSoundBufferVtbl_asm2c
 global IDirectSound3DListenerVtbl_asm2c
@@ -182,6 +221,8 @@ global IDirectDraw2Vtbl_asm2c
 global IDirectDrawSurfaceVtbl_asm2c
 global IDirectDrawPaletteVtbl_asm2c
 global IDirectDrawClipperVtbl_asm2c
+global IDirectInputAVtbl_asm2c
+global IDirectInputDevice2AVtbl_asm2c
 
 %ifidn __OUTPUT_FORMAT__, elf64
 section .note.GNU-stack noalloc noexec nowrite progbits
@@ -4077,6 +4118,922 @@ IDirectDrawClipper_SetHWnd_asm2c:
         Call_Asm_Epilogue_0 3
 %endif
 
+align 16
+IDirectInputA_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputA_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputA_QueryInterface_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputA_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectInputA_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectInputA_AddRef_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectInputA_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectInputA_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectInputA_Release_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectInputA_CreateDevice_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputA_CreateDevice_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectInputA_CreateDevice_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectInputA_EnumDevices_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputA_EnumDevices_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectInputA_EnumDevices_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectInputA_GetDeviceStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectInputA_GetDeviceStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectInputA_GetDeviceStatus_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectInputA_RunControlPanel_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputA_RunControlPanel_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputA_RunControlPanel_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputA_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputA_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputA_Initialize_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputA_FindDevice_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputA_FindDevice_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectInputA_FindDevice_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectInputA_CreateDeviceEx_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputA_CreateDeviceEx_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectInputA_CreateDeviceEx_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectInputDevice2A_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputDevice2A_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputDevice2A_QueryInterface_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputDevice2A_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectInputDevice2A_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectInputDevice2A_AddRef_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectInputDevice2A_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectInputDevice2A_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectInputDevice2A_Release_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectInputDevice2A_GetCapabilities_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectInputDevice2A_GetCapabilities_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectInputDevice2A_GetCapabilities_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectInputDevice2A_EnumObjects_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_EnumObjects_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectInputDevice2A_EnumObjects_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectInputDevice2A_GetProperty_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputDevice2A_GetProperty_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputDevice2A_GetProperty_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputDevice2A_SetProperty_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputDevice2A_SetProperty_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputDevice2A_SetProperty_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputDevice2A_Acquire_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectInputDevice2A_Acquire_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectInputDevice2A_Acquire_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectInputDevice2A_Unacquire_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectInputDevice2A_Unacquire_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectInputDevice2A_Unacquire_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectInputDevice2A_GetDeviceState_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputDevice2A_GetDeviceState_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputDevice2A_GetDeviceState_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputDevice2A_GetDeviceData_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_GetDeviceData_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectInputDevice2A_GetDeviceData_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectInputDevice2A_SetDataFormat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectInputDevice2A_SetDataFormat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectInputDevice2A_SetDataFormat_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectInputDevice2A_SetEventNotification_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectInputDevice2A_SetEventNotification_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectInputDevice2A_SetEventNotification_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectInputDevice2A_SetCooperativeLevel_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputDevice2A_SetCooperativeLevel_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputDevice2A_SetCooperativeLevel_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputDevice2A_GetObjectInfo_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_GetObjectInfo_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectInputDevice2A_GetObjectInfo_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectInputDevice2A_GetDeviceInfo_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectInputDevice2A_GetDeviceInfo_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectInputDevice2A_GetDeviceInfo_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectInputDevice2A_RunControlPanel_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputDevice2A_RunControlPanel_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputDevice2A_RunControlPanel_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputDevice2A_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectInputDevice2A_Initialize_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectInputDevice2A_CreateEffect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_CreateEffect_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectInputDevice2A_CreateEffect_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectInputDevice2A_EnumEffects_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_EnumEffects_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectInputDevice2A_EnumEffects_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectInputDevice2A_GetEffectInfo_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectInputDevice2A_GetEffectInfo_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectInputDevice2A_GetEffectInfo_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectInputDevice2A_GetForceFeedbackState_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectInputDevice2A_GetForceFeedbackState_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectInputDevice2A_GetForceFeedbackState_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectInputDevice2A_SendForceFeedbackCommand_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectInputDevice2A_SendForceFeedbackCommand_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectInputDevice2A_SendForceFeedbackCommand_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectInputDevice2A_EnumCreatedEffectObjects_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_EnumCreatedEffectObjects_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectInputDevice2A_EnumCreatedEffectObjects_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectInputDevice2A_Escape_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectInputDevice2A_Escape_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectInputDevice2A_Escape_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectInputDevice2A_Poll_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectInputDevice2A_Poll_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectInputDevice2A_Poll_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectInputDevice2A_SendDeviceData_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_SendDeviceData_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectInputDevice2A_SendDeviceData_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectInputDevice2A_EnumEffectsInFile_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_EnumEffectsInFile_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectInputDevice2A_EnumEffectsInFile_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectInputDevice2A_WriteEffectToFile_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectInputDevice2A_WriteEffectToFile_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectInputDevice2A_WriteEffectToFile_c
+        Call_Asm_Epilogue_0 5
+%endif
+
 
 section .rodata progbits alloc noexec nowrite align=4
 
@@ -4267,4 +5224,47 @@ IDirectDrawClipperVtbl_asm2c:
         dd IDirectDrawClipper_IsClipListChanged_asm2c
         dd IDirectDrawClipper_SetClipList_asm2c
         dd IDirectDrawClipper_SetHWnd_asm2c
+
+IDirectInputAVtbl_asm2c:
+        dd IDirectInputA_QueryInterface_asm2c
+        dd IDirectInputA_AddRef_asm2c
+        dd IDirectInputA_Release_asm2c
+        dd IDirectInputA_CreateDevice_asm2c
+        dd IDirectInputA_EnumDevices_asm2c
+        dd IDirectInputA_GetDeviceStatus_asm2c
+        dd IDirectInputA_RunControlPanel_asm2c
+        dd IDirectInputA_Initialize_asm2c
+        dd IDirectInputA_FindDevice_asm2c
+        dd IDirectInputA_CreateDeviceEx_asm2c
+
+IDirectInputDevice2AVtbl_asm2c:
+        dd IDirectInputDevice2A_QueryInterface_asm2c
+        dd IDirectInputDevice2A_AddRef_asm2c
+        dd IDirectInputDevice2A_Release_asm2c
+        dd IDirectInputDevice2A_GetCapabilities_asm2c
+        dd IDirectInputDevice2A_EnumObjects_asm2c
+        dd IDirectInputDevice2A_GetProperty_asm2c
+        dd IDirectInputDevice2A_SetProperty_asm2c
+        dd IDirectInputDevice2A_Acquire_asm2c
+        dd IDirectInputDevice2A_Unacquire_asm2c
+        dd IDirectInputDevice2A_GetDeviceState_asm2c
+        dd IDirectInputDevice2A_GetDeviceData_asm2c
+        dd IDirectInputDevice2A_SetDataFormat_asm2c
+        dd IDirectInputDevice2A_SetEventNotification_asm2c
+        dd IDirectInputDevice2A_SetCooperativeLevel_asm2c
+        dd IDirectInputDevice2A_GetObjectInfo_asm2c
+        dd IDirectInputDevice2A_GetDeviceInfo_asm2c
+        dd IDirectInputDevice2A_RunControlPanel_asm2c
+        dd IDirectInputDevice2A_Initialize_asm2c
+        dd IDirectInputDevice2A_CreateEffect_asm2c
+        dd IDirectInputDevice2A_EnumEffects_asm2c
+        dd IDirectInputDevice2A_GetEffectInfo_asm2c
+        dd IDirectInputDevice2A_GetForceFeedbackState_asm2c
+        dd IDirectInputDevice2A_SendForceFeedbackCommand_asm2c
+        dd IDirectInputDevice2A_EnumCreatedEffectObjects_asm2c
+        dd IDirectInputDevice2A_Escape_asm2c
+        dd IDirectInputDevice2A_Poll_asm2c
+        dd IDirectInputDevice2A_SendDeviceData_asm2c
+        dd IDirectInputDevice2A_EnumEffectsInFile_asm2c
+        dd IDirectInputDevice2A_WriteEffectToFile_asm2c
 

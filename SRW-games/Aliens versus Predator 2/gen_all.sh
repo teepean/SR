@@ -30,7 +30,7 @@ gen() {
     cp "$RETAIL/$orig" "$HERE/$sub/SR.cfg" "$I76/SRW/compact_source.py" "$I76/SRW/repair_short_jumps.py" "$dir/"
     for f in relocations.csv bssborder.csv; do [ -e "$HERE/$sub/$f" ] && cp "$HERE/$sub/$f" "$dir/"; done
     for f in "$HERE/$sub/x64/"*.sci; do [ -e "$f" ] && cp "$f" "$dir/"; done
-    (cd "$dir" && ./SRW.exe "$orig" "$mod.asm" > srw.out 2> srw.err; echo "$mod: SRW rc=$?"; grep -E "^Error|disassembly error" srw.err; python3 compact_source.py > /dev/null; python3 "$I76/fix_import_names.py" "$mod.asm" seg*.inc > /dev/null)
+    (cd "$dir" && ./SRW.exe "$orig" "$mod.asm" > srw.out 2> srw.err; echo "$mod: SRW rc=$?"; grep -E "^Error|disassembly error" srw.err; python3 compact_source.py > /dev/null; python3 "$I76/fix_import_names.py" "$mod.asm" seg*.inc > /dev/null; [ -e "$HERE/$sub/exports.txt" ] && python3 "$HERE/tools/prefix_exports.py" "$mod" "$HERE/$sub/exports.txt" "$mod.asm" seg*.inc)
     # assemble and repair out-of-range short jumps until nasm is happy
     for pass in 1 2 3 4 5; do
         (cd "$dir" && nasm -felf64 -O1 -w+orphan-labels -w-number-overflow -i"$DEST/$mod/" -i"$DEST/" "$mod.asm" -o "$mod.o" 2> a.a)
@@ -42,4 +42,8 @@ gen() {
     cp "$dir/$mod.asm" "$dir/"seg*.inc "$DEST/$mod/"
 }
 
-gen SRW-lithtech lithtech.exe lithtech
+# ONLY=<module> regenerates one module
+want() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
+
+want lithtech && gen SRW-lithtech lithtech.exe lithtech
+want cshell   && gen SRW-cshell   CShell.DLL   cshell

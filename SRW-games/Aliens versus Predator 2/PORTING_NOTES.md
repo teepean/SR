@@ -131,3 +131,18 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   address, but its AvP2 reference is again another build (addresses shifted).
 - Now: the engine opens all REZ archives, extracts cshell.dll from AVP2DLL.REZ into temp\ and calls its
   GetClientShellFunctions - the game DLLs are next.
+- Code roots, second round: SRW translates only what it reaches from its roots, and a function referenced only
+  from data (vtables, the engine's interface tables - filled by code) was emitted as data bytes and then run as
+  x64 code. Roots now = IDA's functions + avp2src tools/enumfuncs.py's starts (1,169 more for the engine) +
+  every code address stored in data (relocations; for DLLs their base relocations).
+- CShell.DLL (stand-in until the native build): SRW-cshell (has relocations; its own libcmt: memcpy/memmove
+  redirected), exports prefixed cshell_ (tools/prefix_exports.py: the game DLLs export the same names),
+  registered in kernel32's module table; LoadLibrary runs its _DllMainCRTStartup (DLL_PROCESS_ATTACH).
+  SRW: WSOCK32 ordinal 151 (__WSAFDIsSet).
+- winsock.c back from Interstate '76's history (UDP), TCP calls fail for now.
+- dinput.c: DirectInput 7 keyboard and mouse from SDL events. The engine builds its own data format from
+  EnumObjects (one dword per object, clientinput.cpp), so objects are reported as on Windows: keys = buttons
+  with the DIK code as instance/offset (bindings "##<DIK>"), the mouse as c_dfDIMouse (X/Y/Z 0/4/8, buttons
+  12-15, "##x-axis" etc. match by GUID/offset, diblit.cpp).
+- Now: the client shell initializes, reads autoexec.cfg and sets the render mode: LoadLibrary("d3d.ren") +
+  GetProcAddress("RenderDLLSetup") - the renderer (Godot) is next; then Bink for the movies.

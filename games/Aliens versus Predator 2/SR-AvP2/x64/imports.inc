@@ -180,6 +180,8 @@ extern AIL_waveOutOpen_asm2c
 %define _AIL_waveOutOpen@16 AIL_waveOutOpen_asm2c
 extern BeginPaint_asm2c
 %define BeginPaint BeginPaint_asm2c
+extern CallWindowProcA_asm2c
+%define CallWindowProcA CallWindowProcA_asm2c
 extern ClipCursor_asm2c
 %define ClipCursor ClipCursor_asm2c
 extern CloseHandle_asm2c
@@ -198,12 +200,16 @@ extern CreateCompatibleDC_asm2c
 %define CreateCompatibleDC CreateCompatibleDC_asm2c
 extern CreateDIBSection_asm2c
 %define CreateDIBSection CreateDIBSection_asm2c
+extern CreateDirectoryA_asm2c
+%define CreateDirectoryA CreateDirectoryA_asm2c
 extern CreateEventA_asm2c
 %define CreateEventA CreateEventA_asm2c
 extern CreateFileA_asm2c
 %define CreateFileA CreateFileA_asm2c
 extern CreateFontA_asm2c
 %define CreateFontA CreateFontA_asm2c
+extern CreateProcessA_asm2c
+%define CreateProcessA CreateProcessA_asm2c
 extern CreateThread_asm2c
 %define CreateThread CreateThread_asm2c
 extern CreateWindowExA_asm2c
@@ -216,6 +222,8 @@ extern DeleteCriticalSection_asm2c
 %define DeleteCriticalSection DeleteCriticalSection_asm2c
 extern DeleteDC_asm2c
 %define DeleteDC DeleteDC_asm2c
+extern DeleteFileA_asm2c
+%define DeleteFileA DeleteFileA_asm2c
 extern DeleteObject_asm2c
 %define DeleteObject DeleteObject_asm2c
 extern DestroyWindow_asm2c
@@ -306,10 +314,14 @@ extern GetModuleHandleA_asm2c
 %define GetModuleHandleA GetModuleHandleA_asm2c
 extern GetOEMCP_asm2c
 %define GetOEMCP GetOEMCP_asm2c
+extern GetPrivateProfileStringA_asm2c
+%define GetPrivateProfileStringA GetPrivateProfileStringA_asm2c
 extern GetProcAddress_asm2c
 %define GetProcAddress GetProcAddress_asm2c
 extern GetProcessHeap_asm2c
 %define GetProcessHeap GetProcessHeap_asm2c
+extern getsockopt_asm2c
+%define getsockopt getsockopt_asm2c
 extern GetStartupInfoA_asm2c
 %define GetStartupInfoA GetStartupInfoA_asm2c
 extern GetStdHandle_asm2c
@@ -342,6 +354,8 @@ extern GetVersion_asm2c
 %define GetVersion GetVersion_asm2c
 extern GetVersionExA_asm2c
 %define GetVersionExA GetVersionExA_asm2c
+extern GetWindowLongA_asm2c
+%define GetWindowLongA GetWindowLongA_asm2c
 extern GetWindowRect_asm2c
 %define GetWindowRect GetWindowRect_asm2c
 extern GlobalMemoryStatus_asm2c
@@ -394,6 +408,8 @@ extern LoadResource_asm2c
 %define LoadResource LoadResource_asm2c
 extern LoadStringA_asm2c
 %define LoadStringA LoadStringA_asm2c
+extern LocalFileTimeToFileTime_asm2c
+%define LocalFileTimeToFileTime LocalFileTimeToFileTime_asm2c
 extern LocalFree_asm2c
 %define LocalFree LocalFree_asm2c
 extern LockResource_asm2c
@@ -402,10 +418,16 @@ extern lstrcpyA_asm2c
 %define lstrcpyA lstrcpyA_asm2c
 extern lstrlenA_asm2c
 %define lstrlenA lstrlenA_asm2c
+extern MapWindowPoints_asm2c
+%define MapWindowPoints MapWindowPoints_asm2c
 extern MessageBoxA_asm2c
 %define MessageBoxA MessageBoxA_asm2c
+extern MoveFileA_asm2c
+%define MoveFileA MoveFileA_asm2c
 extern MultiByteToWideChar_asm2c
 %define MultiByteToWideChar MultiByteToWideChar_asm2c
+extern OpenFile_asm2c
+%define OpenFile OpenFile_asm2c
 extern OutputDebugStringA_asm2c
 %define OutputDebugStringA OutputDebugStringA_asm2c
 extern PeekMessageA_asm2c
@@ -424,12 +446,28 @@ extern ReadFile_asm2c
 %define ReadFile ReadFile_asm2c
 extern Rectangle_asm2c
 %define Rectangle Rectangle_asm2c
+extern recv_asm2c
+%define recv recv_asm2c
 extern recvfrom_asm2c
 %define recvfrom recvfrom_asm2c
+extern RegCloseKey_asm2c
+%define RegCloseKey RegCloseKey_asm2c
+extern RegCreateKeyExA_asm2c
+%define RegCreateKeyExA RegCreateKeyExA_asm2c
+extern RegDeleteKeyA_asm2c
+%define RegDeleteKeyA RegDeleteKeyA_asm2c
 extern RegisterClassA_asm2c
 %define RegisterClassA RegisterClassA_asm2c
+extern RegOpenKeyExA_asm2c
+%define RegOpenKeyExA RegOpenKeyExA_asm2c
+extern RegQueryValueExA_asm2c
+%define RegQueryValueExA RegQueryValueExA_asm2c
+extern RegSetValueExA_asm2c
+%define RegSetValueExA RegSetValueExA_asm2c
 extern ReleaseDC_asm2c
 %define ReleaseDC ReleaseDC_asm2c
+extern RemoveDirectoryA_asm2c
+%define RemoveDirectoryA RemoveDirectoryA_asm2c
 extern ResetEvent_asm2c
 %define ResetEvent ResetEvent_asm2c
 extern ResumeThread_asm2c
@@ -452,10 +490,14 @@ extern SetEndOfFile_asm2c
 %define SetEndOfFile SetEndOfFile_asm2c
 extern SetEnvironmentVariableA_asm2c
 %define SetEnvironmentVariableA SetEnvironmentVariableA_asm2c
+extern SetErrorMode_asm2c
+%define SetErrorMode SetErrorMode_asm2c
 extern SetEvent_asm2c
 %define SetEvent SetEvent_asm2c
 extern SetFilePointer_asm2c
 %define SetFilePointer SetFilePointer_asm2c
+extern SetFileTime_asm2c
+%define SetFileTime SetFileTime_asm2c
 extern SetFocus_asm2c
 %define SetFocus SetFocus_asm2c
 extern SetHandleCount_asm2c
@@ -476,6 +518,10 @@ extern SetThreadPriority_asm2c
 %define SetThreadPriority SetThreadPriority_asm2c
 extern SetUnhandledExceptionFilter_asm2c
 %define SetUnhandledExceptionFilter SetUnhandledExceptionFilter_asm2c
+extern SetWindowLongA_asm2c
+%define SetWindowLongA SetWindowLongA_asm2c
+extern SetWindowPos_asm2c
+%define SetWindowPos SetWindowPos_asm2c
 extern ShowCursor_asm2c
 %define ShowCursor ShowCursor_asm2c
 extern ShowWindow_asm2c
@@ -484,6 +530,8 @@ extern SizeofResource_asm2c
 %define SizeofResource SizeofResource_asm2c
 extern Sleep_asm2c
 %define Sleep Sleep_asm2c
+extern SystemTimeToFileTime_asm2c
+%define SystemTimeToFileTime SystemTimeToFileTime_asm2c
 extern TerminateProcess_asm2c
 %define TerminateProcess TerminateProcess_asm2c
 extern TextOutA_asm2c
@@ -492,6 +540,8 @@ extern timeGetTime_asm2c
 %define timeGetTime timeGetTime_asm2c
 extern TlsAlloc_asm2c
 %define TlsAlloc TlsAlloc_asm2c
+extern TlsFree_asm2c
+%define TlsFree TlsFree_asm2c
 extern TlsGetValue_asm2c
 %define TlsGetValue TlsGetValue_asm2c
 extern TlsSetValue_asm2c
@@ -514,14 +564,22 @@ extern WaitForMultipleObjects_asm2c
 %define WaitForMultipleObjects WaitForMultipleObjects_asm2c
 extern WaitForSingleObject_asm2c
 %define WaitForSingleObject WaitForSingleObject_asm2c
+extern WaitForSingleObjectEx_asm2c
+%define WaitForSingleObjectEx WaitForSingleObjectEx_asm2c
 extern WideCharToMultiByte_asm2c
 %define WideCharToMultiByte WideCharToMultiByte_asm2c
 extern WriteFile_asm2c
 %define WriteFile WriteFile_asm2c
+extern WritePrivateProfileStringA_asm2c
+%define WritePrivateProfileStringA WritePrivateProfileStringA_asm2c
+extern ws2_32___WSAFDIsSet_asm2c
+%define ws2_32.__WSAFDIsSet ws2_32___WSAFDIsSet_asm2c
 extern ws2_32_bind_asm2c
 %define ws2_32.bind ws2_32_bind_asm2c
 extern ws2_32_closesocket_asm2c
 %define ws2_32.closesocket ws2_32_closesocket_asm2c
+extern ws2_32_connect_asm2c
+%define ws2_32.connect ws2_32_connect_asm2c
 extern ws2_32_gethostbyname_asm2c
 %define ws2_32.gethostbyname ws2_32_gethostbyname_asm2c
 extern ws2_32_gethostname_asm2c
@@ -534,14 +592,22 @@ extern ws2_32_htons_asm2c
 %define ws2_32.htons ws2_32_htons_asm2c
 extern ws2_32_inet_addr_asm2c
 %define ws2_32.inet_addr ws2_32_inet_addr_asm2c
+extern ws2_32_inet_ntoa_asm2c
+%define ws2_32.inet_ntoa ws2_32_inet_ntoa_asm2c
 extern ws2_32_ioctlsocket_asm2c
 %define ws2_32.ioctlsocket ws2_32_ioctlsocket_asm2c
 extern ws2_32_ntohl_asm2c
 %define ws2_32.ntohl ws2_32_ntohl_asm2c
 extern ws2_32_ntohs_asm2c
 %define ws2_32.ntohs ws2_32_ntohs_asm2c
+extern ws2_32_select_asm2c
+%define ws2_32.select ws2_32_select_asm2c
+extern ws2_32_send_asm2c
+%define ws2_32.send ws2_32_send_asm2c
 extern ws2_32_sendto_asm2c
 %define ws2_32.sendto ws2_32_sendto_asm2c
+extern ws2_32_shutdown_asm2c
+%define ws2_32.shutdown ws2_32_shutdown_asm2c
 extern ws2_32_socket_asm2c
 %define ws2_32.socket ws2_32_socket_asm2c
 extern ws2_32_WSACleanup_asm2c
