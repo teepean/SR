@@ -25,14 +25,16 @@
  *  Changing light animations (flickering lights: single frame, the blend changes) as layers the shader adds.
  *  The 3D picture is drawn in a SubViewport and put under the game's 2D frame through d3d.ren's last passes
  *  (light scale or InvertHack, light add); DrawSky and LMFullBright (vision modes) are followed.
- *  To do: per-texture state changes (vision modes' texture states), poly grids, lines, canvases, multi-frame light
+ *  Textures' D3D state changes (SharedTexture::m_pStateChange, switched by the game per vision mode): their fog
+ *  (none, all of a colour, a range) and colour op (texture only, add signed) as material uniforms.
+ *  To do: the state changes' blend modes, poly grids, lines, canvases, multi-frame light
  *  animations, shadow-map light animations,
  *  vertical fog, detail and environment textures, model LODs and static lights for models, sprite-animated
  *  surfaces (SURF_SPRITEANIMATE).
  *
  *  Debugging: AVP2_R3D_FULLBRIGHT=1 (textures only), AVP2_R3D_LMSCALE / AVP2_R3D_VCSCALE (light scales),
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
- *  AVP2_DEBUG=2 (the objects, once).
+ *  AVP2_DEBUG=2 (the objects, once), AVP2_R3D_DUMPSTATES=1 (the textures' state changes).
  *
  */
 
@@ -158,11 +160,22 @@ struct world_context
 };
 #define CONTEXT_MAGIC 0x58544352    // "RCTX"
 
+// a texture's D3D state change (SharedTexture::m_pStateChange, set by the game per vision mode), as far as it's done
+struct texture_state
+{
+    int colorop;                // 0: texture x light (MODULATE), 1: the texture only (SELECTARG1), 2: texture + light - 0.5 (ADDSIGNED)
+    int fog;                    // 0: the scene's, 1: none, 2: all of the fog colour (FOGSTART = FOGEND), 3: its own range
+    float fog_color[3], fog_start, fog_end;
+};
+
 struct texture_entry
 {
     Ref<ImageTexture> texture;  // null: none (missing or unsupported)
     int has_alpha;
     float inv_w, inv_h;         // world UVs are in texels of the DTX's base size
+    uint32_t state_ptr = 0;     // the StateChange* the materials have
+    texture_state state = { 0, 0, { 0, 0, 0 }, 0, 0 };
+    std::vector<Ref<ShaderMaterial>> materials;     // the materials with this texture (their state uniforms follow)
 };
 
 // a world model object's mesh instance
@@ -422,6 +435,7 @@ enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
 
 // the fog (global shader parameters, set each frame from the console variables FogEnable, FogNearZ, FogFarZ,
 // FogR/G/B, SkyFogNearZ, SkyFogFarZ)
+#define STATE_UNIFORMS "uniform float st_colorop = 0.0;\nuniform vec4 st_fog = vec4(0.0);\nuniform vec3 st_fog_color = vec3(0.0);\n"
 #define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n"
 // the dynamic lights that light the world: a 32 x 2 float texture (position (Godot), radius; colour 0-255), count
 #define DL_MAX 32
@@ -522,7 +536,7 @@ static const char *shader_code(int kind)
         std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
             "uniform sampler2D albedo : filter_linear_mipmap_anisotropic, repeat_enable;\n"
             "uniform sampler2D lightmap : filter_linear, repeat_disable;\n"
-            "uniform float use_lightmap = 0.0;\n" + std::string(scales) + FOG_UNIFORMS + DL_UNIFORMS +
+            "uniform float use_lightmap = 0.0;\n" + std::string(scales) + FOG_UNIFORMS + DL_UNIFORMS + STATE_UNIFORMS +
             "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
             "varying vec4 v_anim;\nvarying vec4 v_lm;\nvarying vec3 v_c0;\nvarying vec3 v_c1;\n";
         c += "void vertex() {\n";
@@ -592,13 +606,20 @@ static const char *shader_code(int kind)
                  "      }\n"
                  "    }\n"
                  "  }\n";
-        c += "  vec3 col = clamp(t.rgb * clamp(light, 0.0, 2.0) + add, 0.0, 1.0);\n";
+        // the texture's colour op (its state change): texture x light, the texture alone, or texture + light - 0.5
+        c += "  vec3 col = (st_colorop > 1.5) ? clamp(t.rgb + clamp(light, 0.0, 2.0) - 0.5 + add, 0.0, 1.0)\n"
+             "            : (st_colorop > 0.5) ? t.rgb : clamp(t.rgb * clamp(light, 0.0, 2.0) + add, 0.0, 1.0);\n";
         if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  col = t.rgb;\n";
         // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
         // surfaces fade to black)
         c += (kind & MAT_SKY) ? "  float f = lt_fog.x * clamp((-VERTEX.z - lt_sky_fog.x) / max(lt_sky_fog.y - lt_sky_fog.x, 0.001), 0.0, 1.0);\n"
                               : "  float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n";
-        c += (blend == MAT_ADD) ? "  col *= 1.0 - f;\n" : "  col = mix(col, lt_fog_color.rgb, f);\n";
+        // the texture's own fog: none, all of its colour, or its range (FOGSTART/FOGEND, by depth)
+        c += "  vec3 fc = lt_fog_color.rgb;\n"
+             "  if (st_fog.x > 2.5) { f = clamp((-VERTEX.z - st_fog.y) / max(st_fog.z - st_fog.y, 0.001), 0.0, 1.0); fc = st_fog_color; }\n"
+             "  else if (st_fog.x > 1.5) { f = 1.0; fc = st_fog_color; }\n"
+             "  else if (st_fog.x > 0.5) f = 0.0;\n";
+        c += (blend == MAT_ADD) ? "  col *= 1.0 - f;\n" : "  col = mix(col, fc, f);\n";
         c += "  ALBEDO = to_linear(col);\n";
         if ((kind & MAT_SKY) && (blend == MAT_OPAQUE)) c += "  ALPHA = 1.0;\n";
         if (blend == MAT_ALPHA_TEST) c += "  ALPHA = t.a;\n  ALPHA_SCISSOR_THRESHOLD = 0.5;\n";
@@ -627,6 +648,82 @@ struct world_materials
 };
 static world_materials *wm;
 
+// D3D7 render and texture stage states (d3dtypes.h)
+#define D3DRS_FOGENABLE 28
+#define D3DRS_FOGCOLOR 34
+#define D3DRS_FOGSTART 36
+#define D3DRS_FOGEND 37
+#define D3DTSS_COLOROP 1
+#define D3DTOP_SELECTARG1 2
+#define D3DTOP_MODULATE 4
+#define D3DTOP_ADDSIGNED 8
+
+// StateChange: two (STLport) vectors - RenderState {type, value} and TextureState {stage, type, value}
+static texture_state parse_state(uint32_t sc)
+{
+    texture_state t = { 0, 0, { 0, 0, 0 }, 0, 0 };
+    if (sc == 0) return t;
+    int fogenable = -1, have_range = 0;
+    uint32_t color = 0;
+    for (uint32_t r = g32(sc), e = g32(sc + 4), n = 0; (r != 0) && (r < e) && (n < 64); r += 8, n++)
+    {
+        uint32_t type = g32(r), v = g32(r + 4);
+        if (type == D3DRS_FOGENABLE) fogenable = (v != 0);
+        else if (type == D3DRS_FOGCOLOR) color = v;
+        else if (type == D3DRS_FOGSTART) { memcpy(&t.fog_start, &v, 4); have_range = 1; }
+        else if (type == D3DRS_FOGEND) { memcpy(&t.fog_end, &v, 4); have_range = 1; }
+    }
+    for (uint32_t r = g32(sc + 12), e = g32(sc + 16), n = 0; (r != 0) && (r < e) && (n < 64); r += 12, n++)
+    {
+        if ((g32(r) != 0) || (g32(r + 4) != D3DTSS_COLOROP)) continue;
+        uint32_t v = g32(r + 8);
+        t.colorop = (v == D3DTOP_SELECTARG1) ? 1 : ((v == D3DTOP_ADDSIGNED) ? 2 : 0);
+    }
+    if (fogenable == 0) t.fog = 1;
+    else if (fogenable == 1)
+    {
+        t.fog = (have_range && (t.fog_end > t.fog_start + 0.001f)) ? 3 : 2;
+        t.fog_color[0] = ((color >> 16) & 255) / 255.0f;
+        t.fog_color[1] = ((color >> 8) & 255) / 255.0f;
+        t.fog_color[2] = (color & 255) / 255.0f;
+    }
+    return t;
+}
+
+static void apply_state(const Ref<ShaderMaterial> &m, const texture_state &t)
+{
+    m->set_shader_parameter("st_colorop", (float)t.colorop);
+    m->set_shader_parameter("st_fog", Vector4((float)t.fog, t.fog_start, t.fog_end, 0));
+    m->set_shader_parameter("st_fog_color", Vector3(t.fog_color[0], t.fog_color[1], t.fog_color[2]));
+}
+
+// each frame: the materials follow their textures' state changes (vision modes switch them)
+static void update_texture_states(void)
+{
+    for (auto &kv : gs->textures)
+    {
+        texture_entry &te = kv.second;
+        if ((kv.first == 0) || te.materials.empty()) continue;
+        uint32_t sc = g32(kv.first + 0x34);
+        if (sc == te.state_ptr) continue;
+        te.state_ptr = sc;
+        te.state = parse_state(sc);
+        for (Ref<ShaderMaterial> &m : te.materials) apply_state(m, te.state);
+    }
+}
+
+static void track_material(uint32_t shared, const Ref<ShaderMaterial> &m)
+{
+    texture_entry &te = get_texture(shared);
+    if (shared != 0)
+    {
+        te.state_ptr = g32(shared + 0x34);
+        te.state = parse_state(te.state_ptr);
+    }
+    te.materials.push_back(m);
+    apply_state(m, te.state);
+}
+
 static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page)
 {
     uint64_t key = ((uint64_t)shared << 16) | ((uint64_t)(page + 1) << 4) | (uint64_t)kind;
@@ -649,6 +746,7 @@ static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page)
         m->set_shader_parameter("use_lightmap", 1.0f);
     }
     wm->materials[key] = m;
+    track_material(shared, m);
     return m;
 }
 
@@ -664,6 +762,7 @@ static Ref<ShaderMaterial> sky_material(uint64_t key, int index)
     Ref<ShaderMaterial> m = get_material((uint32_t)(key >> 16), kind, (int)((key >> 4) & 0xfff) - 1)->duplicate();
     m->set_render_priority(-120 + ((index < 200) ? index : 200));
     wm->sky_materials[k] = m;
+    track_material((uint32_t)(key >> 16), m);
     return m;
 }
 
@@ -1112,6 +1211,7 @@ static void clear_world(void)
     for (auto &kv : gs->particles) kv.second.mi->queue_free();
     gs->particles.clear();
     gs->sprite_materials.clear();
+    for (auto &kv : gs->textures) kv.second.materials.clear();
     gs->bsp_meshes.clear();
     gs->bsp_keys.clear();
     for (auto &kv : gs->sky_instances) kv.second.mi->queue_free();
@@ -1862,7 +1962,7 @@ static Ref<Shader> sprite_shader(int v)
     std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
         "uniform sampler2D albedo : filter_linear_mipmap, repeat_disable;\n"
         "instance uniform vec4 color = vec4(1.0);\n"
-        "instance uniform vec2 half_size = vec2(1.0);\n" FOG_UNIFORMS
+        "instance uniform vec2 half_size = vec2(1.0);\n" FOG_UNIFORMS STATE_UNIFORMS
         "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
         "void vertex() {\n";
     if (v & SPR_PARTICLES)
@@ -1890,8 +1990,12 @@ static Ref<Shader> sprite_shader(int v)
     if (!(v & SPR_NOFOG))
     {
         // fog: additive fades to black, multiplied to white (d3d_DrawSprite's fog colours)
-        c += "  float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n";
-        c += (v & SPR_ADD) ? "  col *= 1.0 - f;\n" : (v & SPR_MUL) ? "  col = mix(col, vec3(1.0), f);\n" : "  col = mix(col, lt_fog_color.rgb, f);\n";
+        c += "  float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n"
+             "  vec3 fc = lt_fog_color.rgb;\n"
+             "  if (st_fog.x > 2.5) { f = clamp((-VERTEX.z - st_fog.y) / max(st_fog.z - st_fog.y, 0.001), 0.0, 1.0); fc = st_fog_color; }\n"
+             "  else if (st_fog.x > 1.5) { f = 1.0; fc = st_fog_color; }\n"
+             "  else if (st_fog.x > 0.5) f = 0.0;\n";
+        c += (v & SPR_ADD) ? "  col *= 1.0 - f;\n" : (v & SPR_MUL) ? "  col = mix(col, vec3(1.0), f);\n" : "  col = mix(col, fc, f);\n";
     }
     c += "  ALBEDO = to_linear(col);\n"
          "  ALPHA = t.a;\n"
@@ -1914,6 +2018,7 @@ static Ref<ShaderMaterial> sprite_material(uint32_t tex, int v)
     texture_entry &t = get_texture(tex);
     if (t.texture.is_valid()) m->set_shader_parameter("albedo", t.texture);
     gs->sprite_materials[key] = m;
+    track_material(tex, m);
     return m;
 }
 
@@ -2343,6 +2448,34 @@ extern "C" int r3d_render_scene(uint8_t *scene)
 
     fog_update();
     post_update(sd);
+    update_texture_states();
+    if (getenv("AVP2_R3D_DUMPSTATES") && ((gs->frame % 300) == 100))
+    {
+        // debugging: the textures' D3D state changes (SharedTexture::m_pStateChange)
+        int n = 0;
+        for (auto &kv : gs->textures)
+        {
+            uint32_t st = kv.first;
+            if (st == 0) continue;
+            uint32_t sc = g32(st + 0x34);
+            if ((n < 0) && (sc == 0))
+            {
+                n++;
+                eprintf("render3d: texture %08x:", st);
+                for (int i = 0; i < 16; i++) eprintf(" %08x", g32(st + 4 * i));
+                uint32_t cl = g32(st + 0x38);
+                eprintf(" cmd \"%.60s\"\n", ((cl > 0x10000) && (cl < 0x80000000u)) ? (const char *)(uintptr_t)cl : "?");
+            }
+            if (sc == 0) continue;
+            if (n++ > 400) break;
+            const char *cmd = g32(st + 0x38) ? (const char *)(uintptr_t)g32(st + 0x38) : "";
+            eprintf("render3d: texture %08x \"%.40s\" state %08x: render", st, cmd, sc);
+            for (uint32_t r = g32(sc); (r < g32(sc + 4)) && (r != 0); r += 8) eprintf(" %u=%u", g32(r), g32(r + 4));
+            eprintf(" texture");
+            for (uint32_t t = g32(sc + 12); (t < g32(sc + 16)) && (t != 0); t += 12) eprintf(" %u:%u=%u", g32(t), g32(t + 4), g32(t + 8));
+            eprintf("\n");
+        }
+    }
     if (winapi_debug)
     {
         // frame rate (debugging)

@@ -312,3 +312,12 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - Crash fixed: display.c allocated the frame with calloc - for 640x480 above 4 GB - and RenderStruct::LockScreen
   handed it to the engine truncated to 32 bits (a full-screen fill when the vision mode changed wrote to it). The
   frame is in low memory now (sys_map_low).
+- Texture states: the engine calls IClientShell::OnTextureLoad(&SharedTexture::m_pStateChange, m_pCommandLine)
+  right after RenderStruct::BindTexture; the game (TextureModeMGR) registers the texture's "ViewModes ..." token and
+  later points m_pStateChange (+0x34) at the D3D StateChange of the current vision mode. The command line (+0x38)
+  is only set once the texture's data is loaded - d3d.ren loads it in BindTexture, so render.c's BindTexture now
+  calls RenderStruct::GetTexture too (without it nothing was registered). StateChange = two STLport vectors
+  (RenderState {type, value}, TextureState {stage, type, value}). p1s1 uses FOGENABLE 0 + COLOROP SELECTARG1
+  ("NoFog": unlit, unfogged), FOGENABLE 1 + FOGCOLOR with FOGSTART = FOGEND = 0 (the surface becomes that colour:
+  heat vision's blue world), and two blend overrides (not done). Materials get the state as uniforms, updated
+  when a texture's m_pStateChange changes.

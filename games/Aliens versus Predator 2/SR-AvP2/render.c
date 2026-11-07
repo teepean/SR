@@ -296,7 +296,18 @@ void r3d_unbind_texture(void *texture) {}
 
 static int scene_drawn;     // RenderScene in this frame
 
-void CCALL ren_BindTexture_c(void *pTexture, uint32_t bTextureChanged) { if (bTextureChanged) r3d_unbind_texture(pTexture); }
+// d3d.ren loads the texture's data when it's bound (d3d_CreateAndLoadTexture -> RenderStruct::GetTexture): that sets
+// SharedTexture::m_pCommandLine, which the engine hands to the game right after (IClientShell::OnTextureLoad: the
+// vision modes' texture states are registered from its "ViewModes" token)
+void CCALL ren_BindTexture_c(void *pTexture, uint32_t bTextureChanged)
+{
+    if (bTextureChanged) r3d_unbind_texture(pTexture);
+    if ((pTexture != NULL) && (rs != NULL))
+    {
+        uint32_t args[1] = { (uint32_t)(uintptr_t)pTexture };
+        call_game(*(uint32_t *)(rs + 0x08), 1, args);
+    }
+}
 void CCALL ren_UnbindTexture_c(void *pTexture) { r3d_unbind_texture(pTexture); }
 void CCALL ren_RebindLightmaps_c(void *pContext) {}
 
