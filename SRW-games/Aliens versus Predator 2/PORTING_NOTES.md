@@ -357,3 +357,18 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   went 320x200 and back to 640x480 before Godot saw the first resize, and no event came for the second; the
   size is asked again (or nudged by a pixel) while window and viewport differ in the 2 s after a change.
 - Now: exp1s1 (Predator campaign) plays with HUD and the wrist blades at ~170 frames/s.
+
+### 2026-11-08 — Bink movies
+- The engine's BinkVideoMgr loads binkw32.dll and resolves 13 functions with GetProcAddress (decorated names,
+  `_BinkOpen@8`, ...). binkw32.dll is now a built-in module (winapi-kernel32.c's module table -> imports.spec
+  "static" stdcall stubs -> bink.c). bink.c decodes with FFmpeg (libavformat/libavcodec, found with pkg-config by
+  SConstruct; without it BinkOpen fails and the engine skips the movies): the video frame by frame as the engine
+  asks (BinkDoFrame / BinkCopyToBuffer, YUV -> the surface's format), the audio track whole at BinkOpen, played as
+  a mixer source and used as the clock for BinkWait. The BINK structure in game memory has what the engine reads
+  (Width, Height, Frames, FrameNum from 1; the movie ends at FrameNum == Frames - 1).
+- The video manager draws through d3d.ren's DirectDraw: RenderStruct::GetHook("LPDIRECTDRAW") / ("BACKBUFFER").
+  render.c has stand-ins (com.spec IDirectDraw7 / IDirectDrawSurface7): GetDisplayMode (32-bit RGB),
+  CreateSurface (game memory), Lock/Unlock, Blt (colour fill, stretch) and BltFast; the back buffer is the 2D
+  frame, written opaque (it's premultiplied ARGB over the 3D picture).
+- AvP2 plays foxlogo, sierralogo, ltlogo and lithlogo at startup (with their sound). Primal Hunt has no movies
+  (its Third Law logo is a bitmap).

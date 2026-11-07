@@ -357,6 +357,19 @@ extern ren_WarpToScreen_c
 extern ren_MakeScreenShot_c
 extern ren_ReadConsoleVariables_c
 extern ren_BlitFromScreen_c
+extern BinkOpen_c
+extern BinkClose_c
+extern BinkWait_c
+extern BinkCopyToBuffer_c
+extern BinkDoFrame_c
+extern BinkNextFrame_c
+extern BinkSetSoundSystem_c
+extern BinkOpenMiles_c
+extern BinkOpenDirectSound_c
+extern BinkSetSoundTrack_c
+extern BinkIsSoftwareCursor_c
+extern BinkCheckCursor_c
+extern BinkRestoreCursor_c
 
 global AIL_3D_orientation_asm2c
 global AIL_3D_position_asm2c
@@ -712,6 +725,19 @@ global ren_WarpToScreen_asm2c
 global ren_MakeScreenShot_asm2c
 global ren_ReadConsoleVariables_asm2c
 global ren_BlitFromScreen_asm2c
+global BinkOpen_asm2c
+global BinkClose_asm2c
+global BinkWait_asm2c
+global BinkCopyToBuffer_asm2c
+global BinkDoFrame_asm2c
+global BinkNextFrame_asm2c
+global BinkSetSoundSystem_asm2c
+global BinkOpenMiles_asm2c
+global BinkOpenDirectSound_asm2c
+global BinkSetSoundTrack_asm2c
+global BinkIsSoftwareCursor_asm2c
+global BinkCheckCursor_asm2c
+global BinkRestoreCursor_asm2c
 
 %ifidn __OUTPUT_FORMAT__, elf64
 section .note.GNU-stack noalloc noexec nowrite progbits
@@ -8854,5 +8880,302 @@ ren_BlitFromScreen_asm2c:
         mov edi, [r11d+12]
         call ren_BlitFromScreen_c
         Call_Asm_Epilogue_0 0
+%endif
+
+; _BinkOpen@8 (std2, static)
+align 16
+BinkOpen_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call BinkOpen_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call BinkOpen_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+; _BinkClose@4 (std1, static)
+align 16
+BinkClose_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call BinkClose_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call BinkClose_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; _BinkWait@4 (std1, static)
+align 16
+BinkWait_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call BinkWait_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call BinkWait_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; _BinkCopyToBuffer@28 (std7, static)
+align 16
+BinkCopyToBuffer_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 32
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov eax, [r11d+28]
+        mov [rsp+48], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call BinkCopyToBuffer_c
+        add rsp, 32
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+28
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        sub rsp, 16
+        mov eax, [r11d+36]
+        mov [rsp+0], rax
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call BinkCopyToBuffer_c
+        add rsp, 16
+        Call_Asm_Epilogue_0 7
+%endif
+
+; _BinkDoFrame@4 (std1, static)
+align 16
+BinkDoFrame_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call BinkDoFrame_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call BinkDoFrame_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; _BinkNextFrame@4 (std1, static)
+align 16
+BinkNextFrame_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call BinkNextFrame_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call BinkNextFrame_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; _BinkSetSoundSystem@8 (std2, static)
+align 16
+BinkSetSoundSystem_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call BinkSetSoundSystem_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call BinkSetSoundSystem_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+; _BinkOpenMiles@4 (std1, static)
+align 16
+BinkOpenMiles_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call BinkOpenMiles_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call BinkOpenMiles_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; _BinkOpenDirectSound@4 (std1, static)
+align 16
+BinkOpenDirectSound_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call BinkOpenDirectSound_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call BinkOpenDirectSound_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; _BinkSetSoundTrack@4 (std1, static)
+align 16
+BinkSetSoundTrack_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call BinkSetSoundTrack_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call BinkSetSoundTrack_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+; _BinkIsSoftwareCursor@8 (std2, static)
+align 16
+BinkIsSoftwareCursor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call BinkIsSoftwareCursor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call BinkIsSoftwareCursor_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+; _BinkCheckCursor@20 (std5, static)
+align 16
+BinkCheckCursor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call BinkCheckCursor_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call BinkCheckCursor_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+; _BinkRestoreCursor@4 (std1, static)
+align 16
+BinkRestoreCursor_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call BinkRestoreCursor_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call BinkRestoreCursor_c
+        Call_Asm_Epilogue_0 1
 %endif
 

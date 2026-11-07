@@ -212,6 +212,85 @@ extern IDirectInputDevice2A_Poll_c
 extern IDirectInputDevice2A_SendDeviceData_c
 extern IDirectInputDevice2A_EnumEffectsInFile_c
 extern IDirectInputDevice2A_WriteEffectToFile_c
+extern IDirectDraw7_QueryInterface_c
+extern IDirectDraw7_AddRef_c
+extern IDirectDraw7_Release_c
+extern IDirectDraw7_Compact_c
+extern IDirectDraw7_CreateClipper_c
+extern IDirectDraw7_CreatePalette_c
+extern IDirectDraw7_CreateSurface_c
+extern IDirectDraw7_DuplicateSurface_c
+extern IDirectDraw7_EnumDisplayModes_c
+extern IDirectDraw7_EnumSurfaces_c
+extern IDirectDraw7_FlipToGDISurface_c
+extern IDirectDraw7_GetCaps_c
+extern IDirectDraw7_GetDisplayMode_c
+extern IDirectDraw7_GetFourCCCodes_c
+extern IDirectDraw7_GetGDISurface_c
+extern IDirectDraw7_GetMonitorFrequency_c
+extern IDirectDraw7_GetScanLine_c
+extern IDirectDraw7_GetVerticalBlankStatus_c
+extern IDirectDraw7_Initialize_c
+extern IDirectDraw7_RestoreDisplayMode_c
+extern IDirectDraw7_SetCooperativeLevel_c
+extern IDirectDraw7_SetDisplayMode_c
+extern IDirectDraw7_WaitForVerticalBlank_c
+extern IDirectDraw7_GetAvailableVidMem_c
+extern IDirectDraw7_GetSurfaceFromDC_c
+extern IDirectDraw7_RestoreAllSurfaces_c
+extern IDirectDraw7_TestCooperativeLevel_c
+extern IDirectDraw7_GetDeviceIdentifier_c
+extern IDirectDraw7_StartModeTest_c
+extern IDirectDraw7_EvaluateMode_c
+extern IDirectDrawSurface7_QueryInterface_c
+extern IDirectDrawSurface7_AddRef_c
+extern IDirectDrawSurface7_Release_c
+extern IDirectDrawSurface7_AddAttachedSurface_c
+extern IDirectDrawSurface7_AddOverlayDirtyRect_c
+extern IDirectDrawSurface7_Blt_c
+extern IDirectDrawSurface7_BltBatch_c
+extern IDirectDrawSurface7_BltFast_c
+extern IDirectDrawSurface7_DeleteAttachedSurface_c
+extern IDirectDrawSurface7_EnumAttachedSurfaces_c
+extern IDirectDrawSurface7_EnumOverlayZOrders_c
+extern IDirectDrawSurface7_Flip_c
+extern IDirectDrawSurface7_GetAttachedSurface_c
+extern IDirectDrawSurface7_GetBltStatus_c
+extern IDirectDrawSurface7_GetCaps_c
+extern IDirectDrawSurface7_GetClipper_c
+extern IDirectDrawSurface7_GetColorKey_c
+extern IDirectDrawSurface7_GetDC_c
+extern IDirectDrawSurface7_GetFlipStatus_c
+extern IDirectDrawSurface7_GetOverlayPosition_c
+extern IDirectDrawSurface7_GetPalette_c
+extern IDirectDrawSurface7_GetPixelFormat_c
+extern IDirectDrawSurface7_GetSurfaceDesc_c
+extern IDirectDrawSurface7_Initialize_c
+extern IDirectDrawSurface7_IsLost_c
+extern IDirectDrawSurface7_Lock_c
+extern IDirectDrawSurface7_ReleaseDC_c
+extern IDirectDrawSurface7_Restore_c
+extern IDirectDrawSurface7_SetClipper_c
+extern IDirectDrawSurface7_SetColorKey_c
+extern IDirectDrawSurface7_SetOverlayPosition_c
+extern IDirectDrawSurface7_SetPalette_c
+extern IDirectDrawSurface7_Unlock_c
+extern IDirectDrawSurface7_UpdateOverlay_c
+extern IDirectDrawSurface7_UpdateOverlayDisplay_c
+extern IDirectDrawSurface7_UpdateOverlayZOrder_c
+extern IDirectDrawSurface7_GetDDInterface_c
+extern IDirectDrawSurface7_PageLock_c
+extern IDirectDrawSurface7_PageUnlock_c
+extern IDirectDrawSurface7_SetSurfaceDesc_c
+extern IDirectDrawSurface7_SetPrivateData_c
+extern IDirectDrawSurface7_GetPrivateData_c
+extern IDirectDrawSurface7_FreePrivateData_c
+extern IDirectDrawSurface7_GetUniquenessValue_c
+extern IDirectDrawSurface7_ChangeUniquenessValue_c
+extern IDirectDrawSurface7_SetPriority_c
+extern IDirectDrawSurface7_GetPriority_c
+extern IDirectDrawSurface7_SetLOD_c
+extern IDirectDrawSurface7_GetLOD_c
 global IDirectSoundVtbl_asm2c
 global IDirectSoundBufferVtbl_asm2c
 global IDirectSound3DListenerVtbl_asm2c
@@ -223,6 +302,8 @@ global IDirectDrawPaletteVtbl_asm2c
 global IDirectDrawClipperVtbl_asm2c
 global IDirectInputAVtbl_asm2c
 global IDirectInputDevice2AVtbl_asm2c
+global IDirectDraw7Vtbl_asm2c
+global IDirectDrawSurface7Vtbl_asm2c
 
 %ifidn __OUTPUT_FORMAT__, elf64
 section .note.GNU-stack noalloc noexec nowrite progbits
@@ -5034,6 +5115,1804 @@ IDirectInputDevice2A_WriteEffectToFile_asm2c:
         Call_Asm_Epilogue_0 5
 %endif
 
+align 16
+IDirectDraw7_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_QueryInterface_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDraw7_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw7_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDraw7_AddRef_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDraw7_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw7_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDraw7_Release_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDraw7_Compact_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw7_Compact_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDraw7_Compact_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDraw7_CreateClipper_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw7_CreateClipper_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectDraw7_CreateClipper_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectDraw7_CreatePalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw7_CreatePalette_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectDraw7_CreatePalette_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectDraw7_CreateSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw7_CreateSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectDraw7_CreateSurface_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectDraw7_DuplicateSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_DuplicateSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_DuplicateSurface_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDraw7_EnumDisplayModes_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw7_EnumDisplayModes_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectDraw7_EnumDisplayModes_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectDraw7_EnumSurfaces_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw7_EnumSurfaces_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectDraw7_EnumSurfaces_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectDraw7_FlipToGDISurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw7_FlipToGDISurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDraw7_FlipToGDISurface_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDraw7_GetCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_GetCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_GetCaps_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDraw7_GetDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw7_GetDisplayMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDraw7_GetDisplayMode_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDraw7_GetFourCCCodes_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_GetFourCCCodes_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_GetFourCCCodes_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDraw7_GetGDISurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw7_GetGDISurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDraw7_GetGDISurface_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDraw7_GetMonitorFrequency_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw7_GetMonitorFrequency_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDraw7_GetMonitorFrequency_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDraw7_GetScanLine_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw7_GetScanLine_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDraw7_GetScanLine_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDraw7_GetVerticalBlankStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw7_GetVerticalBlankStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDraw7_GetVerticalBlankStatus_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDraw7_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDraw7_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDraw7_Initialize_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDraw7_RestoreDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw7_RestoreDisplayMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDraw7_RestoreDisplayMode_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDraw7_SetCooperativeLevel_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_SetCooperativeLevel_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_SetCooperativeLevel_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDraw7_SetDisplayMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw7_SetDisplayMode_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call IDirectDraw7_SetDisplayMode_c
+        Call_Asm_Epilogue_0 6
+%endif
+
+align 16
+IDirectDraw7_WaitForVerticalBlank_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_WaitForVerticalBlank_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_WaitForVerticalBlank_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDraw7_GetAvailableVidMem_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw7_GetAvailableVidMem_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectDraw7_GetAvailableVidMem_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectDraw7_GetSurfaceFromDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_GetSurfaceFromDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_GetSurfaceFromDC_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDraw7_RestoreAllSurfaces_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw7_RestoreAllSurfaces_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDraw7_RestoreAllSurfaces_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDraw7_TestCooperativeLevel_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDraw7_TestCooperativeLevel_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDraw7_TestCooperativeLevel_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDraw7_GetDeviceIdentifier_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_GetDeviceIdentifier_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_GetDeviceIdentifier_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDraw7_StartModeTest_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDraw7_StartModeTest_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectDraw7_StartModeTest_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectDraw7_EvaluateMode_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDraw7_EvaluateMode_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDraw7_EvaluateMode_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_QueryInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_QueryInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_QueryInterface_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_AddRef_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface7_AddRef_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDrawSurface7_AddRef_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDrawSurface7_Release_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface7_Release_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDrawSurface7_Release_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDrawSurface7_AddAttachedSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_AddAttachedSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_AddAttachedSurface_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_AddOverlayDirtyRect_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_AddOverlayDirtyRect_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_AddOverlayDirtyRect_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_Blt_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface7_Blt_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call IDirectDrawSurface7_Blt_c
+        Call_Asm_Epilogue_0 6
+%endif
+
+align 16
+IDirectDrawSurface7_BltBatch_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface7_BltBatch_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectDrawSurface7_BltBatch_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectDrawSurface7_BltFast_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface7_BltFast_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call IDirectDrawSurface7_BltFast_c
+        Call_Asm_Epilogue_0 6
+%endif
+
+align 16
+IDirectDrawSurface7_DeleteAttachedSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_DeleteAttachedSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_DeleteAttachedSurface_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_EnumAttachedSurfaces_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_EnumAttachedSurfaces_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_EnumAttachedSurfaces_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_EnumOverlayZOrders_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface7_EnumOverlayZOrders_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectDrawSurface7_EnumOverlayZOrders_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectDrawSurface7_Flip_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_Flip_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_Flip_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_GetAttachedSurface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_GetAttachedSurface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_GetAttachedSurface_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_GetBltStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetBltStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetBltStatus_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetCaps_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetCaps_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetCaps_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetClipper_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetClipper_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetClipper_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetColorKey_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_GetColorKey_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_GetColorKey_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_GetDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetDC_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetFlipStatus_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetFlipStatus_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetFlipStatus_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetOverlayPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_GetOverlayPosition_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_GetOverlayPosition_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_GetPalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetPalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetPalette_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetPixelFormat_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetPixelFormat_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetPixelFormat_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetSurfaceDesc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetSurfaceDesc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetSurfaceDesc_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_Initialize_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_Initialize_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_Initialize_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_IsLost_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface7_IsLost_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDrawSurface7_IsLost_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDrawSurface7_Lock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface7_Lock_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectDrawSurface7_Lock_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectDrawSurface7_ReleaseDC_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_ReleaseDC_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_ReleaseDC_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_Restore_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface7_Restore_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDrawSurface7_Restore_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDrawSurface7_SetClipper_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_SetClipper_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_SetClipper_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_SetColorKey_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_SetColorKey_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_SetColorKey_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_SetOverlayPosition_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_SetOverlayPosition_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_SetOverlayPosition_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_SetPalette_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_SetPalette_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_SetPalette_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_Unlock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_Unlock_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_Unlock_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_UpdateOverlay_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov eax, [r11d+24]
+        mov [rsp+40], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface7_UpdateOverlay_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+24
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        mov r9d, [r11d+32]
+        call IDirectDrawSurface7_UpdateOverlay_c
+        Call_Asm_Epilogue_0 6
+%endif
+
+align 16
+IDirectDrawSurface7_UpdateOverlayDisplay_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_UpdateOverlayDisplay_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_UpdateOverlayDisplay_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_UpdateOverlayZOrder_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_UpdateOverlayZOrder_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_UpdateOverlayZOrder_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_GetDDInterface_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetDDInterface_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetDDInterface_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_PageLock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_PageLock_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_PageLock_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_PageUnlock_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_PageUnlock_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_PageUnlock_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_SetSurfaceDesc_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        call IDirectDrawSurface7_SetSurfaceDesc_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+12
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        call IDirectDrawSurface7_SetSurfaceDesc_c
+        Call_Asm_Epilogue_0 3
+%endif
+
+align 16
+IDirectDrawSurface7_SetPrivateData_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        sub rsp, 16
+        mov eax, [r11d+20]
+        mov [rsp+32], rax
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface7_SetPrivateData_c
+        add rsp, 16
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+20
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        mov r8d, [r11d+28]
+        call IDirectDrawSurface7_SetPrivateData_c
+        Call_Asm_Epilogue_0 5
+%endif
+
+align 16
+IDirectDrawSurface7_GetPrivateData_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        mov r8d, [r11d+12]
+        mov r9d, [r11d+16]
+        call IDirectDrawSurface7_GetPrivateData_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+16
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        mov edx, [r11d+20]
+        mov ecx, [r11d+24]
+        call IDirectDrawSurface7_GetPrivateData_c
+        Call_Asm_Epilogue_0 4
+%endif
+
+align 16
+IDirectDrawSurface7_FreePrivateData_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_FreePrivateData_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_FreePrivateData_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetUniquenessValue_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetUniquenessValue_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetUniquenessValue_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_ChangeUniquenessValue_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        call IDirectDrawSurface7_ChangeUniquenessValue_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+4
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        call IDirectDrawSurface7_ChangeUniquenessValue_c
+        Call_Asm_Epilogue_0 1
+%endif
+
+align 16
+IDirectDrawSurface7_SetPriority_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_SetPriority_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_SetPriority_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetPriority_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetPriority_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetPriority_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_SetLOD_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_SetLOD_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_SetLOD_c
+        Call_Asm_Epilogue_0 2
+%endif
+
+align 16
+IDirectDrawSurface7_GetLOD_asm2c:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        mov ecx, [r11d+4]
+        mov edx, [r11d+8]
+        call IDirectDrawSurface7_GetLOD_c
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+8
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        mov edi, [r11d+12]
+        mov esi, [r11d+16]
+        call IDirectDrawSurface7_GetLOD_c
+        Call_Asm_Epilogue_0 2
+%endif
+
 
 section .rodata progbits alloc noexec nowrite align=4
 
@@ -5267,4 +7146,87 @@ IDirectInputDevice2AVtbl_asm2c:
         dd IDirectInputDevice2A_SendDeviceData_asm2c
         dd IDirectInputDevice2A_EnumEffectsInFile_asm2c
         dd IDirectInputDevice2A_WriteEffectToFile_asm2c
+
+IDirectDraw7Vtbl_asm2c:
+        dd IDirectDraw7_QueryInterface_asm2c
+        dd IDirectDraw7_AddRef_asm2c
+        dd IDirectDraw7_Release_asm2c
+        dd IDirectDraw7_Compact_asm2c
+        dd IDirectDraw7_CreateClipper_asm2c
+        dd IDirectDraw7_CreatePalette_asm2c
+        dd IDirectDraw7_CreateSurface_asm2c
+        dd IDirectDraw7_DuplicateSurface_asm2c
+        dd IDirectDraw7_EnumDisplayModes_asm2c
+        dd IDirectDraw7_EnumSurfaces_asm2c
+        dd IDirectDraw7_FlipToGDISurface_asm2c
+        dd IDirectDraw7_GetCaps_asm2c
+        dd IDirectDraw7_GetDisplayMode_asm2c
+        dd IDirectDraw7_GetFourCCCodes_asm2c
+        dd IDirectDraw7_GetGDISurface_asm2c
+        dd IDirectDraw7_GetMonitorFrequency_asm2c
+        dd IDirectDraw7_GetScanLine_asm2c
+        dd IDirectDraw7_GetVerticalBlankStatus_asm2c
+        dd IDirectDraw7_Initialize_asm2c
+        dd IDirectDraw7_RestoreDisplayMode_asm2c
+        dd IDirectDraw7_SetCooperativeLevel_asm2c
+        dd IDirectDraw7_SetDisplayMode_asm2c
+        dd IDirectDraw7_WaitForVerticalBlank_asm2c
+        dd IDirectDraw7_GetAvailableVidMem_asm2c
+        dd IDirectDraw7_GetSurfaceFromDC_asm2c
+        dd IDirectDraw7_RestoreAllSurfaces_asm2c
+        dd IDirectDraw7_TestCooperativeLevel_asm2c
+        dd IDirectDraw7_GetDeviceIdentifier_asm2c
+        dd IDirectDraw7_StartModeTest_asm2c
+        dd IDirectDraw7_EvaluateMode_asm2c
+
+IDirectDrawSurface7Vtbl_asm2c:
+        dd IDirectDrawSurface7_QueryInterface_asm2c
+        dd IDirectDrawSurface7_AddRef_asm2c
+        dd IDirectDrawSurface7_Release_asm2c
+        dd IDirectDrawSurface7_AddAttachedSurface_asm2c
+        dd IDirectDrawSurface7_AddOverlayDirtyRect_asm2c
+        dd IDirectDrawSurface7_Blt_asm2c
+        dd IDirectDrawSurface7_BltBatch_asm2c
+        dd IDirectDrawSurface7_BltFast_asm2c
+        dd IDirectDrawSurface7_DeleteAttachedSurface_asm2c
+        dd IDirectDrawSurface7_EnumAttachedSurfaces_asm2c
+        dd IDirectDrawSurface7_EnumOverlayZOrders_asm2c
+        dd IDirectDrawSurface7_Flip_asm2c
+        dd IDirectDrawSurface7_GetAttachedSurface_asm2c
+        dd IDirectDrawSurface7_GetBltStatus_asm2c
+        dd IDirectDrawSurface7_GetCaps_asm2c
+        dd IDirectDrawSurface7_GetClipper_asm2c
+        dd IDirectDrawSurface7_GetColorKey_asm2c
+        dd IDirectDrawSurface7_GetDC_asm2c
+        dd IDirectDrawSurface7_GetFlipStatus_asm2c
+        dd IDirectDrawSurface7_GetOverlayPosition_asm2c
+        dd IDirectDrawSurface7_GetPalette_asm2c
+        dd IDirectDrawSurface7_GetPixelFormat_asm2c
+        dd IDirectDrawSurface7_GetSurfaceDesc_asm2c
+        dd IDirectDrawSurface7_Initialize_asm2c
+        dd IDirectDrawSurface7_IsLost_asm2c
+        dd IDirectDrawSurface7_Lock_asm2c
+        dd IDirectDrawSurface7_ReleaseDC_asm2c
+        dd IDirectDrawSurface7_Restore_asm2c
+        dd IDirectDrawSurface7_SetClipper_asm2c
+        dd IDirectDrawSurface7_SetColorKey_asm2c
+        dd IDirectDrawSurface7_SetOverlayPosition_asm2c
+        dd IDirectDrawSurface7_SetPalette_asm2c
+        dd IDirectDrawSurface7_Unlock_asm2c
+        dd IDirectDrawSurface7_UpdateOverlay_asm2c
+        dd IDirectDrawSurface7_UpdateOverlayDisplay_asm2c
+        dd IDirectDrawSurface7_UpdateOverlayZOrder_asm2c
+        dd IDirectDrawSurface7_GetDDInterface_asm2c
+        dd IDirectDrawSurface7_PageLock_asm2c
+        dd IDirectDrawSurface7_PageUnlock_asm2c
+        dd IDirectDrawSurface7_SetSurfaceDesc_asm2c
+        dd IDirectDrawSurface7_SetPrivateData_asm2c
+        dd IDirectDrawSurface7_GetPrivateData_asm2c
+        dd IDirectDrawSurface7_FreePrivateData_asm2c
+        dd IDirectDrawSurface7_GetUniquenessValue_asm2c
+        dd IDirectDrawSurface7_ChangeUniquenessValue_asm2c
+        dd IDirectDrawSurface7_SetPriority_asm2c
+        dd IDirectDrawSurface7_GetPriority_asm2c
+        dd IDirectDrawSurface7_SetLOD_asm2c
+        dd IDirectDrawSurface7_GetLOD_asm2c
 

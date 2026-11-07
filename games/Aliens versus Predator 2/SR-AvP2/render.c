@@ -254,9 +254,243 @@ void CCALL ren_Term_c(void)
 
 uint32_t CCALL ren_GetInfoFlags_c(void) { return 0; }
 
+/* ------------------------------------------------------------------ */
+/* DirectDraw stand-ins: the engine's Bink video manager gets d3d.ren's DirectDraw object and back buffer        */
+/* through GetHook, creates an offscreen surface for the movie, locks it for BinkCopyToBuffer and blits it to    */
+/* the back buffer (stretched or centred, colour-filled borders). Only what it uses is implemented (com.spec).   */
+
+extern uint32_t IDirectDraw7Vtbl_asm2c, IDirectDrawSurface7Vtbl_asm2c;
+
+#define DD_OK 0
+#define DDERR_INVALIDPARAMS 0x80070057
+#define E_NOINTERFACE_ 0x80004002
+#define DDBLT_COLORFILL 0x00000400
+#define DD_SURFACE_MAGIC 0x53464444      // "DDFS"
+
+typedef struct {
+    uint32_t lpVtbl;
+    uint32_t magic;
+    uint32_t refs;
+    int32_t width, height, pitch;
+    uint32_t pixels;                    // XRGB8888 in game memory
+    int backbuffer;                     // the screen (render.c's frame)
+} dd_surface;
+
+typedef struct { int32_t left, top, right, bottom; } dd_rect;
+
+static uint32_t *dd_object;             // { lpVtbl }
+static dd_surface *dd_back;
+
+static dd_surface *dd_get(dd_surface *s)
+{
+    if ((s == NULL) || (s->magic != DD_SURFACE_MAGIC)) return NULL;
+    if (s->backbuffer)
+    {
+        // the screen may have been reallocated (render mode change)
+        s->width = screen_w;
+        s->height = screen_h;
+        s->pitch = screen_w * 4;
+        s->pixels = (uint32_t)(uintptr_t)screen;
+    }
+    return s;
+}
+
+// DDSURFACEDESC2 (124 bytes): the size, flags, height, width, pitch, lpSurface (+0x24), pixel format (+0x48),
+// caps (+0x68); 32-bit RGB as GetScreenFormat
+static void dd_fill_desc(uint32_t *d, int w, int h, int pitch, uint32_t pixels)
+{
+    if (d[0] < 124) d[0] = 124;
+    d[1] = 0x1 | 0x2 | 0x4 | 0x8 | 0x1000 | (pixels ? 0x800 : 0);
+    d[2] = (uint32_t)h;
+    d[3] = (uint32_t)w;
+    d[4] = (uint32_t)pitch;
+    d[0x24 / 4] = pixels;
+    d[0x48 / 4] = 32;                   // DDPIXELFORMAT
+    d[0x4c / 4] = 0x40;                 // DDPF_RGB
+    d[0x50 / 4] = 0;
+    d[0x54 / 4] = 32;
+    d[0x58 / 4] = 0x00FF0000;
+    d[0x5c / 4] = 0x0000FF00;
+    d[0x60 / 4] = 0x000000FF;
+    d[0x64 / 4] = 0;
+    d[0x68 / 4] = 0x40;                 // DDSCAPS_OFFSCREENPLAIN
+}
+
+static void dd_surface_rect(dd_surface *s, const dd_rect *r, dd_rect *out)
+{
+    if (r != NULL) *out = *r;
+    else { out->left = 0; out->top = 0; out->right = s->width; out->bottom = s->height; }
+}
+
+uint32_t CCALL IDirectDraw7_QueryInterface_c(void *self, void *riid, uint32_t *ppv) { if (ppv != NULL) *ppv = 0; return E_NOINTERFACE_; }
+uint32_t CCALL IDirectDraw7_AddRef_c(void *self) { return 1; }
+uint32_t CCALL IDirectDraw7_Release_c(void *self) { return 1; }
+
+uint32_t CCALL IDirectDraw7_GetDisplayMode_c(void *self, uint32_t *ddsd)
+{
+    if (ddsd == NULL) return DDERR_INVALIDPARAMS;
+    dd_fill_desc(ddsd, screen_w, screen_h, screen_w * 4, 0);
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDraw7_CreateSurface_c(void *self, uint32_t *ddsd, uint32_t *pp, void *outer)
+{
+    dd_surface *s;
+    int w, h;
+
+    if ((ddsd == NULL) || (pp == NULL)) return DDERR_INVALIDPARAMS;
+    w = (int)ddsd[3];
+    h = (int)ddsd[2];
+    if ((w <= 0) || (h <= 0) || (w > 4096) || (h > 4096)) return DDERR_INVALIDPARAMS;
+    s = (dd_surface *)game_calloc(1, sizeof(dd_surface));
+    if (s == NULL) return DDERR_INVALIDPARAMS;
+    s->lpVtbl = (uint32_t)(uintptr_t)&IDirectDrawSurface7Vtbl_asm2c;
+    s->magic = DD_SURFACE_MAGIC;
+    s->refs = 1;
+    s->width = w;
+    s->height = h;
+    s->pitch = w * 4;
+    s->pixels = (uint32_t)(uintptr_t)game_calloc((uint32_t)w * h, 4);
+    *pp = (uint32_t)(uintptr_t)s;
+    if (winapi_debug) eprintf("render: DirectDraw surface %dx%d\n", w, h);
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawSurface7_QueryInterface_c(void *self, void *riid, uint32_t *ppv) { if (ppv != NULL) *ppv = 0; return E_NOINTERFACE_; }
+uint32_t CCALL IDirectDrawSurface7_AddRef_c(dd_surface *self) { return (dd_get(self) != NULL) ? ++self->refs : 0; }
+
+uint32_t CCALL IDirectDrawSurface7_Release_c(dd_surface *self)
+{
+    dd_surface *s = dd_get(self);
+    if (s == NULL) return 0;
+    if (s->backbuffer) return 1;
+    if (--s->refs != 0) return s->refs;
+    s->magic = 0;
+    game_free((void *)(uintptr_t)s->pixels);
+    game_free(s);
+    return 0;
+}
+
+uint32_t CCALL IDirectDrawSurface7_IsLost_c(void *self) { return DD_OK; }
+uint32_t CCALL IDirectDrawSurface7_Restore_c(void *self) { return DD_OK; }
+
+uint32_t CCALL IDirectDrawSurface7_GetSurfaceDesc_c(dd_surface *self, uint32_t *ddsd)
+{
+    dd_surface *s = dd_get(self);
+    if ((s == NULL) || (ddsd == NULL)) return DDERR_INVALIDPARAMS;
+    dd_fill_desc(ddsd, s->width, s->height, s->pitch, 0);
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawSurface7_Lock_c(dd_surface *self, dd_rect *rect, uint32_t *ddsd, uint32_t flags, void *event)
+{
+    dd_surface *s = dd_get(self);
+    uint32_t p;
+    if ((s == NULL) || (ddsd == NULL) || (s->pixels == 0)) return DDERR_INVALIDPARAMS;
+    p = s->pixels;
+    if (rect != NULL) p += rect->top * s->pitch + rect->left * 4;
+    dd_fill_desc(ddsd, s->width, s->height, s->pitch, p);
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawSurface7_Unlock_c(void *self, void *rect) { return DD_OK; }
+
+// the back buffer is the 2D frame over the 3D picture: what's blitted to it covers it (alpha 255)
+static void dd_blit(dd_surface *d, const dd_rect *dr0, dd_surface *src, const dd_rect *sr0)
+{
+    dd_rect dr, sr;
+    int x, y, dw, dh, sw, sh;
+    uint32_t opaque = d->backbuffer ? 0xFF000000u : 0;
+
+    dd_surface_rect(d, dr0, &dr);
+    dd_surface_rect(src, sr0, &sr);
+    dw = dr.right - dr.left;
+    dh = dr.bottom - dr.top;
+    sw = sr.right - sr.left;
+    sh = sr.bottom - sr.top;
+    if ((dw <= 0) || (dh <= 0) || (sw <= 0) || (sh <= 0)) return;
+    for (y = 0; y < dh; y++)
+    {
+        int dy = dr.top + y, sy = sr.top + (int)((int64_t)y * sh / dh);
+        if ((dy < 0) || (dy >= d->height) || (sy < 0) || (sy >= src->height)) continue;
+        uint32_t *dp = (uint32_t *)(uintptr_t)(d->pixels + dy * d->pitch);
+        const uint32_t *sp = (const uint32_t *)(uintptr_t)(src->pixels + sy * src->pitch);
+        for (x = 0; x < dw; x++)
+        {
+            int dx = dr.left + x, sx = sr.left + (int)((int64_t)x * sw / dw);
+            if ((dx < 0) || (dx >= d->width) || (sx < 0) || (sx >= src->width)) continue;
+            dp[dx] = (sp[sx] & 0x00FFFFFF) | opaque | (opaque ? 0 : (sp[sx] & 0xFF000000));
+        }
+    }
+}
+
+uint32_t CCALL IDirectDrawSurface7_Blt_c(dd_surface *self, dd_rect *dest_rect, dd_surface *src, dd_rect *src_rect, uint32_t flags, uint32_t *fx)
+{
+    dd_surface *d = dd_get(self);
+    if ((d == NULL) || (d->pixels == 0)) return DDERR_INVALIDPARAMS;
+    if (flags & DDBLT_COLORFILL)
+    {
+        dd_rect r;
+        int x, y;
+        uint32_t c = ((fx != NULL) ? fx[0x50 / 4] : 0) | (d->backbuffer ? 0xFF000000u : 0);
+        dd_surface_rect(d, dest_rect, &r);
+        if (r.left < 0) r.left = 0;
+        if (r.top < 0) r.top = 0;
+        if (r.right > d->width) r.right = d->width;
+        if (r.bottom > d->height) r.bottom = d->height;
+        for (y = r.top; y < r.bottom; y++)
+        {
+            uint32_t *p = (uint32_t *)(uintptr_t)(d->pixels + y * d->pitch);
+            for (x = r.left; x < r.right; x++) p[x] = c;
+        }
+        return DD_OK;
+    }
+    src = dd_get(src);
+    if ((src == NULL) || (src->pixels == 0)) return DDERR_INVALIDPARAMS;
+    dd_blit(d, dest_rect, src, src_rect);
+    return DD_OK;
+}
+
+uint32_t CCALL IDirectDrawSurface7_BltFast_c(dd_surface *self, uint32_t x, uint32_t y, dd_surface *src, dd_rect *src_rect, uint32_t flags)
+{
+    dd_surface *d = dd_get(self);
+    dd_rect sr, dr;
+    src = dd_get(src);
+    if ((d == NULL) || (src == NULL) || (d->pixels == 0) || (src->pixels == 0)) return DDERR_INVALIDPARAMS;
+    dd_surface_rect(src, src_rect, &sr);
+    dr.left = (int32_t)x;
+    dr.top = (int32_t)y;
+    dr.right = dr.left + (sr.right - sr.left);
+    dr.bottom = dr.top + (sr.bottom - sr.top);
+    dd_blit(d, &dr, src, &sr);
+    return DD_OK;
+}
+
 void * CCALL ren_GetHook_c(const char *pName)
 {
     if (winapi_debug) eprintf("render: GetHook %s\n", (pName != NULL) ? pName : "(null)");
+    if (pName == NULL) return NULL;
+    if ((strcmp(pName, "LPDIRECTDRAW") == 0) || (strcmp(pName, "BACKBUFFER") == 0))
+    {
+        if (dd_object == NULL)
+        {
+            dd_object = (uint32_t *)game_calloc(1, 4);
+            if (dd_object != NULL) dd_object[0] = (uint32_t)(uintptr_t)&IDirectDraw7Vtbl_asm2c;
+        }
+        if (dd_back == NULL)
+        {
+            dd_back = (dd_surface *)game_calloc(1, sizeof(dd_surface));
+            if (dd_back != NULL)
+            {
+                dd_back->lpVtbl = (uint32_t)(uintptr_t)&IDirectDrawSurface7Vtbl_asm2c;
+                dd_back->magic = DD_SURFACE_MAGIC;
+                dd_back->refs = 1;
+                dd_back->backbuffer = 1;
+            }
+        }
+        if (screen == NULL) return NULL;
+        return (strcmp(pName, "LPDIRECTDRAW") == 0) ? (void *)dd_object : (void *)dd_get(dd_back);
+    }
     return NULL;
 }
 

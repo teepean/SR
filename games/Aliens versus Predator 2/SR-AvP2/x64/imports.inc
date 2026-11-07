@@ -708,3 +708,29 @@ extern ren_ReadConsoleVariables_asm2c
 %define ren_ReadConsoleVariables ren_ReadConsoleVariables_asm2c
 extern ren_BlitFromScreen_asm2c
 %define ren_BlitFromScreen ren_BlitFromScreen_asm2c
+extern BinkOpen_asm2c
+%define _BinkOpen@8 BinkOpen_asm2c
+extern BinkClose_asm2c
+%define _BinkClose@4 BinkClose_asm2c
+extern BinkWait_asm2c
+%define _BinkWait@4 BinkWait_asm2c
+extern BinkCopyToBuffer_asm2c
+%define _BinkCopyToBuffer@28 BinkCopyToBuffer_asm2c
+extern BinkDoFrame_asm2c
+%define _BinkDoFrame@4 BinkDoFrame_asm2c
+extern BinkNextFrame_asm2c
+%define _BinkNextFrame@4 BinkNextFrame_asm2c
+extern BinkSetSoundSystem_asm2c
+%define _BinkSetSoundSystem@8 BinkSetSoundSystem_asm2c
+extern BinkOpenMiles_asm2c
+%define _BinkOpenMiles@4 BinkOpenMiles_asm2c
+extern BinkOpenDirectSound_asm2c
+%define _BinkOpenDirectSound@4 BinkOpenDirectSound_asm2c
+extern BinkSetSoundTrack_asm2c
+%define _BinkSetSoundTrack@4 BinkSetSoundTrack_asm2c
+extern BinkIsSoftwareCursor_asm2c
+%define _BinkIsSoftwareCursor@8 BinkIsSoftwareCursor_asm2c
+extern BinkCheckCursor_asm2c
+%define _BinkCheckCursor@20 BinkCheckCursor_asm2c
+extern BinkRestoreCursor_asm2c
+%define _BinkRestoreCursor@4 BinkRestoreCursor_asm2c

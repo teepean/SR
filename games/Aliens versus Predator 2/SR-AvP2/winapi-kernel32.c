@@ -1401,12 +1401,35 @@ static const module_export render_exports[] = {
     { NULL, NULL }
 };
 
+extern char BinkOpen_asm2c[], BinkClose_asm2c[], BinkWait_asm2c[], BinkCopyToBuffer_asm2c[], BinkDoFrame_asm2c[],
+            BinkNextFrame_asm2c[], BinkSetSoundSystem_asm2c[], BinkOpenMiles_asm2c[], BinkOpenDirectSound_asm2c[],
+            BinkSetSoundTrack_asm2c[], BinkIsSoftwareCursor_asm2c[], BinkCheckCursor_asm2c[], BinkRestoreCursor_asm2c[];
+
+// binkw32.dll (bink.c): the engine's BinkVideoMgr asks for these by their decorated names
+static const module_export bink_exports[] = {
+    { "_BinkOpen@8", (void *) BinkOpen_asm2c },
+    { "_BinkClose@4", (void *) BinkClose_asm2c },
+    { "_BinkWait@4", (void *) BinkWait_asm2c },
+    { "_BinkCopyToBuffer@28", (void *) BinkCopyToBuffer_asm2c },
+    { "_BinkDoFrame@4", (void *) BinkDoFrame_asm2c },
+    { "_BinkNextFrame@4", (void *) BinkNextFrame_asm2c },
+    { "_BinkSetSoundSystem@8", (void *) BinkSetSoundSystem_asm2c },
+    { "_BinkOpenMiles@4", (void *) BinkOpenMiles_asm2c },
+    { "_BinkOpenDirectSound@4", (void *) BinkOpenDirectSound_asm2c },
+    { "_BinkSetSoundTrack@4", (void *) BinkSetSoundTrack_asm2c },
+    { "_BinkIsSoftwareCursor@8", (void *) BinkIsSoftwareCursor_asm2c },
+    { "_BinkCheckCursor@20", (void *) BinkCheckCursor_asm2c },
+    { "_BinkRestoreCursor@4", (void *) BinkRestoreCursor_asm2c },
+    { NULL, NULL }
+};
+
 // AvP2's modules: the engine loads the game DLLs from temporary copies (any path, matched by name)
 static module_info modules[] = {
     { 0, "cshell.dll", cshell_exports, (void *) cshell_DllMainCRTStartup, 0, NULL },
     { 0, "object.lto", object_exports, (void *) object_DllMainCRTStartup, 0, NULL },
     { 0, "server.dll", server_exports, (void *) server_DllMainCRTStartup, 0, NULL },
     { 0, "d3d.ren", render_exports, NULL, 0, NULL },
+    { 0, "binkw32.dll", bink_exports, NULL, 0, NULL },
 };
 
 static module_info *find_module(const char *name)

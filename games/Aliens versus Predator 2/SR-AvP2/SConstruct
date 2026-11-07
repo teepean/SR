@@ -62,6 +62,15 @@ if 'PATH_INC' in os.environ:
 if 'PATH_LIB' in os.environ:
     env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
 
+# FFmpeg (libavformat, libavcodec) decodes the Bink movies (bink.c); without it the movies are skipped
+if device == 'pc64-linux' and os.environ.get('NO_FFMPEG') is None:
+    try:
+        subprocess.check_output(['pkg-config', '--exists', 'libavformat', 'libavcodec', 'libavutil'])
+        env.ParseConfig('pkg-config --cflags --libs libavformat libavcodec libavutil')
+        env.Append(CPPDEFINES = ['HAVE_FFMPEG'])
+    except (OSError, subprocess.CalledProcessError):
+        print('FFmpeg (libavformat/libavcodec) not found: no movies')
+
 common_objs, avp2_objs, ph_objs = SConscript('x64/SConscript', exports='device env')
 
 # Godot (LibGodot) as the window system and 3D renderer: host_godot.cpp with godot-cpp
