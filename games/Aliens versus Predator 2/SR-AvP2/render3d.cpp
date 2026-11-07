@@ -606,18 +606,21 @@ static const char *shader_code(int kind)
                  "      }\n"
                  "    }\n"
                  "  }\n";
-        // the texture's colour op (its state change): texture x light, the texture alone, or texture + light - 0.5
-        c += "  vec3 col = (st_colorop > 1.5) ? clamp(t.rgb + clamp(light, 0.0, 2.0) - 0.5 + add, 0.0, 1.0)\n"
-             "            : (st_colorop > 0.5) ? t.rgb : clamp(t.rgb * clamp(light, 0.0, 2.0) + add, 0.0, 1.0);\n";
+        // the texture's colour op (its state change, for the texture pass): texture x light, the texture alone, or
+        // texture + light - 0.5; a lightmap is a pass of its own after it (multipass), so it stays
+        c += "  vec3 lit = clamp(t.rgb * clamp(light, 0.0, 2.0) + add, 0.0, 1.0);\n"
+             "  vec3 col = (st_colorop > 1.5) ? clamp(t.rgb + clamp(light, 0.0, 2.0) - 0.5 + add, 0.0, 1.0)\n"
+             "            : ((st_colorop > 0.5) && (use_lightmap < 0.5)) ? t.rgb : lit;\n";
         if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  col = t.rgb;\n";
         // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
         // surfaces fade to black)
         c += (kind & MAT_SKY) ? "  float f = lt_fog.x * clamp((-VERTEX.z - lt_sky_fog.x) / max(lt_sky_fog.y - lt_sky_fog.x, 0.001), 0.0, 1.0);\n"
                               : "  float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n";
         // the texture's own fog: none, all of its colour, or its range (FOGSTART/FOGEND, by depth)
+        // (all of the colour: the texture pass is that colour; a lightmap pass still multiplies it)
         c += "  vec3 fc = lt_fog_color.rgb;\n"
              "  if (st_fog.x > 2.5) { f = clamp((-VERTEX.z - st_fog.y) / max(st_fog.z - st_fog.y, 0.001), 0.0, 1.0); fc = st_fog_color; }\n"
-             "  else if (st_fog.x > 1.5) { f = 1.0; fc = st_fog_color; }\n"
+             "  else if (st_fog.x > 1.5) { f = 0.0; col = (use_lightmap > 0.5) ? clamp(st_fog_color * clamp(light, 0.0, 2.0) + add, 0.0, 1.0) : st_fog_color; }\n"
              "  else if (st_fog.x > 0.5) f = 0.0;\n";
         c += (blend == MAT_ADD) ? "  col *= 1.0 - f;\n" : "  col = mix(col, fc, f);\n";
         c += "  ALBEDO = to_linear(col);\n";
