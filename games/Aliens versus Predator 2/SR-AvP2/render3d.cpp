@@ -188,6 +188,7 @@ struct world_context
 // a texture's D3D state change (SharedTexture::m_pStateChange, set by the game per vision mode), as far as it's done
 struct texture_state
 {
+    int blend;                  // a blend of its own: 0 none, 1 INVSRCCOLOR x2 (MAT_BLEND + st_blend), 2 ONE ONE (MAT_ADD), 3 alpha (MAT_BLEND)
     int colorop;                // 0: texture x light (MODULATE), 1: the texture only (SELECTARG1), 2: texture + light - 0.5 (ADDSIGNED)
     int fog;                    // 0: the scene's, 1: none, 2: all of the fog colour (FOGSTART = FOGEND), 3: its own range
     float fog_color[3], fog_start, fog_end;
@@ -203,7 +204,7 @@ struct texture_entry
     float detail_scale = 1.0f;  // the DTX header's detail texture scale and angle (radians)
     float detail_angle = 0.0f;
     uint32_t state_ptr = 0;     // the StateChange* the materials have
-    texture_state state = { 0, 0, { 0, 0, 0 }, 0, 0 };
+    texture_state state = { 0, 0, 0, { 0, 0, 0 }, 0, 0 };
     std::vector<Ref<ShaderMaterial>> materials;     // the materials with this texture (their state uniforms follow)
 };
 
@@ -559,7 +560,7 @@ enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
 
 // the fog (global shader parameters, set each frame from the console variables FogEnable, FogNearZ, FogFarZ,
 // FogR/G/B, SkyFogNearZ, SkyFogFarZ)
-#define STATE_UNIFORMS "uniform float st_colorop = 0.0;\nuniform vec4 st_fog = vec4(0.0);\nuniform vec3 st_fog_color = vec3(0.0);\n"
+#define STATE_UNIFORMS "uniform float st_colorop = 0.0;\nuniform vec4 st_fog = vec4(0.0);\nuniform vec3 st_fog_color = vec3(0.0);\nuniform float st_blend = 0.0;\n"
 #define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n"
 // the dynamic lights that light the world: a 32 x 2 float texture (position (Godot), radius; colour 0-255), count
 #define DL_MAX 32
@@ -819,7 +820,14 @@ static const char *shader_code(int kind)
         c += "  ALBEDO = to_linear(col);\n";
         if ((kind & MAT_SKY) && (blend == MAT_OPAQUE)) c += "  ALPHA = 1.0;\n";
         if (blend == MAT_ALPHA_TEST) c += "  ALPHA = t.a;\n  ALPHA_SCISSOR_THRESHOLD = 0.5;\n";
-        if (blend == MAT_BLEND) c += "  ALPHA = t.a * COLOR.a;\n";
+        // (a state change's INVSRCCOLOR, INVSRCCOLOR blend - the Alien's Hunting vision, NavAliens: src (1 - src) +
+        // dest (1 - src) per channel - as src (1 - src) + dest (1 - its luminance): mix blending can't do per channel)
+        if (blend == MAT_BLEND) c += "  ALPHA = t.a * COLOR.a;\n"
+                                     "  if (st_blend > 0.5) {\n"
+                                     "    float l = clamp(dot(col, vec3(0.299, 0.587, 0.114)), 0.004, 1.0);\n"
+                                     "    ALPHA = l;\n"
+                                     "    ALBEDO = to_linear(col * (vec3(1.0) - col) / l);\n"
+                                     "  }\n";
         if (blend == MAT_ADD) c += "  ALPHA = 1.0;\n";
         c += "}\n";
         code[kind] = c;
@@ -870,6 +878,9 @@ static world_materials *wm;
 #define D3DRS_FOGCOLOR 34
 #define D3DRS_FOGSTART 36
 #define D3DRS_FOGEND 37
+#define D3DRS_SRCBLEND 19
+#define D3DRS_DESTBLEND 20
+#define D3DRS_ALPHABLENDENABLE 27
 #define D3DTSS_COLOROP 1
 #define D3DTOP_SELECTARG1 2
 #define D3DTOP_MODULATE 4
@@ -878,9 +889,9 @@ static world_materials *wm;
 // StateChange: two (STLport) vectors - RenderState {type, value} and TextureState {stage, type, value}
 static texture_state parse_state(uint32_t sc)
 {
-    texture_state t = { 0, 0, { 0, 0, 0 }, 0, 0 };
+    texture_state t = { 0, 0, 0, { 0, 0, 0 }, 0, 0 };
     if (sc == 0) return t;
-    int fogenable = -1, have_range = 0;
+    int fogenable = -1, have_range = 0, blendenable = -1, src = 0, dst = 0;
     uint32_t color = 0;
     for (uint32_t r = g32(sc), e = g32(sc + 4), n = 0; (r != 0) && (r < e) && (n < 64); r += 8, n++)
     {
@@ -889,6 +900,16 @@ static texture_state parse_state(uint32_t sc)
         else if (type == D3DRS_FOGCOLOR) color = v;
         else if (type == D3DRS_FOGSTART) { memcpy(&t.fog_start, &v, 4); have_range = 1; }
         else if (type == D3DRS_FOGEND) { memcpy(&t.fog_end, &v, 4); have_range = 1; }
+        else if (type == D3DRS_ALPHABLENDENABLE) blendenable = (v != 0);
+        else if (type == D3DRS_SRCBLEND) src = (int)v;
+        else if (type == D3DRS_DESTBLEND) dst = (int)v;
+    }
+    // D3DBLEND: 2 ONE, 4 INVSRCCOLOR, 5 SRCALPHA, 6 INVSRCALPHA
+    if (blendenable == 1)
+    {
+        if ((src == 4) && (dst == 4)) t.blend = 1;
+        else if ((src == 2) && (dst == 2)) t.blend = 2;
+        else if ((src == 5) && (dst == 6)) t.blend = 3;
     }
     for (uint32_t r = g32(sc + 12), e = g32(sc + 16), n = 0; (r != 0) && (r < e) && (n < 64); r += 12, n++)
     {
@@ -910,6 +931,7 @@ static texture_state parse_state(uint32_t sc)
 static void apply_state(const Ref<ShaderMaterial> &m, const texture_state &t)
 {
     m->set_shader_parameter("st_colorop", (float)t.colorop);
+    m->set_shader_parameter("st_blend", (t.blend == 1) ? 1.0f : 0.0f);
     m->set_shader_parameter("st_fog", Vector4((float)t.fog, t.fog_start, t.fog_end, 0));
     m->set_shader_parameter("st_fog_color", Vector3(t.fog_color[0], t.fog_color[1], t.fog_color[2]));
 }
@@ -2228,6 +2250,13 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     key = hash_bytes(key, &alpha, 1);
     key = hash_bytes(key, &flags2, 4);
     key = hash_bytes(key, &model, 4);
+    for (int t = 0; t < 4; t++)
+    {
+        // the skins' state changes (vision modes switch their blending)
+        uint32_t sk = g32(o + MI_SKINS + 4 * t);
+        int b = sk ? get_texture(sk).state.blend : 0;
+        key = hash_bytes(key, &b, sizeof(b));
+    }
     for (const model_light &L : ml) key = hash_bytes(key, &L, sizeof(L));
     if ((key == mi.key) && (mi.mesh->get_surface_count() > 0)) return;
     mi.key = key;
@@ -2347,9 +2376,13 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
         // d3d.ren alpha tests a model only with FLAG2_CHROMAKEY (d3d_DrawChromaKeyModels: ALPHAFUNC GREATER); a
         // solid model ignores its texture's alpha (a1s2's bursting chest skins have alpha and must be opaque)
         int kind = MAT_OPAQUE;
+        const texture_entry &ste = get_texture(skin);
         if (flags2 & FLAG2_ADDITIVE) kind = MAT_ADD;
         else if (alpha < 255) kind = MAT_BLEND;
-        else if ((flags2 & FLAG2_CHROMAKEY) && get_texture(skin).has_alpha) kind = MAT_ALPHA_TEST;
+        else if ((flags2 & FLAG2_CHROMAKEY) && ste.has_alpha) kind = MAT_ALPHA_TEST;
+        // the skin's state change (vision modes) may blend it: Hunting's NavAliens (INVSRCCOLOR), ONE ONE, alpha
+        if (ste.state.blend == 2) kind = MAT_ADD;
+        else if ((ste.state.blend == 1) || (ste.state.blend == 3)) kind = MAT_BLEND;
         if (close) kind |= MAT_REALLYCLOSE;
         parts.push_back({ &s[t], get_material(skin, kind, -1, 0) });
     }

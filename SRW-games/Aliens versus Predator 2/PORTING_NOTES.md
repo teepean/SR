@@ -658,3 +658,13 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   wrapper of CreateClientShell, which changes the two entries. Bridges: x64/camera-asm.asm, the llasm ones from
   gen_imports.py (runtime-asm.llasm), asmsyms.h for blob mode. m1s1 at 1600x900: FovX 90 -> 106.3 degrees.
 - The weapon's projection (render3d) takes the game's own FovX, so the weapon keeps its 4:3 look on a wide screen.
+
+### 2026-11-08 — vision modes: a texture state's own blending
+- The game switches textures' state changes per vision mode from their DTX command strings ("ViewModes <mode>
+  <state> ..."). The Predator's (p2s1) only set fog and the colour op; the Alien's Hunting / Nav visions give the
+  prey's skins (marines, their attachments, other aliens: "Hunting NavAliens", "NavVision NavAliens") the NavAliens
+  state: ALPHABLENDENABLE with SRCBLEND = DESTBLEND = INVSRCCOLOR - src (1 - src) + dest (1 - src) per channel, the
+  bright parts dark, the dark ones see-through. render3d parses the blend (also ONE ONE and alpha) and models whose
+  skin has one are drawn with that kind; INVSRCCOLOR as mix blending with alpha = src's luminance and colour
+  src (1 - src) / alpha (Godot's blending can't weigh per channel). The skins' blend is in the model's rebuild key.
+  Not compared with a reference (the Wine reference can't be steered into a vision mode).
