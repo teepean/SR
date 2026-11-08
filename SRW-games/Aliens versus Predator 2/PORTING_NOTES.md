@@ -436,3 +436,8 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   4.9% -> 1.2%, the average unchanged.
 - AVP2_KEEP_ACTIVE=1 (tests): the game stays active without the window focus (it pauses and stops drawing
   otherwise; something else on the desktop taking the focus spoiled automated runs).
+- Detail textures go on the texture before the light on vertex lit polies too: d3d.ren draws the light first
+  (lightmap or gouraud colour; DrawWorldTexturePoly) and every textured pass the same way (white vertex colour,
+  2x blend), so it is 2 x light x (texture + detail - 0.5). Adding the detail after the light blackened dark
+  surfaces (m1s1's rock block side: 2.6 vs the reference's 7.1; now 7.4). m1s1's start view now matches the Wine
+  reference within ~10% on the ground and the rock faces (mean and contrast).

@@ -589,8 +589,10 @@ static const char *shader_code(int kind)
             c += "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
                  "  POSITION.z = POSITION.w * 1e-7;\n";
         c += "}\n";
-        // a detail texture (d3d.ren's second stage: ADDSIGNED, or MODULATE without DetailTextureAdd) on the texture
-        // before the lightmap pass, on a vertex lit poly after its light
+        // a detail texture (d3d.ren's second stage: ADDSIGNED, or MODULATE without DetailTextureAdd) on the texture,
+        // before the light: d3d.ren draws the light first (the lightmap, or a vertex lit poly's gouraud colour) and
+        // queues every textured pass the same way (DrawWorldTexturePoly / the lightmap path: white vertex colour,
+        // the 2x blend), so texture + detail - 0.5 is what the light multiplies
         // use_detail 1: a detail texture; 2, 3: an environment map (d3d_CalcEnvMapUV: the view direction reflected
         // by the poly's plane, in LithTech's coordinates; on the texture ADDSIGNED or MODULATE, or by the texture's
         // alpha: MODULATEALPHA_ADDCOLOR)
@@ -598,7 +600,7 @@ static const char *shader_code(int kind)
             "  vec4 t = texture(albedo, UV);\n"
             "  vec3 dt = vec3(0.5);\n"
             "  if ((use_detail > 0.5) && (use_detail < 1.5)) dt = texture(detail_tex, vec2(dot(detail_m.xy, UV), dot(detail_m.zw, UV))).rgb;\n"
-            "  if ((use_detail > 0.5) && (use_detail < 1.5) && (use_lightmap > 0.5)) t.rgb = (detail_add > 0.5) ? clamp(t.rgb + dt - 0.5, 0.0, 1.0) : t.rgb * dt;\n"
+            "  if ((use_detail > 0.5) && (use_detail < 1.5)) t.rgb = (detail_add > 0.5) ? clamp(t.rgb + dt - 0.5, 0.0, 1.0) : t.rgb * dt;\n"
             "  if (use_detail > 1.5) {\n"
             "    vec3 ewp = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
             "    vec3 en = normalize(cross(dFdx(ewp), dFdy(ewp))) * vec3(1.0, 1.0, -1.0);\n"
@@ -667,7 +669,6 @@ static const char *shader_code(int kind)
         c += "  vec3 lit = clamp(t.rgb * clamp(light, 0.0, 2.0) + add, 0.0, 1.0);\n"
              "  vec3 col = (st_colorop > 1.5) ? clamp(t.rgb + clamp(light, 0.0, 2.0) - 0.5 + add, 0.0, 1.0)\n"
              "            : ((st_colorop > 0.5) && (use_lightmap < 0.5)) ? t.rgb : lit;\n";
-        c += "  if ((use_detail > 0.5) && (use_detail < 1.5) && (use_lightmap < 0.5)) col = (detail_add > 0.5) ? clamp(col + dt - 0.5, 0.0, 1.0) : col * dt;\n";
         if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  col = t.rgb;\n";
         // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
         // surfaces fade to black)
