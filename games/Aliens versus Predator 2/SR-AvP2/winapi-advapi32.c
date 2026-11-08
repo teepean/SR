@@ -208,9 +208,9 @@ static int key_path(uint32_t hKey, const char *subkey, char *out, size_t size)
     {
         snprintf(out, size, "%s", root);
     }
-    else if ((hKey != 0) && ((key_handle *)(uintptr_t)hKey)->magic == KEY_MAGIC)
+    else if ((hKey != 0) && ((key_handle *)G2H(hKey))->magic == KEY_MAGIC)
     {
-        snprintf(out, size, "%s", ((key_handle *)(uintptr_t)hKey)->path);
+        snprintf(out, size, "%s", ((key_handle *)G2H(hKey))->path);
     }
     else
     {
@@ -236,7 +236,7 @@ static uint32_t new_handle(const char *path)
     h->magic = KEY_MAGIC;
     strncpy(h->path, path, sizeof(h->path) - 1);
     h->path[sizeof(h->path) - 1] = 0;
-    return (uint32_t)(uintptr_t) h;
+    return H2G(h);
 }
 
 int32_t CCALL RegOpenKeyExA_c(uint32_t hKey, const char *lpSubKey, uint32_t ulOptions, uint32_t samDesired, uint32_t *phkResult)
@@ -291,10 +291,10 @@ int32_t CCALL GetUserNameA_c(char *lpBuffer, uint32_t *pcbBuffer)
 int32_t CCALL RegCloseKey_c(uint32_t hKey)
 {
     if (root_name(hKey) != NULL) return ERROR_SUCCESS;
-    if ((hKey != 0) && ((key_handle *)(uintptr_t)hKey)->magic == KEY_MAGIC)
+    if ((hKey != 0) && ((key_handle *)G2H(hKey))->magic == KEY_MAGIC)
     {
-        ((key_handle *)(uintptr_t)hKey)->magic = 0;
-        game_free((void *)(uintptr_t)hKey);
+        ((key_handle *)G2H(hKey))->magic = 0;
+        game_free(G2H(hKey));
         return ERROR_SUCCESS;
     }
     return ERROR_INVALID_HANDLE;

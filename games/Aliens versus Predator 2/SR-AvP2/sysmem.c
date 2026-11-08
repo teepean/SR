@@ -6,6 +6,7 @@
 
 #include "sysmem.h"
 #include "Game-Memory.h"
+#include "platform.h"
 
 #ifdef _WIN32
 
@@ -131,7 +132,7 @@ void sys_install_crash_handler(void)
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__aarch64__)
 #include <ucontext.h>
 #endif
 #if defined(__APPLE__)
@@ -143,31 +144,68 @@ void sys_install_crash_handler(void)
  * sub_1018A370 indexes a per-character table with -1 for a character without an id). On Windows the heap is
  * contiguous and such a read returns garbage; here the heap is made of separate mappings and the read can hit an
  * unmapped page. A read (not a write) of an unmapped page below 2 GB gets a page of zeros and continues. */
-#if defined(__x86_64__) && !defined(__SANITIZE_ADDRESS__)
+#if (defined(__x86_64__) || defined(__aarch64__)) && !defined(__SANITIZE_ADDRESS__)
 static struct sigaction old_segv;
 static volatile int stray_pages;
+static uintptr_t fault_page_size = 4096;   // 16 KB on Apple Silicon (sys_install_crash_handler)
 
-#if defined(__APPLE__)
-// macOS: the page fault's error code and the instruction pointer; a page that is reserved but inaccessible
-// raises SIGBUS instead of SIGSEGV
-#define FAULT_ERR(uc) ((uc)->uc_mcontext->__es.__err)
+// the fault: a write? (x86-64: the page fault's error code; arm64: the data abort's ESR, WnR = bit 6) and the
+// instruction's address
+#if defined(__x86_64__) && defined(__APPLE__)
+#define FAULT_IS_WRITE(uc) ((((uc)->uc_mcontext->__es.__err) & 2) != 0)
 #define FAULT_RIP(uc) ((uc)->uc_mcontext->__ss.__rip)
-static struct sigaction old_bus;
-#else
-#define FAULT_ERR(uc) ((uc)->uc_mcontext.gregs[REG_ERR])
+#elif defined(__x86_64__)
+#define FAULT_IS_WRITE(uc) ((((uc)->uc_mcontext.gregs[REG_ERR]) & 2) != 0)
 #define FAULT_RIP(uc) ((uc)->uc_mcontext.gregs[REG_RIP])
+#elif defined(__APPLE__)
+#define FAULT_IS_WRITE(uc) ((((uc)->uc_mcontext->__es.__esr) >> 6) & 1)
+#define FAULT_RIP(uc) ((uc)->uc_mcontext->__ss.__pc)
+#else
+// Linux arm64: the ESR is a record in the signal frame's extension area
+static int fault_is_write(ucontext_t *uc)
+{
+    const uint8_t *p = (const uint8_t *) uc->uc_mcontext.__reserved;
+    const uint8_t *end = p + sizeof(uc->uc_mcontext.__reserved);
+    while (p + 8 <= end)
+    {
+        uint32_t magic, size;
+        memcpy(&magic, p, 4);
+        memcpy(&size, p + 4, 4);
+        if ((magic == 0) || (size < 8)) break;
+        if ((magic == 0x45535201u) && (size >= 16))     // ESR_MAGIC
+        {
+            uint64_t esr;
+            memcpy(&esr, p + 8, 8);
+            return (int) ((esr >> 6) & 1);
+        }
+        p += size;
+    }
+    return 1;   // unknown: treat as a write (a real crash)
+}
+#define FAULT_IS_WRITE(uc) fault_is_write(uc)
+#define FAULT_RIP(uc) ((uc)->uc_mcontext.pc)
+#endif
+#if defined(__APPLE__)
+// macOS: a page that is reserved but inaccessible raises SIGBUS instead of SIGSEGV
+static struct sigaction old_bus;
 #endif
 
 static void segv_handler(int sig, siginfo_t *info, void *ctx)
 {
     ucontext_t *uc = (ucontext_t *) ctx;
     uintptr_t addr = (uintptr_t) info->si_addr;
-    int is_write = (FAULT_ERR(uc) & 2) != 0;
+    int is_write = FAULT_IS_WRITE(uc);
+    uintptr_t page_size = fault_page_size;
+#ifdef PTROFS_64BIT
+    uintptr_t gaddr = addr - (uintptr_t) pointer_offset;   // the game's address (its window above pointer_offset)
+#else
+    uintptr_t gaddr = addr;
+#endif
 
-    if (!is_write && (addr >= 0x10000) && (addr < 0x80000000u) && (stray_pages < 256))
+    if (!is_write && (gaddr >= 0x10000) && (gaddr < 0x80000000u) && (stray_pages < 256))
     {
-        void *page = (void *)(addr & ~(uintptr_t) 4095);
-        void *m = sys_map_fixed((uintptr_t) page, 4096);
+        void *page = (void *)(addr & ~(page_size - 1));
+        void *m = sys_map_fixed((uintptr_t) page, page_size);
         if (m == NULL) m = MAP_FAILED;
         if (m == page)
         {
@@ -175,7 +213,7 @@ static void segv_handler(int sig, siginfo_t *info, void *ctx)
             char msg[112] = "memory: read of unmapped game memory at 0x";
             size_t n = strlen(msg);
             int i;
-            for (i = 7; i >= 0; i--) msg[n++] = hex[(addr >> (i * 4)) & 15];
+            for (i = 7; i >= 0; i--) msg[n++] = hex[(gaddr >> (i * 4)) & 15];
             memcpy(msg + n, " (rip 0x", 8);
             n += 8;
             for (i = 15; i >= 0; i--) msg[n++] = hex[((uint64_t) FAULT_RIP(uc) >> (i * 4)) & 15];
@@ -185,7 +223,7 @@ static void segv_handler(int sig, siginfo_t *info, void *ctx)
             stray_pages = stray_pages + 1;
             return;     // the instruction runs again
         }
-        if (m != MAP_FAILED) munmap(m, 4096);
+        if (m != MAP_FAILED) munmap(m, page_size);
     }
     // a real crash: the previous handler (the default one: core dump)
     sigaction(SIGSEGV, &old_segv, NULL);
@@ -198,6 +236,8 @@ static void segv_handler(int sig, siginfo_t *info, void *ctx)
 void sys_install_crash_handler(void)
 {
     struct sigaction sa;
+    long ps = sysconf(_SC_PAGESIZE);
+    if (ps > 0) fault_page_size = (uintptr_t) ps;
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = segv_handler;
     sa.sa_flags = SA_SIGINFO | SA_NODEFER;

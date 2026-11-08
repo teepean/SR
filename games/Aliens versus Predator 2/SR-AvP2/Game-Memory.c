@@ -427,6 +427,31 @@ void *x86_malloc(unsigned int size)
     }
 }
 
+// is ptr a block of this allocator? (the runtime's free with pointer offsets: the system's heap can be inside the
+// game's window too)
+int x86_owns(const void *ptr)
+{
+    heapblock_t *heapblock;
+    int owns = 0;
+
+    if (ptr == NULL || sizeof(void *) <= 4) return 0;
+
+    LOCK_MUTEX
+
+    for (heapblock = last_heapblock; heapblock != NULL; heapblock = heapblock->prev_block)
+    {
+        if (((uintptr_t)ptr >= (uintptr_t)heapblock->address) && ((uintptr_t)ptr < heapblock->size + (uintptr_t)heapblock->address))
+        {
+            owns = 1;
+            break;
+        }
+    }
+
+    UNLOCK_MUTEX
+
+    return owns;
+}
+
 void x86_free(void *ptr)
 {
     if (sizeof(void *) > 4)
@@ -1388,7 +1413,18 @@ int initialize_pointer_offset(void)
 
         if ((uintptr_t)info.dli_fbase < maddr)
         {
-            if (free_offset == 0) break;
+            if (free_offset == 0)
+            {
+                // arm64: only the load address' slide separates the program from __PAGEZERO (the low 4 GB): the
+                // window's first part (game addresses below 1 MB, never used: the NULL page) can be in __PAGEZERO
+                pointer_offset = ((uintptr_t)info.dli_fbase - min_length) & ~(mach_vm_address_t)(page_size - 1);
+                pointer_reserved_length = 0;
+                if (ptr_initialize_pointers != NULL)
+                {
+                    ptr_initialize_pointers(pointer_offset);
+                }
+                return 0;
+            }
 
             pointer_offset = free_offset;
             pointer_reserved_length = 0;

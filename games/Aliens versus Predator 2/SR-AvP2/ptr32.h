@@ -82,7 +82,7 @@ public:
 #endif
     }
 
-    uint32_t get_value(void)
+    uint32_t get_value(void) const
     {
         return value;
     }

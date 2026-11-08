@@ -10,12 +10,13 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "lowobj.h"
+#include "platform.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define INVALID_HANDLE_VALUE ((void *)(uintptr_t)0xffffffff)
+#define INVALID_HANDLE_VALUE G2H(0xffffffffu)     // the game's 32-bit -1 (with pointer offsets: pointer_offset + that)
 
 #define ERROR_FILE_NOT_FOUND 2
 #define ERROR_ACCESS_DENIED 5
@@ -30,6 +31,7 @@ extern "C" {
 
 // set from environment variable AVP2_DEBUG
 extern int winapi_debug;
+extern uint8_t *lithtech_image;     // main.c: lithtech.exe's headers and resources (GetModuleHandle(NULL))
 
 void winapi_set_last_error(uint32_t err);
 uint32_t winapi_get_ticks(void);

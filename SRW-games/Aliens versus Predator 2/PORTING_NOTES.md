@@ -572,3 +572,25 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   with the thread and the recompiled caller (llasm: the return address on the emulated stack, nm -> loc_<address>).
 - Both builds spend ~16% of the CPU time in Game-Memory.c's allocator (find_largest_free_block: a linear search of
   the free blocks for the game's HeapAlloc) - worth a better allocator for the choppiness item.
+
+### 2026-11-08 — pointer offsets (scons llasm=1 ptrofs=1) and device=arm64-macos
+- The game's addresses are offsets from pointer_offset: a 4 GB window just below the program (Game-Memory.c,
+  Septerra's initialize_pointer_offset), the llasm code adds the base to every access. On Linux x86-64 the window is
+  at 0x5629... (far above 4 GB): m1s1 and exp1s1 play like the other builds (game code ~1.5 ms per frame). This is
+  the memory model native arm64 macOS needs; the same code compiled for arm64 is the Mac build.
+- The runtime's side: platform.h's G2H (game address -> pointer, 0 -> NULL), H2G (back), GADDR (no NULL test, the
+  hot accessors), in_game_window. Every (uintptr_t) cast between game addresses and pointers (~135: kernel32,
+  user32, advapi32, msvcrt, miles, music, render, render3d, dinput, bink, main) now goes through them; ptr32_t fields
+  already did. The compiler confirms no other int <-> pointer casts (-Wint-to-pointer-cast). Handles the game sees
+  as small numbers (std handles 1-3, INVALID_HANDLE_VALUE, ordinals and MAKEINTRESOURCE, class atoms) are compared
+  as game values (H2G). What the game sees is allocated in the window as in blob mode (SR_GAME_WINDOW: lowalloc.h
+  forced into the runtime's files, LOW_OBJ); lowalloc tells its blocks from the system's by x86_owns() (the system
+  heap can be inside the window too). lithtech.exe's PE image can't be at 0x400000 (the program is there): anywhere
+  in the window, GetModuleHandle(NULL) returns it (lithtech_image). The stray-read handler works on window offsets
+  and on arm64 (ESR WnR; macOS __es.__esr, Linux's ESR record; 16 KB pages).
+- device=arm64-macos: clang -arch arm64, the llasm version with pointer offsets, Homebrew in /opt/homebrew, godot-cpp
+  /LibGodot arm64. The llasm objects come from a kit made on Linux (tools/mkarm64kit.sh: llasm -ptrofs + llc
+  -mtriple=arm64-apple-macosx11.0.0; llasm_kit=<dir> or mac-kit-arm64/; private, game-derived), so the Mac needs
+  only Xcode's clang. The kit mechanism is tested on Linux with an x86-64 kit (TRIPLE=...). The kit's 734 undefined
+  symbols are all defined by the runtime. On macOS the window may start inside __PAGEZERO when the program's slide
+  leaves less than 1 MB below it (its first MB is never used). Not built on a Mac yet (no SDK here).

@@ -93,7 +93,7 @@ LOW_SLOT(process_handle_obj) LOW_SLOT(thread_handle_obj)
 static uint32_t handle_type(void *h)
 {
     // small values: the standard handles of GetStdHandle (1-3), not objects
-    if (((uintptr_t)h < 0x10000) || ((uint32_t)(uintptr_t)h == 0xFFFFFFFFu)) return 0;     // INVALID_HANDLE_VALUE is a 32-bit -1
+    if ((H2G(h) < 0x10000) || (H2G(h) == 0xFFFFFFFFu)) return 0;     // INVALID_HANDLE_VALUE is a 32-bit -1
     return *(uint32_t *)h;
 }
 
@@ -262,7 +262,7 @@ uint32_t CCALL GetFileType_c(void *hFile)
 {
     // FILE_TYPE_DISK = 1, FILE_TYPE_CHAR = 2
     if (handle_type(hFile) == HT_FILE) return 1;
-    if ((uintptr_t)hFile <= 3) return 2;
+    if (H2G(hFile) <= 3) return 2;
     return 0;
 }
 
@@ -290,9 +290,9 @@ void * CCALL GetStdHandle_c(uint32_t nStdHandle)
     // STD_INPUT_HANDLE -10, STD_OUTPUT_HANDLE -11, STD_ERROR_HANDLE -12
     switch ((int32_t)nStdHandle)
     {
-        case -10: return (void *)1;
-        case -11: return (void *)2;
-        case -12: return (void *)3;
+        case -10: return G2H(1);
+        case -11: return G2H(2);
+        case -12: return G2H(3);
     }
     return INVALID_HANDLE_VALUE;
 }
@@ -1053,7 +1053,7 @@ void * CCALL VirtualAlloc_c(void *lpAddress, uint32_t dwSize, uint32_t flAllocat
                 return (void *)((uintptr_t)lpAddress & ~(uintptr_t)4095);
             }
         }
-        eprintf("VirtualAlloc: unsupported fixed address 0x%x\n", (unsigned)(uintptr_t)lpAddress);
+        eprintf("VirtualAlloc: unsupported fixed address 0x%x\n", H2G(lpAddress));
         return NULL;
     }
 
@@ -1074,7 +1074,7 @@ void * CCALL VirtualAlloc_c(void *lpAddress, uint32_t dwSize, uint32_t flAllocat
             break;
         }
     }
-    if (winapi_debug) eprintf("VirtualAlloc: %u bytes -> 0x%x\n", dwSize, (unsigned)(uintptr_t)addr);
+    if (winapi_debug) eprintf("VirtualAlloc: %u bytes -> 0x%x\n", dwSize, H2G(addr));
     return addr;
 }
 
@@ -1117,10 +1117,10 @@ uint32_t CCALL VirtualQuery_c(const void *lpAddress, memory_basic_information *l
     {
         if ((regions[i].addr != NULL) && ((const uint8_t *)lpAddress >= regions[i].addr) && ((const uint8_t *)lpAddress < regions[i].addr + regions[i].size))
         {
-            lpBuffer->BaseAddress = (uint32_t)(uintptr_t)lpAddress & ~4095u;
-            lpBuffer->AllocationBase = (uint32_t)(uintptr_t)regions[i].addr;
+            lpBuffer->BaseAddress = H2G(lpAddress) & ~4095u;
+            lpBuffer->AllocationBase = H2G(regions[i].addr);
             lpBuffer->AllocationProtect = 0x04;
-            lpBuffer->RegionSize = (uint32_t)(uintptr_t)(regions[i].addr + regions[i].size) - lpBuffer->BaseAddress;
+            lpBuffer->RegionSize = H2G(regions[i].addr + regions[i].size) - lpBuffer->BaseAddress;
             lpBuffer->State = MEM_COMMIT;
             lpBuffer->Protect = 0x04; // PAGE_READWRITE
             lpBuffer->Type = 0x20000; // MEM_PRIVATE
@@ -1129,7 +1129,7 @@ uint32_t CCALL VirtualQuery_c(const void *lpAddress, memory_basic_information *l
     }
 
     // any other address: report committed read/write memory
-    lpBuffer->BaseAddress = (uint32_t)(uintptr_t)lpAddress & ~4095u;
+    lpBuffer->BaseAddress = H2G(lpAddress) & ~4095u;
     lpBuffer->AllocationBase = lpBuffer->BaseAddress;
     lpBuffer->AllocationProtect = 0x04;
     lpBuffer->RegionSize = 4096;
@@ -1497,8 +1497,8 @@ void * CCALL LoadLibraryA_c(const char *lpLibFileName)
         // static constructors
         if (m->entry != NULL)
         {
-            uint32_t args[3] = { (uint32_t)(uintptr_t)m, 1, 0 };
-            if (call_game((uint32_t)(uintptr_t)m->entry, 3, args) == 0)
+            uint32_t args[3] = { H2G(m), 1, 0 };
+            if (call_game(H2G(m->entry), 3, args) == 0)
             {
                 eprintf("LoadLibraryA: %s: DllMain failed\n", m->name);
                 m->loaded = 0;
@@ -1512,7 +1512,7 @@ void * CCALL LoadLibraryA_c(const char *lpLibFileName)
 
 void * CCALL GetModuleHandleA_c(const char *lpModuleName)
 {
-    if (lpModuleName == NULL) return (void *)0x400000;
+    if (lpModuleName == NULL) return (void *)lithtech_image;  // main.c: lithtech.exe's headers and resources
     if (find_module(lpModuleName) != NULL) return find_module(lpModuleName);
     return pe_image_find(lpModuleName);
 }
@@ -1526,9 +1526,9 @@ void * CCALL GetProcAddress_c(module_info *hModule, const char *lpProcName)
     {
         if (hModule == &modules[i]) break;
     }
-    if ((i == sizeof(modules) / sizeof(modules[0])) || ((uintptr_t)lpProcName < 0x10000))
+    if ((i == sizeof(modules) / sizeof(modules[0])) || (H2G(lpProcName) < 0x10000))
     {
-        if (winapi_debug && (hModule != NULL)) eprintf("GetProcAddress: %s in a data-only module\n", ((uintptr_t)lpProcName < 0x10000) ? "(ordinal)" : lpProcName);
+        if (winapi_debug && (hModule != NULL)) eprintf("GetProcAddress: %s in a data-only module\n", (H2G(lpProcName) < 0x10000) ? "(ordinal)" : lpProcName);
         return NULL;
     }
 
@@ -1863,7 +1863,7 @@ uint32_t CCALL GetFullPathNameA_c(const char *lpFileName, uint32_t nBufferLength
     if (lpFilePart != NULL)
     {
         p = strrchr(lpBuffer, '\\');
-        *(uint32_t *)lpFilePart = (uint32_t)(uintptr_t)((p != NULL) ? p + 1 : lpBuffer);
+        *(uint32_t *)lpFilePart = H2G((p != NULL) ? p + 1 : lpBuffer);
     }
     return len;
 }
@@ -2005,7 +2005,7 @@ uint32_t CCALL FormatMessageA_c(uint32_t dwFlags, const void *lpSource, uint32_t
     }
     if (src == NULL) { last_error = ERROR_INVALID_PARAMETER; return 0; }
     if ((Arguments != NULL) && !(dwFlags & 0x200))
-        args = (dwFlags & 0x2000) ? (uint32_t *)Arguments : (uint32_t *)(uintptr_t)*(uint32_t *)Arguments;
+        args = (dwFlags & 0x2000) ? (uint32_t *)Arguments : (uint32_t *)G2H(*(uint32_t *)Arguments);
 
     out = (char *)malloc(cap);
     while (*src != 0)
@@ -2077,7 +2077,7 @@ uint32_t CCALL FormatMessageA_c(uint32_t dwFlags, const void *lpSource, uint32_t
     {
         char *p = (char *)game_malloc((uint32_t)n + 1);
         memcpy(p, out, n + 1);
-        *(uint32_t *)lpBuffer = (uint32_t)(uintptr_t)p;
+        *(uint32_t *)lpBuffer = H2G(p);
     }
     else
     {
@@ -2102,7 +2102,7 @@ void CCALL DebugBreak_c(void) { eprintf("DebugBreak called\n"); }
 static const uint8_t *module_image(void *hModule)
 {
     unsigned int i;
-    if (hModule == NULL) return (const uint8_t *)0x400000;
+    if (hModule == NULL) return lithtech_image;
     for (i = 0; i < sizeof(modules) / sizeof(modules[0]); i++)
     {
         if (hModule == &modules[i]) return modules[i].image;
@@ -2112,9 +2112,15 @@ static const uint8_t *module_image(void *hModule)
 
 const uint8_t *winapi_module_image(void *hModule) { return module_image(hModule); }
 
+// a resource's name or type: MAKEINTRESOURCE (a number below 0x10000) or a string
+static uintptr_t res_id(const void *p)
+{
+    return (H2G(p) < 0x10000) ? (uintptr_t)H2G(p) : (uintptr_t)p;
+}
+
 void * CCALL FindResourceA_c(void *hModule, const char *lpName, const char *lpType)
 {
-    const uint8_t *e = pe_resource_find(module_image(hModule), (uintptr_t)lpName, (uintptr_t)lpType);
+    const uint8_t *e = pe_resource_find(module_image(hModule), res_id(lpName), res_id(lpType));
     if (winapi_debug >= 2) eprintf("FindResourceA: %p %p -> %p\n", lpName, lpType, e);
     if (e == NULL) last_error = 1814;   // ERROR_RESOURCE_NAME_NOT_FOUND
     return (void *)e;
@@ -2361,7 +2367,7 @@ uint32_t CCALL WaitForMultipleObjects_c(uint32_t nCount, const uint32_t *lpHandl
     void *h[64];
     uint32_t i;
     if (nCount > 64) nCount = 64;
-    for (i = 0; i < nCount; i++) h[i] = (void *)(uintptr_t)lpHandles[i];
+    for (i = 0; i < nCount; i++) h[i] = G2H(lpHandles[i]);
     return wait_objects(nCount, h, bWaitAll != 0, dwMilliseconds);
 }
 
@@ -2372,10 +2378,10 @@ static pthread_mutex_t cs_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t *cs_mutex(void *cs)
 {
     uint32_t *p = (uint32_t *)cs;
-    pthread_mutex_t *m = (pthread_mutex_t *)(uintptr_t)__atomic_load_n(p, __ATOMIC_ACQUIRE);
+    pthread_mutex_t *m = (pthread_mutex_t *)G2H(__atomic_load_n(p, __ATOMIC_ACQUIRE));
     if (m != NULL) return m;
     pthread_mutex_lock(&cs_init_mutex);
-    m = (pthread_mutex_t *)(uintptr_t)*p;
+    m = (pthread_mutex_t *)G2H(*p);
     if (m == NULL)
     {
         pthread_mutexattr_t attr;
@@ -2384,7 +2390,7 @@ static pthread_mutex_t *cs_mutex(void *cs)
         pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
         pthread_mutex_init(m, &attr);
         pthread_mutexattr_destroy(&attr);
-        __atomic_store_n(p, (uint32_t)(uintptr_t)m, __ATOMIC_RELEASE);
+        __atomic_store_n(p, H2G(m), __ATOMIC_RELEASE);
     }
     pthread_mutex_unlock(&cs_init_mutex);
     return m;
@@ -2399,7 +2405,7 @@ void CCALL InitializeCriticalSection_c(void *lpCriticalSection)
 void CCALL DeleteCriticalSection_c(void *lpCriticalSection)
 {
     uint32_t *p = (uint32_t *)lpCriticalSection;
-    pthread_mutex_t *m = (pthread_mutex_t *)(uintptr_t)*p;
+    pthread_mutex_t *m = (pthread_mutex_t *)G2H(*p);
     if (m != NULL)
     {
         pthread_mutex_destroy(m);
@@ -2588,7 +2594,7 @@ int32_t CCALL OpenFile_c(const char *lpFileName, OFSTRUCT_32 *lpReOpenBuff, uint
         if (lpReOpenBuff != NULL) lpReOpenBuff->nErrCode = (uint16_t)last_error;
         return -1;
     }
-    return (int32_t)(uintptr_t)h;
+    return (int32_t)H2G(h);
 }
 
 uint32_t CCALL CreateProcessA_c(const char *lpApplicationName, char *lpCommandLine, void *lpProcessAttributes, void *lpThreadAttributes,

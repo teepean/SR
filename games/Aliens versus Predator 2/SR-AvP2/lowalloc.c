@@ -5,7 +5,7 @@
  *
  */
 
-#ifdef SR_BLOB
+#if defined(SR_BLOB) || defined(PTROFS_64BIT)
 
 #undef malloc
 #undef calloc
@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "Game-Memory.h"
+#include "platform.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,7 +27,11 @@ extern "C" {
 
 static int is_low(const void *p)
 {
+#ifdef PTROFS_64BIT
+    return x86_owns(p);             // the system's heap can be inside the game's window too
+#else
     return (uintptr_t) p < LOW_LIMIT;
+#endif
 }
 
 void *rt_malloc(size_t size)

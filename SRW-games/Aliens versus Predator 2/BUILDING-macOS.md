@@ -1,8 +1,12 @@
 # Aliens versus Predator 2 (+ Primal Hunt) on macOS
 
-Status (2026-11-08): the macOS build is new and not yet tested on a Mac. Its memory layout (the recompiled code as
-a separate image at a fixed low address, the program position independent and above 4 GB) is the Linux build's
-`blob=1` mode, which runs the game (AvP2 levels, menus, movies, Primal Hunt).
+Two builds, neither tested on a Mac yet:
+
+- **Native arm64 (Apple Silicon, no Rosetta)**: `scons device=arm64-macos` - see "Native arm64" at the end. The same
+  program runs on Linux (`scons llasm=1 ptrofs=1`): AvP2's levels, menus, movies and Primal Hunt play there.
+- **x86-64** (Intel Macs, or Apple Silicon through Rosetta 2): `scons device=pc64-macos`, described first. Its memory
+  layout (the recompiled code as a separate image at a fixed low address, the program position independent and
+  above 4 GB) is the Linux build's `blob=1` mode, which runs the game too.
 
 ## How it works
 
@@ -20,8 +24,7 @@ position independent and live above 4 GB, and Mach-O has no 32-bit absolute relo
 It is an x86-64 program: on Apple Silicon it runs through Rosetta 2. Godot renders with Vulkan through MoltenVK
 (Godot's Metal driver is only built for arm64).
 
-A native arm64 version is in progress (PORTING_NOTES.md, "native arm64"): the recompiled code already compiles to
-arm64 (SRW's llasm output with pointer offsets); its runtime side isn't done yet.
+The native arm64 build doesn't need any of this: see "Native arm64" at the end.
 
 ## What you need
 
@@ -114,3 +117,47 @@ If macOS refuses to run downloaded files: `xattr -dr com.apple.quarantine <file 
 Known risks, in the order they would show up: the program might not start at all with the small `__PAGEZERO`
 under Rosetta; libraries or the system allocator might take the low addresses the game needs; Godot's window and
 Vulkan under Rosetta; Rosetta's x87 floating point speed (the recompiled code uses the x87 FPU).
+
+## Native arm64 (Apple Silicon, no Rosetta)
+
+The recompiled code comes from SRW's other output, llasm: llasm and LLVM compile it for any 64-bit CPU. A native
+arm64 program can't use the low 4 GB, so every game address is an offset from a base (`pointer_offset`): the game
+sees a 4 GB window just below the program, and the runtime converts at the boundary (PORTING_NOTES.md, "native
+arm64", "pointer offsets"). Godot can use its Metal driver.
+
+What you need:
+
+- Xcode's command line tools - `xcode-select --install`
+- The arm64 Homebrew (/opt/homebrew): `brew install sdl2 freetype ffmpeg pkg-config cmake`
+- SCons and Python 3: `python3 -m pip install --user scons`
+- The llasm kit, made on Linux (it contains code generated from the game's files: keep it private): the objects of
+  both games' modules and of the runtime's llasm files for arm64 macOS,
+  `SRW-games/Aliens versus Predator 2/tools/mkarm64kit.sh <dir>` (after `gen_all_llasm.sh` and
+  `GAME=ph gen_all_llasm.sh`). With it the Mac needs neither llasm nor LLVM.
+
+1. LibGodot, natively:
+   ```
+   git clone --branch 4.7.2-stable --depth 1 https://github.com/godotengine/godot.git
+   cd godot
+   scons platform=macos arch=arm64 target=template_debug library_type=shared_library disable_path_overrides=no
+   ```
+   Result: `bin/libgodot.macos.template_debug.arm64.dylib` (Metal; Vulkan through MoltenVK needs
+   `misc/scripts/install_vulkan_sdk_macos.sh` first).
+2. godot-cpp: as in step 2 above, without `arch -x86_64` and with `arch=arm64`
+   (`bin/libgodot-cpp.macos.template_debug.arm64.a`).
+3. dmusic (optional): as in step 3 above, without `arch -x86_64` and with `-DCMAKE_OSX_ARCHITECTURES=arm64`.
+4. The program: put the kit's `llasm/` directory into `games/Aliens versus Predator 2/SR-AvP2/mac-kit-arm64/`
+   (so that there is `mac-kit-arm64/llasm/lithtech.o` ...), or pass `llasm_kit=<dir>`, then
+   ```
+   cd "<repo>/games/Aliens versus Predator 2/SR-AvP2"
+   env PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig GODOT_CPP=<godot-cpp> DMUSIC=<dmusic> scons device=arm64-macos
+   cp <godot>/bin/libgodot.macos.template_debug.arm64.dylib libgodot.dylib
+   ```
+   Result: `SR-AvP2` and `SR-AvP2PH` (no image files: the recompiled code is linked in).
+5. Running: as in section 5 above. `AVP2_DEBUG=1` prints the window's base ("pointer offset 0x...").
+
+When it doesn't work: "can't find a place for the game's memory below the program" means no free 4 GB below the
+program (send `vmmap <pid>` or the log); a crash report from Console.app and `avp2.log` (`AVP2_DEBUG=1`) for the rest.
+If you have llasm and LLVM on the Mac (`brew install llvm ldc`, llasm built from `<repo>/llasm/llasm.d` with ldc2),
+`scons device=arm64-macos` without a kit compiles the llasm files itself (the generated module files from
+`gen_all_llasm.sh` must then be in `SR-AvP2/llasm/<module>/`).

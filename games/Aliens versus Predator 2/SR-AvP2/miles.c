@@ -277,13 +277,13 @@ int32_t CCALL AIL_decompress_ADPCM_c(const ail_soundinfo *info, uint32_t *outdat
     uint32_t frames, size;
     uint8_t *w;
     if ((info == NULL) || (outdata == NULL) || (outsize == NULL)) return 0;
-    frames = decode_ima((const uint8_t *)(uintptr_t)info->data_ptr, info->data_len, info->channels, (int)info->block_size, &pcm);
+    frames = decode_ima((const uint8_t *)G2H(info->data_ptr), info->data_len, info->channels, (int)info->block_size, &pcm);
     if (pcm == NULL) return 0;
     if ((info->samples != 0) && (frames > info->samples)) frames = info->samples;
     w = make_wav(pcm, frames, info->channels, (int)info->rate, &size);
     free(pcm);
     if (w == NULL) return 0;
-    *outdata = (uint32_t)(uintptr_t)w;
+    *outdata = H2G(w);
     *outsize = size;
     return 1;
 }
@@ -300,7 +300,7 @@ int32_t CCALL AIL_decompress_ASI_c(const void *indata, uint32_t insize, const ch
     w = make_wav(pcm, frames, channels, rate, &size);
     free(pcm);
     if (w == NULL) return 0;
-    *outdata = (uint32_t)(uintptr_t)w;
+    *outdata = H2G(w);
     *outsize = size;
     return 1;
 }
@@ -534,7 +534,7 @@ int32_t CCALL AIL_waveOutOpen_c(uint32_t *drvr, void *lphWaveOut, int32_t wDevic
         dig_driver = (uint32_t *)game_malloc(64);
         memcpy(dig_driver, "DIGD", 4);
     }
-    if (drvr != NULL) *drvr = (uint32_t)(uintptr_t)dig_driver;
+    if (drvr != NULL) *drvr = H2G(dig_driver);
     if (winapi_debug) eprintf("miles: digital driver open\n");
     return 0;
 }
@@ -670,7 +670,7 @@ void * CCALL AIL_open_stream_c(void *drvr, const char *name, int32_t mem)
         if (winapi_debug) eprintf("miles: stream \"%s\" not supported\n", name ? name : "(null)");
         return NULL;
     }
-    file = (void *)(uintptr_t)strtoul(name + 4, NULL, 10);
+    file = G2H((uint32_t)strtoul(name + 4, NULL, 10));   // the game's file handle
     if (!ReadFile_c(file, head, 12, &got, NULL) || (got != 12) || memcmp(head, "RIFF", 4) || memcmp(head + 8, "WAVE", 4)) return NULL;
     size = rd32(head + 4) + 8;
     if ((size < 12) || (size > 0x10000000)) return NULL;
@@ -725,7 +725,7 @@ int32_t CCALL AIL_enumerate_3D_providers_c(uint32_t *next, uint32_t *dest, uint3
     }
     *next = 1;
     if (dest != NULL) *dest = PROVIDER;
-    if (name != NULL) *name = (uint32_t)(uintptr_t)provider_name;
+    if (name != NULL) *name = H2G(provider_name);
     return 1;
 }
 
@@ -784,7 +784,7 @@ int32_t CCALL AIL_set_3D_sample_info_c(void *h, const ail_soundinfo *info)
 {
     SAMPLE(h) 0;
     if (info == NULL) return 0;
-    return set_sound(s, info->format, info->channels, (int)info->rate, info->bits, (int)info->block_size, (const uint8_t *)(uintptr_t)info->data_ptr, info->data_len);
+    return set_sound(s, info->format, info->channels, (int)info->rate, info->bits, (int)info->block_size, (const uint8_t *)G2H(info->data_ptr), info->data_len);
 }
 
 void CCALL AIL_start_3D_sample_c(void *h) { SAMPLE(h); mixer_lock(); s->pos = 0.0; s->loops_done = 0; s->status = SMP_PLAYING; mixer_unlock(); }

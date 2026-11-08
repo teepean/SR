@@ -59,6 +59,7 @@ void CCALL Raw_UnexpectedHandler(int which);
 
 
 int winapi_debug;
+uint8_t *lithtech_image;     // lithtech.exe's headers and resources: GetModuleHandle(NULL)
 
 void CCALL Raw_UnexpectedHandler(int which)
 {
@@ -194,6 +195,16 @@ int main(int argc, char *argv[])
     // the recompiled code: its image at its fixed address, before anything else takes low memory
     if (blob_load()) return 1;
 #endif
+#ifdef PTROFS_64BIT
+    // the game's 4 GB window: from just below the program (the recompiled code's data is in it); the llasm data's
+    // addresses are set now (ptr_initialize_pointers)
+    if (initialize_pointer_offset())
+    {
+        eprintf("Error: can't find a place for the game's memory below the program\n");
+        return 1;
+    }
+    if (getenv("AVP2_DEBUG") != NULL) eprintf("pointer offset 0x%llx\n", (unsigned long long)pointer_offset);
+#endif
     // everything the recompiled code can see must be below 2 GB
     if (x86_init_malloc())
     {
@@ -220,7 +231,12 @@ int main(int argc, char *argv[])
 
     // lithtech.exe's image (headers, resources) at its image base: the C runtime and the resource functions read
     // it through GetModuleHandle(NULL), as on Windows (the code is the recompiled one)
-    if (pe_image_load("lithtech.exe", 1) != (uint8_t *)(uintptr_t)0x400000)
+    lithtech_image = pe_image_load("lithtech.exe", 1);
+#ifdef PTROFS_64BIT
+    if (lithtech_image == NULL)
+#else
+    if (lithtech_image != (uint8_t *)(uintptr_t)0x400000)
+#endif
     {
         eprintf("Error: can't map lithtech.exe at 0x400000 - start the game in its directory\n");
         sys_dump_low_map();
@@ -241,7 +257,7 @@ int main(int argc, char *argv[])
     // the engine's DirectMusic manager -> music.c
     music_install();
 
-    app_exit(call_game((uint32_t)(uintptr_t) lithtech_start, 0, NULL));
+    app_exit(call_game(H2G(lithtech_start), 0, NULL));
     return 0;
 }
 

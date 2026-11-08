@@ -330,7 +330,7 @@ uint32_t CCALL BinkOpen_c(const char *name, uint32_t flags)
     b->Size = (uint32_t)avio_size(m->fmt->pb);
     if (winapi_debug) eprintf("BinkOpen: %s: %ux%u, %u frames at %u/%u, audio %.1f s at %d Hz\n", name, b->Width, b->Height, b->Frames, b->FrameRate, b->FrameRateDiv, m->pcm_rate ? (double)m->pcm_frames / m->pcm_rate : 0.0, m->pcm_rate);
     decode_to(m, 1);
-    return (uint32_t)(uintptr_t)b;
+    return H2G(b);
 #else
     (void)flags;
     if (winapi_debug) eprintf("BinkOpen: %s: no video support (built without FFmpeg)\n", (name != NULL) ? name : "");

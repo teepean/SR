@@ -7,7 +7,7 @@
  *
  */
 
-#if !defined(_LOWALLOC_H_INCLUDED_) && defined(SR_BLOB)
+#if !defined(_LOWALLOC_H_INCLUDED_) && (defined(SR_BLOB) || defined(PTROFS_64BIT))
 #define _LOWALLOC_H_INCLUDED_
 
 // the real declarations first (their names must stay intact)

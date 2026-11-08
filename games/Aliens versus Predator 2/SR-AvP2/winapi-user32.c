@@ -130,7 +130,7 @@ uint32_t winapi_call_wndproc(void *hwnd, uint32_t msg, uint32_t wparam, uint32_t
     window *w = get_window(hwnd);
     if ((w == NULL) || (w->wndproc == 0)) return 0;
     {
-        uint32_t args[4] = { (uint32_t)(uintptr_t) hwnd, msg, wparam, lparam };
+        uint32_t args[4] = { H2G(hwnd), msg, wparam, lparam };
         return call_game(w->wndproc, 4, args);
     }
 }
@@ -882,12 +882,12 @@ uint16_t CCALL RegisterClassA_c(const wndclassa *lpWndClass)
 
     c = &classes[num_classes++];
     memset(c, 0, sizeof(window_class));
-    if ((uintptr_t)lpWndClass->lpszClassName >= 0x10000) strncpy(c->name, lpWndClass->lpszClassName, sizeof(c->name) - 1);
+    if (lpWndClass->lpszClassName.get_value() >= 0x10000) strncpy(c->name, lpWndClass->lpszClassName, sizeof(c->name) - 1);
     c->wndproc = lpWndClass->lpfnWndProc;
     c->cbWndExtra = lpWndClass->cbWndExtra;
     c->style = lpWndClass->style;
-    c->hcursor = (uint32_t)(uintptr_t)lpWndClass->hCursor;
-    c->hicon = (uint32_t)(uintptr_t)lpWndClass->hIcon;
+    c->hcursor = lpWndClass->hCursor.get_value();
+    c->hicon = lpWndClass->hIcon.get_value();
     if (winapi_debug) eprintf("RegisterClassA: %s\n", c->name);
     return (uint16_t)(0xc000 + num_classes);
 }
@@ -896,9 +896,9 @@ static window_class *find_class(const char *name)
 {
     int i;
 
-    if ((uintptr_t)name < 0x10000)
+    if (H2G(name) < 0x10000)      // an atom from RegisterClass
     {
-        i = (int)(uintptr_t)name - 0xc001;
+        i = (int)H2G(name) - 0xc001;
         return (i >= 0 && i < num_classes) ? &classes[i] : NULL;
     }
     for (i = 0; i < num_classes; i++)
@@ -913,7 +913,8 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
     window *w;
     window_class *c;
     // CREATESTRUCTA: the game gets a pointer to it, so it must be in low memory (not on the C stack)
-    static uint32_t cs[12];
+    static uint32_t *cs;      // the game reads it: game memory
+    if (cs == NULL) cs = (uint32_t *) game_calloc(12, 4);
 
     c = find_class(lpClassName);
     if (c == NULL)
@@ -949,20 +950,20 @@ void * CCALL CreateWindowExA_c(uint32_t dwExStyle, const char *lpClassName, cons
     }
 
     // CREATESTRUCTA
-    cs[0] = (uint32_t)(uintptr_t) lpParam;
-    cs[1] = (uint32_t)(uintptr_t) hInstance;
-    cs[2] = (uint32_t)(uintptr_t) hMenu;
-    cs[3] = (uint32_t)(uintptr_t) hWndParent;
+    cs[0] = H2G(lpParam);
+    cs[1] = H2G(hInstance);
+    cs[2] = H2G(hMenu);
+    cs[3] = H2G(hWndParent);
     cs[4] = (uint32_t) w->height;
     cs[5] = (uint32_t) w->width;
     cs[6] = (uint32_t) y;
     cs[7] = (uint32_t) x;
     cs[8] = dwStyle;
-    cs[9] = (uint32_t)(uintptr_t) lpWindowName;
-    cs[10] = (uint32_t)(uintptr_t) lpClassName;
+    cs[9] = H2G(lpWindowName);
+    cs[10] = H2G(lpClassName);
     cs[11] = dwExStyle;
 
-    if ((int32_t)winapi_call_wndproc(w, WM_CREATE, 0, (uint32_t)(uintptr_t) cs) == -1)
+    if ((int32_t)winapi_call_wndproc(w, WM_CREATE, 0, H2G(cs)) == -1)
     {
         if (main_window == w) main_window = NULL;
         game_free(w);
@@ -1113,7 +1114,7 @@ uint32_t CCALL GetClassLongA_c(void *hWnd, int32_t nIndex)
 
 uint32_t CCALL CallWindowProcA_c(uint32_t lpPrevWndFunc, void *hWnd, uint32_t Msg, uint32_t wParam, uint32_t lParam)
 {
-    uint32_t args[4] = { (uint32_t)(uintptr_t) hWnd, Msg, wParam, lParam };
+    uint32_t args[4] = { H2G(hWnd), Msg, wParam, lParam };
     if (lpPrevWndFunc == 0) return DefWindowProcA_c(hWnd, Msg, wParam, lParam);
     return call_game(lpPrevWndFunc, 4, args);
 }
@@ -1222,7 +1223,7 @@ static win_cursor *current_cursor;
 
 static win_cursor *get_cursor(void *h)
 {
-    if ((h != NULL) && ((uintptr_t)h >= 0x10000) && (((win_cursor *)h)->magic == CURSOR_MAGIC)) return (win_cursor *)h;
+    if ((h != NULL) && (H2G(h) >= 0x10000) && (((win_cursor *)h)->magic == CURSOR_MAGIC)) return (win_cursor *)h;
     return NULL;
 }
 
@@ -1328,7 +1329,7 @@ static win_cursor *load_cursor_resource(void *hInstance, const char *name)
     win_cursor *c;
 
     if (image == NULL) return NULL;
-    e = pe_resource_find(image, (uintptr_t)name, 12);
+    e = pe_resource_find(image, (H2G(name) < 0x10000) ? (uintptr_t)H2G(name) : (uintptr_t)name, 12);
     if (e == NULL) return NULL;
     group = (const uint8_t *)pe_resource_data(image, e, &gsize);
     count = rd16u(group + 4);
@@ -1346,7 +1347,7 @@ static win_cursor *load_cursor_resource(void *hInstance, const char *name)
 
 void * CCALL LoadCursorA_c(void *hInstance, const char *lpCursorName)
 {
-    if (hInstance == NULL) return system_cursor((uint32_t)(uintptr_t)lpCursorName);
+    if (hInstance == NULL) return system_cursor(H2G(lpCursorName));
     return load_cursor_resource(hInstance, lpCursorName);
 }
 
@@ -1378,7 +1379,7 @@ void * CCALL LoadImageA_c(void *hInst, const char *name, uint32_t type, int32_t 
         case 1: h = LoadIconA_c(hInst, name); break;
         default: break;
     }
-    if (winapi_debug) eprintf("LoadImageA: %p %s%p type %u -> %p\n", hInst, ((uintptr_t)name < 0x10000) ? "#" : "", (void *)name, type, h);
+    if (winapi_debug) eprintf("LoadImageA: %p %s%p type %u -> %p\n", hInst, (H2G(name) < 0x10000) ? "#" : "", (void *)name, type, h);
     return h;
 }
 

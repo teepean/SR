@@ -33,3 +33,4 @@ SR-AvP2-llasm-ptrofs
 SR-AvP2PH-llasm-ptrofs
 *.lla.o
 *.llp.o
+mac-kit-arm64/

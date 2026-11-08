@@ -362,7 +362,7 @@ void music_install(void)
     uintptr_t first = start & ~(page - 1), last = (end + page - 1) & ~(page - 1);
     if (mprotect((void *)first, last - first, PROT_READ | PROT_WRITE) != 0) return;
 #endif
-    for (unsigned i = 0; i < sizeof(methods) / sizeof(methods[0]); i++) ((uint32_t *)lithtech_DirectMusicMgr_vtbl)[i] = (uint32_t)(uintptr_t)methods[i];
+    for (unsigned i = 0; i < sizeof(methods) / sizeof(methods[0]); i++) ((uint32_t *)lithtech_DirectMusicMgr_vtbl)[i] = H2G(methods[i]);
 #ifdef _WIN32
     VirtualProtect((void *)start, end - start, old, &old);
 #else
@@ -404,7 +404,7 @@ uint32_t CCALL music_Term_c(uint32_t self, const uint32_t *args)
 // (working directory, control file, three defines)
 uint32_t CCALL music_InitLevel_c(uint32_t self, const uint32_t *args)
 {
-    const char *dir = (const char *)(uintptr_t)args[0], *file = (const char *)(uintptr_t)args[1];
+    const char *dir = (const char *)G2H(args[0]), *file = (const char *)G2H(args[1]);
     size_t size;
     (void)self;
     if (!music.initialized || (dir == NULL) || (file == NULL)) return LT_ERROR;
@@ -554,7 +554,7 @@ uint32_t CCALL music_ChangeIntensity_c(uint32_t self, const uint32_t *args)
 uint32_t CCALL music_PlaySecondary_c(uint32_t self, const uint32_t *args)
 {
     (void)self;
-    if (winapi_debug) eprintf("music: PlaySecondary %s (not supported)\n", args[0] ? (const char *)(uintptr_t)args[0] : "");
+    if (winapi_debug) eprintf("music: PlaySecondary %s (not supported)\n", args[0] ? (const char *)G2H(args[0]) : "");
     return LT_ERROR;
 }
 
@@ -563,7 +563,7 @@ uint32_t CCALL music_StopSecondary_c(uint32_t self, const uint32_t *args) { (voi
 uint32_t CCALL music_PlayMotif2_c(uint32_t self, const uint32_t *args)
 {
     (void)self;
-    if (winapi_debug) eprintf("music: PlayMotif %s (not supported)\n", args[0] ? (const char *)(uintptr_t)args[0] : "");
+    if (winapi_debug) eprintf("music: PlayMotif %s (not supported)\n", args[0] ? (const char *)G2H(args[0]) : "");
     return LT_ERROR;
 }
 
@@ -571,12 +571,12 @@ uint32_t CCALL music_PlayMotif3_c(uint32_t self, const uint32_t *args) { return 
 uint32_t CCALL music_StopMotif2_c(uint32_t self, const uint32_t *args) { (void)self; (void)args; return LT_OK; }
 uint32_t CCALL music_StopMotif3_c(uint32_t self, const uint32_t *args) { (void)self; (void)args; return LT_OK; }
 uint32_t CCALL music_GetCurIntensity_c(uint32_t self, const uint32_t *args) { (void)self; (void)args; return (uint32_t)music.current; }
-uint32_t CCALL music_StringToEnactType_c(uint32_t self, const uint32_t *args) { (void)self; return (uint32_t)string_to_enact((const char *)(uintptr_t)args[0]); }
+uint32_t CCALL music_StringToEnactType_c(uint32_t self, const uint32_t *args) { (void)self; return (uint32_t)string_to_enact((const char *)G2H(args[0])); }
 
 uint32_t CCALL music_EnactTypeToString_c(uint32_t self, const uint32_t *args)
 {
     static const char *const names[7] = { "Invalid", "Default", "Immediate", "Beat", "Measure", "Grid", "Segment" };
-    char *out = (char *)(uintptr_t)args[1];
+    char *out = (char *)G2H(args[1]);
     (void)self;
     if (out != NULL) strcpy(out, (args[0] < 7) ? names[args[0]] : "");
     return 0;

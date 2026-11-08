@@ -346,7 +346,7 @@ uint32_t CCALL IDirectInputA_EnumDevices_c(di_object_root *lpThis, uint32_t dwDe
         uint32_t args[2];
         if ((dwDevType != 0) && ((dwDevType & 0xFF) != (uint32_t)kinds[i])) continue;
         fill_instance(inst, sizeof(*inst), kinds[i]);
-        args[0] = (uint32_t)(uintptr_t)inst;
+        args[0] = H2G(inst);
         args[1] = pvRef;
         if (call_game(lpCallback, 2, args) == 0) break;     // DIENUM_STOP
     }
@@ -469,7 +469,7 @@ uint32_t CCALL IDirectInputDevice2A_EnumObjects_c(di_device *lpThis, uint32_t lp
         // DIDFT_ALL (0) lists everything, otherwise the object's type must be among the asked ones
         if (((dwFlags & 0xFF) != 0) && !(lpThis->objects[i].type & dwFlags & 0xFF)) continue;
         fill_object(oi, sizeof(*oi), &lpThis->objects[i]);
-        args[0] = (uint32_t)(uintptr_t)oi;
+        args[0] = H2G(oi);
         args[1] = pvRef;
         if (call_game(lpCallback, 2, args) == 0) break;
     }

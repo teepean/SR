@@ -411,7 +411,7 @@ static int scanf_prepare(const char *format, const uint32_t *ap, char *hostfmt, 
                 while (*p && (*p != ']') && (o < end)) *o++ = *p++;
             }
             if (*p && (o < end)) *o++ = *p++;
-            if (!suppress && (n < SCANF_MAX_ARGS)) { args[n] = (void *)(uintptr_t) ap[n]; n++; }
+            if (!suppress && (n < SCANF_MAX_ARGS)) { args[n] = G2H(ap[n]); n++; }
         }
     }
     *o = 0;
@@ -626,7 +626,7 @@ typedef uint32_t compare_func;
 
 static int call_compare(compare_func f, const void *a, const void *b)
 {
-    uint32_t args[2] = { (uint32_t)(uintptr_t) a, (uint32_t)(uintptr_t) b };
+    uint32_t args[2] = { H2G(a), H2G(b) };
     return (int32_t) call_game(f, 2, args);
 }
 
@@ -1033,13 +1033,13 @@ int32_t CCALL _findfirst_c(const char *filespec, ms_finddata_t *data)
         return -1;
     }
 
-    return (int32_t)(uintptr_t) h;
+    return (int32_t)H2G(h);
 }
 
 int32_t CCALL _findnext_c(int32_t handle, ms_finddata_t *data)
 {
     if ((handle == -1) || (handle == 0) || (data == NULL)) return -1;
-    return find_next_entry((find_handle *)(uintptr_t) handle, data);
+    return find_next_entry((find_handle *)G2H((uint32_t)handle), data);
 }
 
 int32_t CCALL _findclose_c(int32_t handle)
@@ -1047,7 +1047,7 @@ int32_t CCALL _findclose_c(int32_t handle)
     find_handle *h;
 
     if ((handle == -1) || (handle == 0)) return -1;
-    h = (find_handle *)(uintptr_t) handle;
+    h = (find_handle *)G2H((uint32_t)handle);
     if (h->dir != NULL) closedir(h->dir);
     game_free(h);
     return 0;

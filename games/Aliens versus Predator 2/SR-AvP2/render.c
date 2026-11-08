@@ -82,7 +82,7 @@ typedef struct {
 
 static uint8_t *rs;     // the engine's RenderStruct
 
-static inline void rs_set(uint32_t ofs, const void *fn) { *(uint32_t *)(rs + ofs) = (uint32_t)(uintptr_t)fn; }
+static inline void rs_set(uint32_t ofs, const void *fn) { *(uint32_t *)(rs + ofs) = H2G(fn); }
 
 /* ------------------------------------------------------------------ */
 /* surfaces and the screen                                             */
@@ -105,7 +105,7 @@ static uint32_t frames;
 
 static surface *get_surface(uint32_t h)
 {
-    surface *s = (surface *)(uintptr_t)h;
+    surface *s = (surface *)G2H(h);
     if ((s == NULL) || (s->magic != SURFACE_MAGIC)) return NULL;
     return s;
 }
@@ -284,7 +284,7 @@ static dd_surface *dd_get(dd_surface *s)
         s->width = screen_w;
         s->height = screen_h;
         s->pitch = screen_w * 4;
-        s->pixels = (uint32_t)(uintptr_t)screen;
+        s->pixels = H2G(screen);
     }
     return s;
 }
@@ -338,14 +338,14 @@ uint32_t CCALL IDirectDraw7_CreateSurface_c(void *self, uint32_t *ddsd, uint32_t
     if ((w <= 0) || (h <= 0) || (w > 4096) || (h > 4096)) return DDERR_INVALIDPARAMS;
     s = (dd_surface *)game_calloc(1, sizeof(dd_surface));
     if (s == NULL) return DDERR_INVALIDPARAMS;
-    s->lpVtbl = (uint32_t)(uintptr_t)IDirectDrawSurface7Vtbl_asm2c;
+    s->lpVtbl = H2G(IDirectDrawSurface7Vtbl_asm2c);
     s->magic = DD_SURFACE_MAGIC;
     s->refs = 1;
     s->width = w;
     s->height = h;
     s->pitch = w * 4;
-    s->pixels = (uint32_t)(uintptr_t)game_calloc((uint32_t)w * h, 4);
-    *pp = (uint32_t)(uintptr_t)s;
+    s->pixels = H2G(game_calloc((uint32_t)w * h, 4));
+    *pp = H2G(s);
     if (winapi_debug) eprintf("render: DirectDraw surface %dx%d\n", w, h);
     return DD_OK;
 }
@@ -360,7 +360,7 @@ uint32_t CCALL IDirectDrawSurface7_Release_c(dd_surface *self)
     if (s->backbuffer) return 1;
     if (--s->refs != 0) return s->refs;
     s->magic = 0;
-    game_free((void *)(uintptr_t)s->pixels);
+    game_free(G2H(s->pixels));
     game_free(s);
     return 0;
 }
@@ -407,8 +407,8 @@ static void dd_blit(dd_surface *d, const dd_rect *dr0, dd_surface *src, const dd
     {
         int dy = dr.top + y, sy = sr.top + (int)((int64_t)y * sh / dh);
         if ((dy < 0) || (dy >= d->height) || (sy < 0) || (sy >= src->height)) continue;
-        uint32_t *dp = (uint32_t *)(uintptr_t)(d->pixels + dy * d->pitch);
-        const uint32_t *sp = (const uint32_t *)(uintptr_t)(src->pixels + sy * src->pitch);
+        uint32_t *dp = (uint32_t *)G2H(d->pixels + dy * d->pitch);
+        const uint32_t *sp = (const uint32_t *)G2H(src->pixels + sy * src->pitch);
         for (x = 0; x < dw; x++)
         {
             int dx = dr.left + x, sx = sr.left + (int)((int64_t)x * sw / dw);
@@ -434,7 +434,7 @@ uint32_t CCALL IDirectDrawSurface7_Blt_c(dd_surface *self, dd_rect *dest_rect, d
         if (r.bottom > d->height) r.bottom = d->height;
         for (y = r.top; y < r.bottom; y++)
         {
-            uint32_t *p = (uint32_t *)(uintptr_t)(d->pixels + y * d->pitch);
+            uint32_t *p = (uint32_t *)G2H(d->pixels + y * d->pitch);
             for (x = r.left; x < r.right; x++) p[x] = c;
         }
         return DD_OK;
@@ -469,14 +469,14 @@ void * CCALL ren_GetHook_c(const char *pName)
         if (dd_object == NULL)
         {
             dd_object = (uint32_t *)game_calloc(1, 4);
-            if (dd_object != NULL) dd_object[0] = (uint32_t)(uintptr_t)IDirectDraw7Vtbl_asm2c;
+            if (dd_object != NULL) dd_object[0] = H2G(IDirectDraw7Vtbl_asm2c);
         }
         if (dd_back == NULL)
         {
             dd_back = (dd_surface *)game_calloc(1, sizeof(dd_surface));
             if (dd_back != NULL)
             {
-                dd_back->lpVtbl = (uint32_t)(uintptr_t)IDirectDrawSurface7Vtbl_asm2c;
+                dd_back->lpVtbl = H2G(IDirectDrawSurface7Vtbl_asm2c);
                 dd_back->magic = DD_SURFACE_MAGIC;
                 dd_back->refs = 1;
                 dd_back->backbuffer = 1;
@@ -516,7 +516,7 @@ uint32_t CCALL ren_GetScreenFormat_c(uint8_t *pFormat)
 
 #ifndef HAVE_GODOT
 void r3d_set_render_struct(uint8_t *p) {}
-uint32_t r3d_create_context(uint32_t world) { static uint32_t dummy_init[4]; LOW_SLOT(dummy) return (uint32_t)(uintptr_t)LOW_OBJ(dummy); }
+uint32_t r3d_create_context(uint32_t world) { static uint32_t dummy_init[4]; LOW_SLOT(dummy) return H2G(&LOW_OBJ(dummy)); }
 void r3d_delete_context(uint32_t context) {}
 int r3d_render_scene(uint8_t *scene) { return 0; }
 void r3d_end_frame(int drawn) {}
@@ -541,7 +541,7 @@ void CCALL ren_BindTexture_c(void *pTexture, uint32_t bTextureChanged)
     if (bTextureChanged) r3d_unbind_texture(pTexture);
     if ((pTexture != NULL) && (rs != NULL))
     {
-        uint32_t args[1] = { (uint32_t)(uintptr_t)pTexture };
+        uint32_t args[1] = { H2G(pTexture) };
         call_game(*(uint32_t *)(rs + 0x08), 1, args);
     }
 }
@@ -645,7 +645,7 @@ static uint32_t locked_screen_buffer;
 uint32_t CCALL ren_LockScreen_c(int32_t left, int32_t top, int32_t right, int32_t bottom, uint32_t *pData, int32_t *pPitch)
 {
     if ((screen == NULL) || (pData == NULL) || (pPitch == NULL)) return 0;
-    *pData = (uint32_t)(uintptr_t)(screen + top * screen_w + left);
+    *pData = H2G(screen + top * screen_w + left);
     *pPitch = screen_w * 4;
     locked_screen_buffer = 1;
     return 1;
@@ -674,7 +674,7 @@ uint32_t CCALL ren_CreateSurface_c(int32_t width, int32_t height)
     s->height = height;
     s->pitch = width * 4;
     s->pixels = (uint32_t *)game_calloc((uint32_t)width * height, 4);
-    return (uint32_t)(uintptr_t)s;
+    return H2G(s);
 }
 
 void CCALL ren_DeleteSurface_c(uint32_t hSurf)
@@ -825,7 +825,7 @@ uint32_t CCALL ren_WarpToScreen_c(BlitRequest32 *req)
     uint32_t key, mod_r, mod_g, mod_b;
 
     if ((screen == NULL) || (req == NULL) || ((s = get_surface(req->hBuffer)) == NULL)) return 0;
-    pts = (const LTWarpPt32 *)(uintptr_t)req->pWarpPts;
+    pts = (const LTWarpPt32 *)G2H(req->pWarpPts);
     n = req->nWarpPts;
     if ((pts == NULL) || (n < 3) || (n > 64)) return 0;
 

@@ -22,7 +22,7 @@ void *low_object(void **slot, const void *init, size_t size);
 }
 #endif
 
-#ifdef SR_BLOB
+#if defined(SR_BLOB) || defined(PTROFS_64BIT)
 #define LOW_SLOT(name) static void *name##_low;
 #define LOW_OBJ(name) (*(__typeof__(name##_init) *) low_object(&name##_low, &name##_init, sizeof(name##_init)))
 #else

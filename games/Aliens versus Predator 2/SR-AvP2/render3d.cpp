@@ -78,6 +78,7 @@
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/array.hpp>
 
+#include "platform.h"
 #include "render3d.h"
 #include "game.h"
 #include "asmsyms.h"
@@ -96,10 +97,10 @@ extern "C" uint32_t call_game_this(uint32_t func, uint32_t nargs, const uint32_t
 /* ------------------------------------------------------------------ */
 /* game memory                                                         */
 
-static inline uint32_t g32(uint32_t a) { return *(const uint32_t *)(uintptr_t)a; }
-static inline uint16_t g16(uint32_t a) { return *(const uint16_t *)(uintptr_t)a; }
-static inline uint8_t g8(uint32_t a) { return *(const uint8_t *)(uintptr_t)a; }
-static inline float gf(uint32_t a) { return *(const float *)(uintptr_t)a; }
+static inline uint32_t g32(uint32_t a) { return *(const uint32_t *)GADDR(a); }
+static inline uint16_t g16(uint32_t a) { return *(const uint16_t *)GADDR(a); }
+static inline uint8_t g8(uint32_t a) { return *(const uint8_t *)GADDR(a); }
+static inline float gf(uint32_t a) { return *(const float *)GADDR(a); }
 
 // LithTech's left-handed coordinates -> Godot's
 static inline Vector3 lt_pos(uint32_t a) { return Vector3(gf(a), gf(a + 4), -gf(a + 8)); }
@@ -356,12 +357,12 @@ static float cvar(const char *name, float def)
     char *buf = LOW_OBJ(buf);
     if (render_struct == NULL) return def;
     strncpy(buf, name, sizeof(buf_init) - 1);
-    uint32_t args[1] = { (uint32_t)(uintptr_t)buf };
+    uint32_t args[1] = { H2G(buf) };
     uint32_t h = call_game(*(uint32_t *)(render_struct + RS_GETPARAMETER), 1, args);
     if (h == 0) return def;
     args[0] = h;
     uint32_t str = call_game(*(uint32_t *)(render_struct + RS_GETPARAMETERVALUESTRING), 1, args);
-    return str ? (float)atof((const char *)(uintptr_t)str) : def;
+    return str ? (float)atof((const char *)G2H(str)) : def;
 }
 
 /* ------------------------------------------------------------------ */
@@ -382,7 +383,7 @@ static texture_entry make_texture(uint32_t shared)
     if (base_h) e.inv_h = 1.0f / (float)base_h;
     // DtxHeader::GetDetailTextureScale (m_Extra[6..9] + 1) and GetDetailTextureAngle (m_Extra[10..11], degrees)
     float dscale;
-    memcpy(&dscale, (const void *)(uintptr_t)(td + TD_DETAILSCALE), 4);
+    memcpy(&dscale, (const void *)G2H(td + TD_DETAILSCALE), 4);
     if (std::isfinite(dscale) && (dscale > -1.0f) && (dscale < 1000.0f)) e.detail_scale = dscale + 1.0f;
     e.detail_angle = (float)(int16_t)g16(td + TD_DETAILANGLE) * 3.14159265f / 180.0f;
     int bpp = g8(td + TD_BPP);
@@ -396,7 +397,7 @@ static texture_entry make_texture(uint32_t shared)
     e.uv_w = ui_scale / (float)w;
     e.uv_h = ui_scale / (float)h;
     if (getenv("AVP2_R3D_DUMPDETAIL"))
-        eprintf("render3d: texture %08x: base %ux%u mip0 %ux%u ui mip offset %u scale %.2f angle %d cmd \"%.60s\"\n", shared, base_w, base_h, w, h, g8(td + 0x24), e.detail_scale, (int)(int16_t)g16(td + TD_DETAILANGLE), (const char *)(uintptr_t)(td + 0x2c));
+        eprintf("render3d: texture %08x: base %ux%u mip0 %ux%u ui mip offset %u scale %.2f angle %d cmd \"%.60s\"\n", shared, base_w, base_h, w, h, g8(td + 0x24), e.detail_scale, (int)(int16_t)g16(td + TD_DETAILANGLE), (const char *)G2H(td + 0x2c));
 
     Ref<Image> img;
     PackedByteArray px;
@@ -406,7 +407,7 @@ static texture_entry make_texture(uint32_t shared)
         uint8_t *d = px.ptrw();
         for (uint32_t y = 0; y < h; y++)
         {
-            const uint8_t *s = (const uint8_t *)(uintptr_t)(data + y * pitch);
+            const uint8_t *s = (const uint8_t *)G2H(data + y * pitch);
             for (uint32_t x = 0; x < w; x++)
             {
                 d[0] = s[2]; d[1] = s[1]; d[2] = s[0]; d[3] = s[3];
@@ -421,7 +422,7 @@ static texture_entry make_texture(uint32_t shared)
         uint32_t block = (bpp == BPP_S3TC_DXT1) ? 8 : 16;
         uint32_t size = ((w + 3) / 4) * ((h + 3) / 4) * block;
         px.resize(size);
-        memcpy(px.ptrw(), (const void *)(uintptr_t)data, size);
+        memcpy(px.ptrw(), (const void *)G2H(data), size);
         img = Image::create_from_data(w, h, false, (bpp == BPP_S3TC_DXT1) ? Image::FORMAT_DXT1 : (bpp == BPP_S3TC_DXT3) ? Image::FORMAT_DXT3 : Image::FORMAT_DXT5, px);
         if (img.is_valid()) img->decompress();
         e.has_alpha = (bpp != BPP_S3TC_DXT1);
@@ -435,7 +436,7 @@ static texture_entry make_texture(uint32_t shared)
         uint8_t *d = px.ptrw();
         for (uint32_t y = 0; y < h; y++)
         {
-            const uint16_t *s = (const uint16_t *)(uintptr_t)(data + y * pitch);
+            const uint16_t *s = (const uint16_t *)G2H(data + y * pitch);
             for (uint32_t x = 0; x < w; x++)
             {
                 uint16_t v = s[x];
@@ -472,7 +473,7 @@ extern "C" void r3d_unbind_texture(void *texture)
 {
     if (gs == NULL) return;
     // rebuilt when it's used again (materials keep the old one until then)
-    gs->textures.erase((uint32_t)(uintptr_t)texture);
+    gs->textures.erase(H2G(texture));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1009,7 +1010,7 @@ static Ref<ShaderMaterial> sky_material(uint64_t key, int index)
 // a lightmap texel run: a dword colour, one with the top bit set followed by a byte count (d3d_DecompressLM32)
 static int decompress_lm(uint32_t in, uint32_t len, uint32_t *out, uint32_t max)
 {
-    const uint8_t *p = (const uint8_t *)(uintptr_t)in, *e = p + len;
+    const uint8_t *p = (const uint8_t *)G2H(in), *e = p + len;
     uint32_t n = 0;
     while (p + 4 <= e)
     {
@@ -1169,7 +1170,7 @@ struct poly_layers
 
 static int anim_is_dynamic(uint32_t anim)
 {
-    return (strncmp((const char *)(uintptr_t)anim, "LightAnim_BASE", 32) != 0) && !g32(anim + LA_SHADOWMAP) && (g8(anim + LA_NFRAMES) == 1);
+    return (strncmp((const char *)G2H(anim), "LightAnim_BASE", 32) != 0) && !g32(anim + LA_SHADOWMAP) && (g8(anim + LA_NFRAMES) == 1);
 }
 
 // a light animation's frame for a poly whatever its state (its current frame, or the first one)
@@ -1372,12 +1373,12 @@ static void dump_objects(uint32_t mw)
                         g32(o + 0x1c0), g32(o + 0x1c4), g32(o + 0x1c8), g32(o + 0x1cc), g32(o + 0x24c + d2), g32(o + 0x238 + d2), g32(o + 0x23c + d2), gf(o + 0x2c0 + d2), gf(o + 0x2c4 + d2), gf(o + 0x2c8 + d2));
                 if (model == 0) return;
                 uint32_t fn = g32(model + 4);
-                eprintf("render3d:     \"%s\" pieces %u nodes %u (flat %u) weights %u verts %u tris %u\n", fn ? (const char *)(uintptr_t)fn : "?", g32(model + 0x3c), g32(model + 0x78), g32(model + 0x2c),
+                eprintf("render3d:     \"%s\" pieces %u nodes %u (flat %u) weights %u verts %u tris %u\n", fn ? (const char *)G2H(fn) : "?", g32(model + 0x3c), g32(model + 0x78), g32(model + 0x2c),
                         g32(model + 0x5c), g32(model + 0x64), g32(model + 0x68));
                 for (uint32_t i = 0; (i < g32(model + 0x3c)) && (i < 8); i++)
                 {
                     uint32_t pc = g32(g32(model + 0x38) + 4 * i);
-                    eprintf("render3d:       piece \"%.32s\" texture %u verts %u tris %u lods %u\n", (const char *)(uintptr_t)(pc + 0x48), g32(pc + 0x24), g32(pc + 8), g32(pc + 0x18), g32(pc + 0x3c));
+                    eprintf("render3d:       piece \"%.32s\" texture %u verts %u tris %u lods %u\n", (const char *)G2H(pc + 0x48), g32(pc + 0x24), g32(pc + 8), g32(pc + 0x18), g32(pc + 0x3c));
                 }
             }
             if ((t == OT_WORLDMODEL) || (t == OT_CONTAINER))
@@ -1385,7 +1386,7 @@ static void dump_objects(uint32_t mw)
                 uint32_t bsp = g32(o + WM_ORIGINALBSP);
                 if (bsp == 0) return;
                 eprintf("render3d:     bsp %08x/%08x/%08x \"%.64s\" wif %08x polies %u translation %.1f %.1f %.1f\n", bsp, g32(o + WM_WORLDBSP), g32(o + WM_VALIDBSP),
-                        (const char *)(uintptr_t)(bsp + WB_NAME), g32(bsp + WB_WORLDINFOFLAGS), g32(bsp + WB_NPOLIES),
+                        (const char *)G2H(bsp + WB_NAME), g32(bsp + WB_WORLDINFOFLAGS), g32(bsp + WB_NPOLIES),
                         gf(bsp + WB_WORLDTRANSLATION), gf(bsp + WB_WORLDTRANSLATION + 4), gf(bsp + WB_WORLDTRANSLATION + 8));
                 uint32_t m = o + WM_TRANSFORM;
                 eprintf("render3d:     transform %.3f %.3f %.3f %.1f / %.3f %.3f %.3f %.1f / %.3f %.3f %.3f %.1f\n", gf(m), gf(m + 4), gf(m + 8), gf(m + 12),
@@ -1460,10 +1461,10 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
         uint32_t sflags = g32(surface + SF_FLAGS);
         // debugging: AVP2_R3D_DUMPBSP=<name part> lists that BSP's polies
         static const char *dump_bsp = getenv("AVP2_R3D_DUMPBSP");
-        if ((dump_bsp != NULL) && strstr((const char *)(uintptr_t)(bsp + WB_NAME), dump_bsp))
+        if ((dump_bsp != NULL) && strstr((const char *)G2H(bsp + WB_NAME), dump_bsp))
         {
             uint32_t pv = g32(poly + WP_PVERTICES), pn = (pv == poly + WP_VERTICES) ? g16(poly + WP_NVERTICES) : g16(poly + WP_NEXTRAVERTICES);
-            eprintf("render3d: bsp \"%.40s\" poly %u: surface flags %08x texture %08x verts %u (%08x, first point %08x)\n", (const char *)(uintptr_t)(bsp + WB_NAME), p, sflags,
+            eprintf("render3d: bsp \"%.40s\" poly %u: surface flags %08x texture %08x verts %u (%08x, first point %08x)\n", (const char *)G2H(bsp + WB_NAME), p, sflags,
                     g32(surface + SF_TEXTURE), pn, pv, pv ? g32(pv + PV_VEC) : 0);
         }
         if (sflags & (SURF_INVISIBLE | SURF_NONEXISTANT | SURF_SKY)) continue;
@@ -1615,7 +1616,7 @@ static void build_world(world_context *ctx)
         {
             uint32_t la = g32(mw + MW_LIGHTANIMS + 4) + a * LA_SIZE;
             eprintf("render3d: light anim %u \"%.32s\" shadowmap %u frames %u polies %u iframes %d %d between %u blend %.2f pos %.0f %.0f %.0f colour %.0f %.0f %.0f radius %.0f\n", a,
-                    (const char *)(uintptr_t)la, g32(la + 0x20), g8(la + 0x28), g16(la + 0x30), (int)g32(la + 0x34), (int)g32(la + 0x38), g32(la + 0x3c), gf(la + 0x40),
+                    (const char *)G2H(la), g32(la + 0x20), g8(la + 0x28), g16(la + 0x30), (int)g32(la + 0x34), (int)g32(la + 0x38), g32(la + 0x3c), gf(la + 0x40),
                     gf(la + 0x44), gf(la + 0x48), gf(la + 0x4c), gf(la + 0x50), gf(la + 0x54), gf(la + 0x58), gf(la + 0x5c));
         }
 
@@ -1630,7 +1631,7 @@ static void build_world(world_context *ctx)
         if (bsp == 0) continue;
         uint32_t wif = g32(bsp + WB_WORLDINFOFLAGS);
         if (winapi_debug >= 2)
-            eprintf("render3d: bsp %u %08x \"%.64s\" wif %08x polies %u translation %.1f %.1f %.1f\n", i, bsp, (const char *)(uintptr_t)(bsp + 4), wif, g32(bsp + WB_NPOLIES),
+            eprintf("render3d: bsp %u %08x \"%.64s\" wif %08x polies %u translation %.1f %.1f %.1f\n", i, bsp, (const char *)G2H(bsp + 4), wif, g32(bsp + WB_NPOLIES),
                     gf(bsp + 0xe8), gf(bsp + 0xec), gf(bsp + 0xf0));
         if (wif & WIF_VISBSP) continue;
         if (wif & (WIF_MAINWORLD | WIF_TERRAIN)) add_bsp(mw, bsp, grid, batches, st);
@@ -1809,8 +1810,8 @@ static int ray_at_sky(uint32_t mw, const float p[3], const float d[3])
     memset(info, 0, sizeof(info_init));
     for (int i = 0; i < 3; i++) { q[i] = p[i]; q[3 + i] = p[i] + d[i]; }
     query[9] = 4;       // INTERSECT_HPOLY
-    uint32_t args[4] = { (uint32_t)(uintptr_t)query, (uint32_t)(uintptr_t)info, mw + MW_WORLDTREE, 0 };
-    if (!call_game((uint32_t)(uintptr_t)lithtech_i_IntersectSegment, 4, args)) return 0;
+    uint32_t args[4] = { H2G(query), H2G(info), mw + MW_WORLDTREE, 0 };
+    if (!call_game(H2G(lithtech_i_IntersectSegment), 4, args)) return 0;
     uint32_t hpoly = info[8];
     uint32_t models = g32(mw + MW_WORLDMODELS + 4), nmodels = g32(mw + MW_WORLDMODELS + 8);
     if ((hpoly >> 16) >= nmodels) return 0;
@@ -1988,10 +1989,10 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
 
     // rebuilt only when the pose, the light, the skins or the hidden pieces changed
     uint64_t key = 0xcbf29ce484222325ull;
-    key = hash_bytes(key, (const void *)(uintptr_t)tr, (size_t)nnodes * 0x40);
+    key = hash_bytes(key, (const void *)G2H(tr), (size_t)nnodes * 0x40);
     key = hash_bytes(key, base, sizeof(base));
-    key = hash_bytes(key, (const void *)(uintptr_t)(o + MI_SKINS), 16);
-    key = hash_bytes(key, (const void *)(uintptr_t)(o + MI_HIDDENPIECES), 4);
+    key = hash_bytes(key, (const void *)G2H(o + MI_SKINS), 16);
+    key = hash_bytes(key, (const void *)G2H(o + MI_HIDDENPIECES), 4);
     key = hash_bytes(key, &alpha, 1);
     key = hash_bytes(key, &flags2, 4);
     key = hash_bytes(key, &model, 4);
@@ -2077,26 +2078,26 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
             for (int t = 0; t < 4; t++) for (int64_t i = 0; i < s[t].v.size(); i++) { if (first) box = AABB(s[t].v[i], Vector3()); else box.expand_to(s[t].v[i]); first = 0; }
             eprintf("render3d: light base %.1f %.1f %.1f add %.1f %.1f %.1f tint %.2f %.2f %.2f, %zu lights, sun %.2f %.2f %.2f dir %.2f %.2f %.2f, scene light add %.2f %.2f %.2f, scale %.2f %.2f %.2f, global light %u\n",
                     base[0], base[1], base[2], add[0], add[1], add[2], tint[0], tint[1], tint[2], ml.size(),
-                    render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTCOLOR) : 0.0f, render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTCOLOR + 4) : 0.0f,
-                    render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTCOLOR + 8) : 0.0f, render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTDIR) : 0.0f,
-                    render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTDIR + 4) : 0.0f, render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTDIR + 8) : 0.0f,
-                    gf(sd + 0x74), gf(sd + 0x78), gf(sd + 0x7c), gf(sd + 0x50), gf(sd + 0x54), gf(sd + 0x58), render_struct ? g32((uint32_t)(uintptr_t)render_struct + 0x150) : 0);
+                    render_struct ? gf(H2G(render_struct) + RS_LIGHTCOLOR) : 0.0f, render_struct ? gf(H2G(render_struct) + RS_LIGHTCOLOR + 4) : 0.0f,
+                    render_struct ? gf(H2G(render_struct) + RS_LIGHTCOLOR + 8) : 0.0f, render_struct ? gf(H2G(render_struct) + RS_LIGHTDIR) : 0.0f,
+                    render_struct ? gf(H2G(render_struct) + RS_LIGHTDIR + 4) : 0.0f, render_struct ? gf(H2G(render_struct) + RS_LIGHTDIR + 8) : 0.0f,
+                    gf(sd + 0x74), gf(sd + 0x78), gf(sd + 0x7c), gf(sd + 0x50), gf(sd + 0x54), gf(sd + 0x58), render_struct ? g32(H2G(render_struct) + 0x150) : 0);
             eprintf("render3d: ExtraFOVXOffset %.3f ExtraFOVYOffset %.3f ModelFovTest %.0f, view fov %.3f %.3f\n", cvar("ExtraFOVXOffset", -999), cvar("ExtraFOVYOffset", -999),
                     cvar("ModelFovTest", -1), gf(sd + SD_XFOV), gf(sd + SD_YFOV));
-            eprintf("render3d: really close model \"%s\" fov offset %u %.3f %.3f, box %.1f %.1f %.1f - %.1f %.1f %.1f, at %.2f %.2f %.2f\n", g32(model + 4) ? (const char *)(uintptr_t)g32(model + 4) : "?",
+            eprintf("render3d: really close model \"%s\" fov offset %u %.3f %.3f, box %.1f %.1f %.1f - %.1f %.1f %.1f, at %.2f %.2f %.2f\n", g32(model + 4) ? (const char *)G2H(g32(model + 4)) : "?",
                     g32(model + 0x140), gf(model + 0x144), gf(model + 0x148), box.position.x, box.position.y, box.position.z, box.get_end().x, box.get_end().y, box.get_end().z,
                     xf.origin.x, xf.origin.y, xf.origin.z);
         }
     }
     // debugging: AVP2_R3D_DUMPMODEL=<file name part> logs those models when they are rebuilt (box in model space)
     static const char *dump_model = getenv("AVP2_R3D_DUMPMODEL");
-    if ((dump_model != NULL) && g32(model + 4) && strstr((const char *)(uintptr_t)g32(model + 4), dump_model))
+    if ((dump_model != NULL) && g32(model + 4) && strstr((const char *)G2H(g32(model + 4)), dump_model))
     {
         AABB box;
         int first = 1, nv = 0;
         for (int t = 0; t < 4; t++) for (int64_t i = 0; i < s[t].v.size(); i++) { if (first) box = AABB(s[t].v[i], Vector3()); else box.expand_to(s[t].v[i]); first = 0; nv++; }
         eprintf("render3d: model %08x \"%s\" %d vertices, box %.1f %.1f %.1f - %.1f %.1f %.1f, at %.1f %.1f %.1f, camera %.1f %.1f %.1f, alpha %u flags %08x/%08x skins %08x %08x\n", o,
-                (const char *)(uintptr_t)g32(model + 4), nv, box.position.x, box.position.y, box.position.z, box.get_end().x, box.get_end().y, box.get_end().z,
+                (const char *)G2H(g32(model + 4)), nv, box.position.x, box.position.y, box.position.z, box.get_end().x, box.get_end().y, box.get_end().z,
                 xf.origin.x, xf.origin.y, xf.origin.z, cam.origin.x, cam.origin.y, cam.origin.z, alpha, flags, flags2, g32(o + MI_SKINS), g32(o + MI_SKINS + 4));
         for (int t = 0; t < 4; t++)
             if (!s[t].v.is_empty())
@@ -2629,7 +2630,7 @@ static void update_sky(uint32_t mw, uint32_t sd)
                 for (auto &e : seen)
                 {
                     texture_entry &te = get_texture((uint32_t)e.first);
-                    eprintf("render3d: sky %d \"%s\": %d polies surface flags %08x texture %08x (%.0f x %.0f, alpha %d)\n", i, (const char *)(uintptr_t)(bsp + 4), e.second,
+                    eprintf("render3d: sky %d \"%s\": %d polies surface flags %08x texture %08x (%.0f x %.0f, alpha %d)\n", i, (const char *)G2H(bsp + 4), e.second,
                             (uint32_t)(e.first >> 32), (uint32_t)e.first, 1.0f / te.inv_w, 1.0f / te.inv_h, te.has_alpha);
                 }
             }
@@ -2933,7 +2934,7 @@ extern "C" uint32_t canvas_SetState_c(uint32_t self, uint32_t state, uint32_t va
 extern "C" uint32_t canvas_GetState_c(uint32_t self, uint32_t state, uint32_t pval)
 {
     if ((state >= NUM_LTRSTATES) || (pval == 0)) return 1;
-    *(uint32_t *)(uintptr_t)pval = cdraw.states[state];
+    *(uint32_t *)G2H(pval) = cdraw.states[state];
     return 0;
 }
 
@@ -2949,8 +2950,8 @@ extern "C" uint32_t canvas_SetTexture_c(uint32_t self, uint32_t name)
 extern "C" uint32_t canvas_GetTexelSize_c(uint32_t self, uint32_t pu, uint32_t pv)
 {
     texture_entry &te = get_texture(cdraw.texture);
-    if (pu != 0) *(float *)(uintptr_t)pu = te.uv_w;
-    if (pv != 0) *(float *)(uintptr_t)pv = te.uv_h;
+    if (pu != 0) *(float *)G2H(pu) = te.uv_w;
+    if (pv != 0) *(float *)G2H(pv) = te.uv_h;
     return 0;
 }
 
@@ -2961,12 +2962,12 @@ static void draw_canvas(uint32_t o)
     __typeof__(canvas_iface_init) *ci = &LOW_OBJ(canvas_iface);
     if (ci->vtable[0] == 0)
     {
-        ci->vtable[0] = (uint32_t)(uintptr_t)canvas_DrawPrimitive_asm2c;
-        ci->vtable[1] = (uint32_t)(uintptr_t)canvas_SetState_asm2c;
-        ci->vtable[2] = (uint32_t)(uintptr_t)canvas_GetState_asm2c;
-        ci->vtable[3] = (uint32_t)(uintptr_t)canvas_SetTexture_asm2c;
-        ci->vtable[4] = (uint32_t)(uintptr_t)canvas_GetTexelSize_asm2c;
-        ci->object[0] = (uint32_t)(uintptr_t)ci->vtable;
+        ci->vtable[0] = H2G(canvas_DrawPrimitive_asm2c);
+        ci->vtable[1] = H2G(canvas_SetState_asm2c);
+        ci->vtable[2] = H2G(canvas_GetState_asm2c);
+        ci->vtable[3] = H2G(canvas_SetTexture_asm2c);
+        ci->vtable[4] = H2G(canvas_GetTexelSize_asm2c);
+        ci->object[0] = H2G(ci->vtable);
     }
     // CanvasDrawMgr::SaveAndSetCanvasStates' defaults
     static const uint32_t defaults[NUM_LTRSTATES] = { 0, 1, 1, 5, 6, 1, 3, 2 };
@@ -2975,7 +2976,7 @@ static void draw_canvas(uint32_t o)
     cdraw.close = (flags & FLAG_REALLYCLOSE) != 0;
     std::map<uint64_t, canvas_batch> batches;
     cdraw.batches = &batches;
-    uint32_t args[3] = { (uint32_t)(uintptr_t)ci->object, o, g32(o + CV_USER) };
+    uint32_t args[3] = { H2G(ci->object), o, g32(o + CV_USER) };
     call_game(fn, 3, args);
     cdraw.batches = NULL;
     if ((winapi_debug >= 2) && ((gs->frame % 300) == 0))
@@ -3214,7 +3215,7 @@ static void preload_update(void)
 extern "C" int r3d_render_scene(uint8_t *scene)
 {
     if (!ready()) return 0;
-    uint32_t sd = (uint32_t)(uintptr_t)scene;
+    uint32_t sd = H2G(scene);
 
     // the world of this scene: SceneDesc::m_hRenderContext (0x34)
     world_context *ctx = find_context(g32(sd + 0x34));
@@ -3250,7 +3251,7 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         {
             uint32_t o = g32(g32(sd + 0xb4) + 4 * i);
             eprintf("render3d:   sky %08x type %u flags %08x/%08x color %08x pos %.0f %.0f %.0f %s\n", o, g8(o + OB_TYPE), g32(o + OB_FLAGS), g32(o + OB_FLAGS2), g32(o + OB_COLOR),
-                    gf(o + OB_POS), gf(o + OB_POS + 4), gf(o + OB_POS + 8), ((g8(o + OB_TYPE) == OT_WORLDMODEL) && g32(o + WM_ORIGINALBSP)) ? (const char *)(uintptr_t)(g32(o + WM_ORIGINALBSP) + 4) : "");
+                    gf(o + OB_POS), gf(o + OB_POS + 4), gf(o + OB_POS + 8), ((g8(o + OB_TYPE) == OT_WORLDMODEL) && g32(o + WM_ORIGINALBSP)) ? (const char *)G2H(g32(o + WM_ORIGINALBSP) + 4) : "");
         }
     }
     float qx = gf(sd + SD_ROTATION), qy = gf(sd + SD_ROTATION + 4), qz = gf(sd + SD_ROTATION + 8), qw = gf(sd + SD_ROTATION + 12);
@@ -3301,11 +3302,11 @@ extern "C" int r3d_render_scene(uint8_t *scene)
                 eprintf("render3d: texture %08x:", st);
                 for (int i = 0; i < 16; i++) eprintf(" %08x", g32(st + 4 * i));
                 uint32_t cl = g32(st + 0x38);
-                eprintf(" cmd \"%.60s\"\n", ((cl > 0x10000) && (cl < 0x80000000u)) ? (const char *)(uintptr_t)cl : "?");
+                eprintf(" cmd \"%.60s\"\n", ((cl > 0x10000) && (cl < 0x80000000u)) ? (const char *)G2H(cl) : "?");
             }
             if (sc == 0) continue;
             if (n++ > 400) break;
-            const char *cmd = g32(st + 0x38) ? (const char *)(uintptr_t)g32(st + 0x38) : "";
+            const char *cmd = g32(st + 0x38) ? (const char *)G2H(g32(st + 0x38)) : "";
             eprintf("render3d: texture %08x \"%.40s\" state %08x: render", st, cmd, sc);
             for (uint32_t r = g32(sc); (r < g32(sc + 4)) && (r != 0); r += 8) eprintf(" %u=%u", g32(r), g32(r + 4));
             eprintf(" texture");

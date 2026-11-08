@@ -32,6 +32,7 @@ void x86_deinit_malloc(void);
 
 void *x86_malloc(unsigned int size);
 void x86_free(void *ptr);
+int x86_owns(const void *ptr);
 void *x86_calloc(unsigned int nmemb, unsigned int size);
 void *x86_realloc(void *ptr, unsigned int size);
 

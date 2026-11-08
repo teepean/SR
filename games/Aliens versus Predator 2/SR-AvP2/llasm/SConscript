@@ -9,7 +9,7 @@ import os
 import re
 import shutil
 
-Import('env')
+Import('env llasm_kit')
 
 llasm_include_re = re.compile(r'^include\s+(\S+)\r?$', re.M)
 
@@ -48,11 +48,19 @@ cenv.Append(CPPPATH = [support])
 support_objs = [cenv.Object('support/' + name + env['OBJSUFFIX'], os.path.join(support, name + '.c'))
                 for name in ['llasm_cmps', 'llasm_divide', 'llasm_float', 'llasm_fs_mem', 'llasm_int', 'llasm_movmem',
                              'llasm_movs', 'llasm_pushx', 'llasm_scas', 'llasm_stos']]
-common_objs = support_objs + [cenv.Object('llasm-cpu.c')] + [env.llasm(f) for f in ['imports-asm.llasm', 'com-asm.llasm', 'runtime-asm.llasm']]
-
 modules = ['lithtech', 'cshell', 'server', 'object']
-avp2_objs = [env.llasm(m + '/' + m + '.llasm') for m in modules if os.path.exists(os.path.join(here, m, m + '.llasm'))]
-ph_objs = [env.llasm('ph-' + m + '/' + m + '.llasm') for m in modules if os.path.exists(os.path.join(here, 'ph-' + m, m + '.llasm'))]
+if llasm_kit:
+    # the objects made elsewhere (tools/mkarm64kit.sh): no llasm, no LLVM, no generated llasm files needed here
+    kit = os.path.join(Dir('#').abspath, llasm_kit, 'llasm')
+    def kit_object(name):
+        return File(os.path.join(kit, name + '.o')) if os.path.exists(os.path.join(kit, name + '.o')) else None
+    common_objs = support_objs + [cenv.Object('llasm-cpu.c')] + [kit_object(f) for f in ['imports-asm', 'com-asm', 'runtime-asm']]
+    avp2_objs = [o for o in [kit_object(m) for m in modules] if o is not None]
+    ph_objs = [o for o in [kit_object('ph-' + m) for m in modules] if o is not None]
+else:
+    common_objs = support_objs + [cenv.Object('llasm-cpu.c')] + [env.llasm(f) for f in ['imports-asm.llasm', 'com-asm.llasm', 'runtime-asm.llasm']]
+    avp2_objs = [env.llasm(m + '/' + m + '.llasm') for m in modules if os.path.exists(os.path.join(here, m, m + '.llasm'))]
+    ph_objs = [env.llasm('ph-' + m + '/' + m + '.llasm') for m in modules if os.path.exists(os.path.join(here, 'ph-' + m, m + '.llasm'))]
 if len(avp2_objs) != len(modules):
     print('llasm: AvP2 modules missing in llasm/ (gen_all_llasm.sh)')
     avp2_objs = []

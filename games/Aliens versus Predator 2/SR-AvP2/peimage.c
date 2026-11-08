@@ -75,7 +75,11 @@ uint8_t *pe_image_load(const char *winpath, int at_image_base)
     size = (rd32(file + pe + 0x50) + 0xfff) & ~0xfffu;
     headers = rd32(file + pe + 0x54);
 
+    // at its image base (lithtech.exe at 0x400000); with pointer offsets the program itself is there (the game's
+    // window starts just below it): anywhere in the window (the recompiled code doesn't need the address)
+#ifndef PTROFS_64BIT
     if (at_image_base) base = (uint8_t *)map_fixed(imagebase, size);
+#endif
     if (base == NULL) base = (uint8_t *)sys_map_low(size, -1, 0);
     if (base == NULL) { free(file); return NULL; }
     memset(base, 0, size);
