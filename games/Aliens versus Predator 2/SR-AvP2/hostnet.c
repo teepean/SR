@@ -148,6 +148,13 @@ uint32_t hn_local_ip(void)
     return ip;
 }
 
+int hn_hostname(char *name, int len)
+{
+    if (!hn_init() || (gethostname(name, len) != 0)) return 0;
+    name[len - 1] = 0;
+    return 1;
+}
+
 #ifdef __cplusplus
 }
 #endif
@@ -290,6 +297,13 @@ uint32_t hn_local_ip(void)
     if ((connect(s, (struct sockaddr *)&a, sizeof(a)) == 0) && (getsockname(s, (struct sockaddr *)&a, &alen) == 0) && (a.sin_addr.s_addr != 0)) ip = a.sin_addr.s_addr;
     close(s);
     return ip;
+}
+
+int hn_hostname(char *name, int len)
+{
+    if (gethostname(name, (size_t)len) != 0) return 0;
+    name[len - 1] = 0;
+    return 1;
 }
 
 #ifdef __cplusplus

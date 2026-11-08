@@ -94,4 +94,9 @@ static inline int in_game_window(const void *p) { return (uintptr_t)p < UINT64_C
 #define SR_GAME_WINDOW 1
 #endif
 
+// files are binary everywhere (Windows' C runtime opens them as text unless told otherwise: CR LF, Ctrl-Z)
+#ifndef O_BINARY
+#define O_BINARY 0
+#endif
+
 #endif /* _PLATFORM_H_INCLUDED_ */

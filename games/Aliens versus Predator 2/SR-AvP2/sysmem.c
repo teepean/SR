@@ -70,7 +70,52 @@ int sys_protect_exec(void *addr, size_t len)
 }
 
 int sys_reserve_fixed(uintptr_t addr, size_t len) { return 0; }
-void sys_dump_low_map(void) {}
+
+// what is in the low 2 GB (the game's memory has to fit there)
+void sys_dump_low_map(void)
+{
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t a = 0x10000;
+    while ((a < 0x80000000u) && (VirtualQuery((void *) a, &mbi, sizeof(mbi)) != 0))
+    {
+        if (mbi.State != MEM_FREE)
+            fprintf(stderr, "low memory: %08x-%08x %s %s (allocation %08x)\n", (unsigned) (uintptr_t) mbi.BaseAddress,
+                    (unsigned) ((uintptr_t) mbi.BaseAddress + mbi.RegionSize), (mbi.State == MEM_COMMIT) ? "committed" : "reserved",
+                    (mbi.Type == MEM_IMAGE) ? "image" : ((mbi.Type == MEM_MAPPED) ? "mapped" : "private"), (unsigned) (uintptr_t) mbi.AllocationBase);
+        a = (uintptr_t) mbi.BaseAddress + mbi.RegionSize;
+    }
+}
+
+// a read of unmapped game memory (the game has a few stray reads): a zero page there, the instruction runs again (as
+// the POSIX handler below). Windows reserves address space in 64 KB granules: the page is committed if its granule is
+// reserved already, else the free granule is reserved and committed.
+static volatile LONG stray_pages;
+
+static int map_stray_read(PEXCEPTION_POINTERS info)
+{
+    PEXCEPTION_RECORD r = info->ExceptionRecord;
+    uintptr_t addr, page;
+    MEMORY_BASIC_INFORMATION mbi;
+
+    if ((r->ExceptionCode != EXCEPTION_ACCESS_VIOLATION) || (r->NumberParameters < 2) || (r->ExceptionInformation[0] != 0)) return 0;
+    addr = (uintptr_t) r->ExceptionInformation[1];
+    if ((addr < 0x10000) || (addr >= 0x80000000u) || (stray_pages >= 256)) return 0;
+    page = addr & ~(uintptr_t) 4095;
+    if (VirtualQuery((void *) page, &mbi, sizeof(mbi)) == 0) return 0;
+    if (mbi.State == MEM_RESERVE)
+    {
+        if (VirtualAlloc((void *) page, 4096, MEM_COMMIT, PAGE_READONLY) == NULL) return 0;
+    }
+    else if (mbi.State == MEM_FREE)
+    {
+        uintptr_t granule = addr & ~(uintptr_t) 0xFFFF;
+        if (VirtualAlloc((void *) granule, 0x10000, MEM_RESERVE | MEM_COMMIT, PAGE_READONLY) == NULL) return 0;
+    }
+    else return 0;     // mapped: a real fault (protection)
+    InterlockedIncrement(&stray_pages);
+    fprintf(stderr, "memory: read of unmapped game memory at 0x%08x (rip %p): zeros\n", (unsigned) addr, (void *) info->ContextRecord->Rip);
+    return 1;
+}
 
 static LONG CALLBACK crash_handler(PEXCEPTION_POINTERS info)
 {
@@ -78,6 +123,7 @@ static LONG CALLBACK crash_handler(PEXCEPTION_POINTERS info)
     uint64_t *sp;
     int i;
 
+    if (map_stray_read(info)) return EXCEPTION_CONTINUE_EXECUTION;
     if (info->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION &&
         info->ExceptionRecord->ExceptionCode != EXCEPTION_ILLEGAL_INSTRUCTION &&
         info->ExceptionRecord->ExceptionCode != EXCEPTION_INT_DIVIDE_BY_ZERO &&

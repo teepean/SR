@@ -34,3 +34,4 @@ SR-AvP2PH-llasm-ptrofs
 *.lla.o
 *.llp.o
 mac-kit-arm64/
+pc64-windows.ld

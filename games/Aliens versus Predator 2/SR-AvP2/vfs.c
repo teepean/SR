@@ -48,6 +48,8 @@ int vfs_resolve(const char *winpath, char *hostpath, size_t size)
     int exists, clen;
 
     src = winpath;
+    hostpath[0] = 0;
+    len = 0;
 
     // absolute path with drive letter: X:\...
     if ((((src[0] | 0x20) >= 'a') && ((src[0] | 0x20) <= 'z')) && (src[1] == ':'))
@@ -60,12 +62,21 @@ int vfs_resolve(const char *winpath, char *hostpath, size_t size)
         {
             src += gamedir_len;
         }
+#ifdef _WIN32
+        else if (size > 4)
+        {
+            // Windows: a real path outside the game's directory (Primal Hunt's avp2_dir = D:\Games\AvP2) keeps its drive
+            hostpath[0] = winpath[0];
+            hostpath[1] = ':';
+            hostpath[2] = '/';
+            hostpath[3] = 0;
+            len = 3;
+        }
+#endif
     }
 
     while ((*src == '\\') || (*src == '/')) src++;
 
-    hostpath[0] = 0;
-    len = 0;
     exists = 1;
 
     while (*src != 0)
@@ -115,7 +126,7 @@ int vfs_resolve(const char *winpath, char *hostpath, size_t size)
             break;
         }
 
-        if (len != 0) hostpath[len++] = '/';
+        if ((len != 0) && (hostpath[len - 1] != '/')) hostpath[len++] = '/';
         strcpy(hostpath + len, component);
         len += strlen(component);
     }

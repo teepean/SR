@@ -40,6 +40,8 @@ int hn_last_error(void);
 int hn_resolve(const char *name, uint32_t *ip);
 // the address of the interface used for outgoing traffic (127.0.0.1 if there is none)
 uint32_t hn_local_ip(void);
+// the computer's name (gethostname); 0 on failure
+int hn_hostname(char *name, int len);
 
 #ifdef __cplusplus
 }

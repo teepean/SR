@@ -79,15 +79,28 @@ elif device == 'pc64-windows':
     env['RANLIB'] = 'x86_64-w64-mingw32-ranlib'
     env['PROGSUFFIX'] = '.exe'
     env['OBJSUFFIX'] = '.w64.o'
-    win_deps = os.environ.get('WIN_DEPS', '/usr/x86_64-w64-mingw32')
+    win_deps = os.environ.get('WIN_DEPS', '/home/teemu/sorsa/i76work/win-deps/x64')
     env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fno-exceptions -fno-rtti -Dmain=SDL_main',
                CPPPATH = [win_deps + '/include/SDL2', win_deps + '/include/freetype2', win_deps + '/include'],
                LIBPATH = [win_deps + '/lib'],
-               LINKFLAGS = '-m64 -mwindows -static-libgcc -static-libstdc++ -Wl,--image-base,0x10000000,--disable-dynamicbase,--disable-reloc-section,--disable-high-entropy-va,--nxcompat',
+               LINKFLAGS = '-m64 -mwindows -static-libgcc -static-libstdc++ -Wl,--image-base,0x3f0000,--disable-dynamicbase,--disable-reloc-section,--disable-high-entropy-va,--nxcompat -Wl,-T,pc64-windows.ld',
                LIBS = ['mingw32', 'SDL2main', 'SDL2', 'freetype', 'd3d11', 'dxgi', 'dxguid', 'opengl32', 'ws2_32', 'winmm']
               )
     # no libwinpthread-1.dll next to the exe: link it statically
     env.Append(_LIBFLAGS = ' -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic')
+    # lithtech.exe's image must be at 0x400000, where Wine and Windows put heaps and mapped files before the program
+    # runs: the program is linked at 0x3f0000 with x64/lithimg.asm's uninitialized section first (0x3f1000 - 0x510000,
+    # peimage.c copies the image into it) - MinGW ld's default script with that section before .text
+    def windows_ld_script(target, source, env):
+        text = subprocess.check_output(['x86_64-w64-mingw32-ld', '--verbose']).decode()
+        script = text.split('==================================================')[1]
+        old = '.text  __image_base__ + ( __section_alignment__ < 0x1000 ? . : __section_alignment__ ) :'
+        if old not in script:
+            raise Exception('pc64-windows.ld: unexpected default linker script')
+        script = script.replace(old, '.lithimg __image_base__ + __section_alignment__ :\n  {\n    *(.lithimg)\n  }\n  .text BLOCK(__section_alignment__) :')
+        with open(str(target[0]), 'w') as f:
+            f.write(script)
+    windows_ld = env.Command('pc64-windows.ld', [], windows_ld_script)
 elif device == 'pc64-macos':
     # macOS on Intel, or on Apple Silicon through Rosetta 2: an x86-64 program (the recompiled code is x86-64). The
     # recompiled code is a separate image at a fixed low address (blob.c: Mach-O has no 32-bit absolute relocations
@@ -144,8 +157,15 @@ if 'PATH_INC' in os.environ:
 if 'PATH_LIB' in os.environ:
     env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
 
-# FFmpeg (libavformat, libavcodec) decodes the Bink movies (bink.c); without it the movies are skipped
-if device in ('pc64-linux', 'pc64-macos', 'arm64-macos') and os.environ.get('NO_FFMPEG') is None:
+# FFmpeg (libavformat, libavcodec) decodes the Bink movies (bink.c); without it the movies are skipped. Windows: a
+# static MinGW build (FFMPEG=<its prefix>, with include/ and lib/; BUILDING-windows.md)
+ffmpeg_win = os.environ.get('FFMPEG', '/home/teemu/sorsa/avp2work/win-build/ffmpeg')
+if device == 'pc64-windows' and os.environ.get('NO_FFMPEG') is None and os.path.exists(os.path.join(ffmpeg_win, 'lib', 'libavcodec.a')):
+    env.Append(CPPPATH = [os.path.join(ffmpeg_win, 'include')], CPPDEFINES = ['HAVE_FFMPEG'],
+               LIBS = [File(os.path.join(ffmpeg_win, 'lib', name)) for name in ['libavformat.a', 'libavcodec.a', 'libavutil.a']] + ['bcrypt'])
+elif device == 'pc64-windows':
+    print('FFmpeg (MinGW build) not found: no movies')
+elif device in ('pc64-linux', 'pc64-macos', 'arm64-macos') and os.environ.get('NO_FFMPEG') is None:
     try:
         subprocess.check_output(['pkg-config', '--exists', 'libavformat', 'libavcodec', 'libavutil'])
         env.ParseConfig('pkg-config --cflags --libs libavformat libavcodec libavutil')
@@ -155,11 +175,13 @@ if device in ('pc64-linux', 'pc64-macos', 'arm64-macos') and os.environ.get('NO_
 
 # GothicKit's dmusic (DirectMusic re-implementation, built static with the patches in dmusic-patches/) plays the music
 # (music.c): DMUSIC=<checkout> with build-static/libdmusic.a; without it there is no music
+# (Windows: a MinGW build in build-mingw/)
 dmusic_libs = []
 dmusic = os.environ.get('DMUSIC', '/home/teemu/sorsa/dmusic')
-if device in ('pc64-linux', 'pc64-macos', 'arm64-macos') and os.path.exists(os.path.join(dmusic, 'build-static', 'libdmusic.a')):
+dmusic_build = os.path.join(dmusic, 'build-mingw' if device == 'pc64-windows' else 'build-static')
+if os.path.exists(os.path.join(dmusic_build, 'libdmusic.a')):
     env.Append(CPPDEFINES = ['HAVE_DMUSIC', 'DM_STATIC=1'], CPPPATH = [os.path.join(dmusic, 'include')])
-    dmusic_libs = [File(os.path.join(dmusic, 'build-static', 'libdmusic.a')), File(os.path.join(dmusic, 'build-static', 'vendor', 'libdmusic-tsf.a'))]
+    dmusic_libs = [File(os.path.join(dmusic_build, 'libdmusic.a')), File(os.path.join(dmusic_build, 'vendor', 'libdmusic-tsf.a'))]
 else:
     print('dmusic not found: no music')
 
@@ -176,9 +198,9 @@ else:
 godot_objs = []
 godot_cpp = os.environ.get('GODOT_CPP', '/home/teemu/sorsa/godot-cpp')
 godot_lib = None
-godot_platform = 'macos' if device in ('pc64-macos', 'arm64-macos') else 'linux'
+godot_platform = 'macos' if device in ('pc64-macos', 'arm64-macos') else ('windows' if device == 'pc64-windows' else 'linux')
 godot_arch = 'arm64' if device == 'arm64-macos' else 'x86_64'
-if device in ('pc64-linux', 'pc64-macos', 'arm64-macos') and os.path.isdir(godot_cpp):
+if os.path.isdir(godot_cpp):
     for name in ['libgodot-cpp.%s.template_release.%s.a' % (godot_platform, godot_arch), 'libgodot-cpp.%s.template_debug.%s.a' % (godot_platform, godot_arch),
                  'libgodot-cpp.%s.template_release.universal.a' % godot_platform, 'libgodot-cpp.%s.template_debug.universal.a' % godot_platform]:
         if os.path.exists(os.path.join(godot_cpp, 'bin', name)):
@@ -192,7 +214,8 @@ if godot_lib is not None:
     genv.Append(CCFLAGS = ' -std=c++17',
                 CPPPATH = [godot_cpp + '/include', godot_cpp + '/gen/include', godot_cpp + '/gdextension'])
     godot_objs = [genv.Object('host_godot.cpp'), genv.Object('render3d.cpp'), godot_lib]
-    env.Append(LIBS = ['dl'])
+    if device != 'pc64-windows':
+        env.Append(LIBS = ['dl'])
 else:
     print('Godot (godot-cpp) not found: SDL window only')
 
@@ -224,6 +247,8 @@ def recompiled(name, module_objs):
     blob_files.append(env.InstallAs(name + '.blob', outs[0]))
     return [env.Object(outs[1], CPPPATH = env['CPPPATH'] + ['#'])]
 
+if device == 'pc64-windows':
+    env.Depends(['SR-AvP2.exe', 'SR-AvP2PH.exe'], windows_ld)
 programs = env.Program('SR-AvP2' + suffix, runtime_objs + [env.Object('game_avp2.c')] + common_c_objs + recompiled('SR-AvP2' + suffix, avp2_objs) + godot_objs + dmusic_libs)
 if ph_objs or (blob_kit and os.path.exists(os.path.join(blob_kit, 'SR-AvP2PH' + suffix + '.blob'))):
     programs += env.Program('SR-AvP2PH' + suffix, runtime_objs + [env.Object('game_ph.c')] + common_c_objs + recompiled('SR-AvP2PH' + suffix, ph_objs) + godot_objs + dmusic_libs)

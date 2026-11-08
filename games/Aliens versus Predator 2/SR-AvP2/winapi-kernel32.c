@@ -159,7 +159,7 @@ void * CCALL CreateFileA_c(const char *lpFileName, uint32_t dwDesiredAccess, uin
         case TRUNCATE_EXISTING: flags |= O_TRUNC; break;
     }
 
-    fd = open(path, flags, 0644);
+    fd = open(path, flags | O_BINARY, 0644);
     if (winapi_debug)
     {
         eprintf("CreateFileA: %s -> %s (%s): %s\n", lpFileName, path, exists ? "exists" : "new", (fd >= 0) ? "ok" : "failed");
@@ -333,9 +333,9 @@ uint32_t CCALL CopyFileA_c(const char *lpExistingFileName, const char *lpNewFile
         return 0;
     }
 
-    fin = open(src, O_RDONLY);
+    fin = open(src, O_RDONLY | O_BINARY);
     if (fin < 0) { last_error = errno_to_win(errno); return 0; }
-    fout = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fout = open(dst, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
     if (fout < 0) { close(fin); last_error = errno_to_win(errno); return 0; }
 
     while ((n = read(fin, buf, sizeof(buf))) > 0)
@@ -1781,6 +1781,24 @@ static void tm_to_systemtime(const struct tm *tm, long msec, SYSTEMTIME_32 *st)
     st->wSecond = (uint16_t)tm->tm_sec; st->wMilliseconds = (uint16_t)msec;
 }
 
+#ifdef _WIN32
+// (MinGW: the C runtime's _s versions)
+static struct tm *gmtime_r(const time_t *t, struct tm *r) { return (gmtime_s(r, t) == 0) ? r : NULL; }
+static struct tm *localtime_r(const time_t *t, struct tm *r) { return (localtime_s(r, t) == 0) ? r : NULL; }
+#endif
+
+// local time - UTC at t, in seconds
+static long utc_offset(time_t t)
+{
+    struct tm lt;
+    localtime_r(&t, &lt);
+#ifdef _WIN32
+    return (long)(_mkgmtime(&lt) - t);
+#else
+    return lt.tm_gmtoff;
+#endif
+}
+
 void CCALL GetSystemTime_c(SYSTEMTIME_32 *st)
 {
     struct timespec ts; struct tm tm;
@@ -1807,9 +1825,7 @@ uint32_t CCALL GetTimeZoneInformation_c(uint8_t *lpTimeZoneInformation)
 uint32_t CCALL FileTimeToLocalFileTime_c(const uint64_t *lpFileTime, uint64_t *lpLocalFileTime)
 {
     time_t t = (time_t)(*lpFileTime / 10000000ull - 11644473600ull);
-    struct tm tm;
-    localtime_r(&t, &tm);
-    *lpLocalFileTime = *lpFileTime + (int64_t)tm.tm_gmtoff * 10000000;
+    *lpLocalFileTime = *lpFileTime + (int64_t)utc_offset(t) * 10000000;
     return 1;
 }
 
@@ -1883,7 +1899,11 @@ uint32_t CCALL GetTempPathA_c(uint32_t nBufferLength, char *lpBuffer)
     GetCurrentDirectoryA_c(sizeof(path), path);
     len = (uint32_t)strlen(path);
     snprintf(path + len, sizeof(path) - len, "%stemp\\", (len && path[len - 1] == '\\') ? "" : "\\");
+#ifdef _WIN32
+    mkdir("temp");
+#else
     mkdir("temp", 0755);
+#endif
     len = (uint32_t)strlen(path);
     if (len + 1 > nBufferLength) return len + 1;
     strcpy(lpBuffer, path);
@@ -2506,9 +2526,9 @@ uint32_t CCALL MoveFileA_c(const char *lpExistingFileName, const char *lpNewFile
 
 uint32_t CCALL SetFileTime_c(void *hFile, const uint64_t *lpCreationTime, const uint64_t *lpLastAccessTime, const uint64_t *lpLastWriteTime)
 {
-    struct timespec ts[2];
-
     if (handle_type(hFile) != HT_FILE) { last_error = ERROR_INVALID_HANDLE; return 0; }
+#ifndef _WIN32
+    struct timespec ts[2];
     ts[0].tv_nsec = ts[1].tv_nsec = UTIME_OMIT;
     ts[0].tv_sec = ts[1].tv_sec = 0;
     if (lpLastAccessTime != NULL)
@@ -2521,7 +2541,6 @@ uint32_t CCALL SetFileTime_c(void *hFile, const uint64_t *lpCreationTime, const 
         ts[1].tv_sec = (time_t)(*lpLastWriteTime / 10000000ull - 11644473600ull);
         ts[1].tv_nsec = (long)(*lpLastWriteTime % 10000000ull) * 100;
     }
-#ifndef _WIN32
     futimens(((win_file *)hFile)->fd, ts);
 #endif
     return 1;
@@ -2551,9 +2570,7 @@ uint32_t CCALL SystemTimeToFileTime_c(const SYSTEMTIME_32 *st, uint64_t *lpFileT
 uint32_t CCALL LocalFileTimeToFileTime_c(const uint64_t *lpLocalFileTime, uint64_t *lpFileTime)
 {
     time_t t = (time_t)(*lpLocalFileTime / 10000000ull - 11644473600ull);
-    struct tm tm;
-    localtime_r(&t, &tm);
-    *lpFileTime = *lpLocalFileTime - (int64_t)tm.tm_gmtoff * 10000000;
+    *lpFileTime = *lpLocalFileTime - (int64_t)utc_offset(t) * 10000000;
     return 1;
 }
 

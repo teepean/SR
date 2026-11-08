@@ -37,9 +37,19 @@ static struct { uint8_t *base; uint32_t size; char name[64]; } images[MAX_IMAGES
 static uint32_t rd32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static uint16_t rd16(const uint8_t *p) { uint16_t v; memcpy(&v, p, 2); return v; }
 
+#ifdef _WIN32
+// x64/lithimg.asm: the image's area inside the program's own image (kept free by the loader)
+extern "C" uint8_t lithimg_area[], lithimg_area_end[];
+#endif
+
 static void *map_fixed(uint32_t addr, uint32_t size)
 {
 #ifdef _WIN32
+    if (((uintptr_t)addr >= (uintptr_t)lithimg_area) && ((uintptr_t)addr + size <= (uintptr_t)lithimg_area_end))
+    {
+        memset((void *)(uintptr_t)addr, 0, size);
+        return (void *)(uintptr_t)addr;
+    }
     return VirtualAlloc((void *)(uintptr_t)addr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 #else
     return sys_map_fixed(addr, size);       // sysmem.c: Linux and macOS

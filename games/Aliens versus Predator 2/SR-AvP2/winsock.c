@@ -418,7 +418,7 @@ uint32_t CCALL ws2_32_ntohs_c(uint32_t v) { return (uint16_t)(((v & 0xFF) << 8) 
 uint32_t CCALL ws2_32_gethostname_c(char *name, int32_t namelen)
 {
     if ((name == NULL) || (namelen <= 0)) return fail(10014);
-    if (gethostname(name, namelen) != 0) snprintf(name, namelen, "localhost");
+    if (!hn_hostname(name, namelen)) snprintf(name, namelen, "localhost");
     name[namelen - 1] = 0;
     return 0;
 }

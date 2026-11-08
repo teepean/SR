@@ -624,3 +624,22 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   (render3d post_update). aspect = 4:3 puts the 3D view in the 4:3 frame too (bars), stretch is the old behaviour.
   The HUD, the vision overlays and the engine's own projection (target brackets) stay in the 4:3 middle; step 2
   (16:9 render modes, engine-side Hor+) is open.
+
+### 2026-11-08 — Windows x64 (MinGW, tested under Wine), additive sprites, the weapon's projection
+- `scons device=pc64-windows` builds SR-AvP2.exe / SR-AvP2PH.exe with LibGodot as a DLL (Godot 4.7.2 cross-built with
+  MinGW, d3d12=no), godot-cpp, a minimal static FFmpeg (Bink only) and dmusic for MinGW (BUILDING-windows.md). Under
+  GE-Proton the menu, the intro movie, m1s1 (192 fps) and Primal Hunt's exp1s1 play. Fixes on the way: the C
+  runtime's time functions (gmtime_r/localtime_r/tm_gmtoff -> _s versions, utc_offset), gethostname through hostnet,
+  SetFileTime, mkdir; LibGodot loaded with SDL_LoadObject; files opened binary (Windows' C runtime defaults to text:
+  the REZ reads were garbled - "Error copying file cshell.dll"); vfs_resolve keeps real drive paths (avp2_dir); the
+  stray-read zero page in the vectored exception handler (64 KB granules); sys_dump_low_map with VirtualQuery.
+- lithtech.exe's image at 0x400000: under Wine heaps and the locale files were there before main(). The program is
+  now linked at 0x3f0000 with an uninitialized section first (x64/lithimg.asm, a linker script made from MinGW ld's
+  default) that covers 0x3f1000 - 0x510000; peimage.c copies the image into it.
+- Additive sprites (and particles, poly grids, canvases with ONE/ONE): d3d.ren blends ONE, ONE - the alpha isn't
+  used - but our shader wrote ALPHA = the texture's x the object's alpha and Godot's blend_add multiplies by it: the
+  marines' shoulder lamp glows (object alpha 9/255) were invisible. ALPHA = 1 for additive, as the world shader.
+- The player-view weapon (models with m_bFovOffset): the game's d3d.ren (0x1001af52) builds diag(tan(fov / 2)) with
+  fov = ExtraFOVX/YOffset degrees + the model's offset + the view's FOV (95 x 115 in m1s1) and uses it IN PLACE of the
+  view's mFOVScale (1 / tan(view fov / 2)): the weapon is scaled by tan(weapon / 2) x tan(view / 2) - x 1.09, y 1.27.
+  The knife's blade angle then matches the Wine reference (27 degrees; the ratio tan / tan made it 14, none 31).

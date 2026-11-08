@@ -14,6 +14,7 @@
 #include <string.h>
 #include <strings.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <SDL.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -107,6 +108,7 @@ static void avp2_path(const char *name, char *path, size_t size)
         snprintf(path, size, "%s", name);
         return;
     }
+    // (Windows: an absolute directory with a drive letter stays absolute - vfs_resolve keeps it)
     if (dir[0] == '/')
     {
         if (getcwd(cwd, sizeof(cwd)) == NULL) cwd[0] = 0;
@@ -185,6 +187,10 @@ static void register_archives(void)
 
 int main(int argc, char *argv[])
 {
+#ifdef _WIN32
+    // files are binary by default (open, fopen): as everywhere else
+    _set_fmode(_O_BINARY);
+#endif
     // log file (stderr of a Windows GUI program goes nowhere)
     if (getenv("AVP2_LOG") != NULL)
     {

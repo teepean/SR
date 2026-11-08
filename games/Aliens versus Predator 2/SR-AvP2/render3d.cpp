@@ -2189,13 +2189,16 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
         mi.close = close;
     }
     // a really close model with a FOV offset (the player-view weapon: Model m_bFovOffset +0x140, offsets +0x144/+0x148)
-    // is projected with its own FOV in AVP2-Reconstructed's d3d.ren (SetupModel: ExtraFOVXOffset/YOffset degrees + the
-    // model's offsets + the view's FovX/FovY; the game sets the variables to ViewModelBaseFOVX/Y - the view's FOV,
-    // 95 x 115): x and y in camera space scaled by tan(view FOV / 2) / tan(its FOV / 2). Applied as is the knife in
-    // m1s1 turns nearly flat, unlike the Wine reference (AvP2's d3d.ren is another build) - not done by default;
-    // AVP2_R3D_WEAPONFOV=x, y or xy tries it (TODO: compare with a steady reference)
+    // gets a projection of its own in d3d.ren (SetupModel): its FOV is ExtraFOVXOffset/YOffset degrees + the model's
+    // offsets + the view's FovX/FovY (the game sets the variables to ViewModelBaseFOVX/Y - the view's: 95 x 115 degrees)
+    // and its clip transform is diag(tan(its FOV / 2)) x the shear - in place of the view's mFOVScale, diag(1 / tan(the
+    // view's FOV / 2)) (the game's d3d.ren 0x1001af52: mProj x m_mShear, where other really close models get
+    // m_mReallyCloseClipTransform). So it's scaled by tan(weapon / 2) x tan(view / 2) against the view's projection -
+    // in m1s1 x 1.09 wider and x 1.27 taller (the knife's blade angle then matches the Wine reference: 27 degrees).
+    // AVP2_R3D_WEAPONFOV=0: off.
     Transform3D placed = xf;
-    if (close && g32(model + 0x140) && getenv("AVP2_R3D_WEAPONFOV"))
+    static const char *weapon_fov = getenv("AVP2_R3D_WEAPONFOV");
+    if (close && g32(model + 0x140) && !((weapon_fov != NULL) && (strcmp(weapon_fov, "0") == 0)))
     {
         float vfx = gf(sd + SD_XFOV), vfy = gf(sd + SD_YFOV);
         if ((vfx > 0.01f) && (vfx < 3.1f) && (vfy > 0.01f) && (vfy < 3.1f))
@@ -2204,10 +2207,7 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
             float wfy = cvar("ExtraFOVYOffset", 0) * 0.017453292f + gf(model + 0x148) + vfy;
             wfx = fminf(fmaxf(wfx, 0.17453292f), 2.9670596f);
             wfy = fminf(fmaxf(wfy, 0.17453292f), 2.9670596f);
-            const char *mode = getenv("AVP2_R3D_WEAPONFOV");
-            float kx = tanf(vfx * 0.5f) / tanf(wfx * 0.5f), ky = tanf(vfy * 0.5f) / tanf(wfy * 0.5f);
-            if (!strchr(mode, 'x')) kx = 1.0f;
-            if (!strchr(mode, 'y')) ky = 1.0f;
+            float kx = tanf(wfx * 0.5f) * tanf(vfx * 0.5f), ky = tanf(wfy * 0.5f) * tanf(vfy * 0.5f);
             placed = Transform3D(Basis().scaled(Vector3(kx, ky, 1.0f)), Vector3()) * xf;
         }
     }
@@ -2531,10 +2531,12 @@ static Ref<Shader> sprite_shader(int v)
          "    else if (st_fog.x > 1.5) { f = 1.0; fc = st_fog_color; }\n"
          "    else if (st_fog.x > 0.5) f = 0.0;\n";
     c += (v & SPR_ADD) ? "    col *= 1.0 - f;\n" : (v & SPR_MUL) ? "    col = mix(col, vec3(1.0), f);\n" : "    col = mix(col, fc, f);\n";
+    // additive: d3d.ren blends ONE, ONE (d3d_DrawSprite, the translucent object states) - the alpha (the texture's, the
+    // object's: a marine's shoulder lamp glow is 9/255) isn't used, while Godot's blend_add multiplies by ALPHA
     c += "  }\n"
-         "  ALBEDO = to_linear(col);\n"
-         "  ALPHA = t.a;\n"
-         "}\n";
+         "  ALBEDO = to_linear(col);\n";
+    c += (v & SPR_ADD) ? "  ALPHA = 1.0;\n" : "  ALPHA = t.a;\n";
+    c += "}\n";
     shaders[index] = make_shader("sprite", index, c);
     return shaders[index];
 }

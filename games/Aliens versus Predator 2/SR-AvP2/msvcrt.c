@@ -883,7 +883,7 @@ int32_t CCALL _open_c(const char *filename, int32_t oflag, uint32_t *ap)
     if (oflag & MS_O_TRUNC) flags |= O_TRUNC;
     if (oflag & MS_O_EXCL) flags |= O_EXCL;
 
-    return open(path, flags, 0644);
+    return open(path, flags | O_BINARY, 0644);
 }
 
 int32_t CCALL _close_c(int32_t fd) { return close(fd); }
