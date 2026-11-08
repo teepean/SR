@@ -32,6 +32,10 @@ func canvas_SetTexture_c a0, a1
 func canvas_GetTexelSize_c a0, a1, a2
 func avp2_time_init_c
 funcv avp2_time_get_c *a0
+funcv avp2_camera_get_c *a0
+funcv avp2_camera_set_c *a0
+func avp2_create_client_shell_c *a0
+funcv avp2_get_client_shell_functions_c *a0
 
 ; C calls recompiled code (c2asm-llasm.c: call_game): the arguments are on the emulated stack, eax = the function
 ; (ecx = this for thiscall); the global procedure pushes the return address (llasm's return procedure)
@@ -375,6 +379,43 @@ proc avp2_time_get_asm2c public
 ; time_GetTime (instruction_replacements.sci): the time as a double at [esp+4]
         add tmp0, esp, 4
         call avp2_time_get_c tmp0
+        load tmp1, esp, 4
+        add esp, esp, 4
+        tcall tmp1
+endp
+
+proc avp2_camera_get_asm2c public
+; ILTClient::GetCameraFOV (camera.c)
+        add tmp0, esp, 4
+        call avp2_camera_get_c tmp0
+        load tmp1, esp, 4
+        add esp, esp, 4
+        tcall tmp1
+endp
+
+proc avp2_camera_set_asm2c public
+; ILTClient::SetCameraFOV (camera.c)
+        add tmp0, esp, 4
+        call avp2_camera_set_c tmp0
+        load tmp1, esp, 4
+        add esp, esp, 4
+        tcall tmp1
+endp
+
+proc avp2_create_client_shell_asm2c public
+; cshell CreateClientShell (camera.c)
+        add tmp0, esp, 4
+        call avp2_create_client_shell_c tmp0
+        mov eax, tmp0
+        load tmp1, esp, 4
+        add esp, esp, 4
+        tcall tmp1
+endp
+
+proc avp2_get_client_shell_functions_asm2c public
+; cshell GetClientShellFunctions (camera.c)
+        add tmp0, esp, 4
+        call avp2_get_client_shell_functions_c tmp0
         load tmp1, esp, 4
         add esp, esp, 4
         tcall tmp1

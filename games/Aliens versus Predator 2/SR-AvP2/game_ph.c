@@ -35,6 +35,9 @@ const game_info game = {
     "#rendering_method = forward_plus\n"
     "# frame rate and frame times on screen (1 = on)\n"
     "#show_fps = 0\n"
+    "# the game's resolution (its display menu offers only 4:3 ones), e.g. 1920x1080 for a wide screen: the field\n"
+    "# of view is widened for it (hor_plus = 0: not), the HUD uses the whole screen\n"
+    "#game_resolution = 1920x1080\n"
     "# the window's size (default: the game's resolution x window_scale), e.g. 1280x720\n"
     "#window_size = 1280x720\n"
     "# a window that isn't 4:3 (full screen on a wide screen): wide = the 3D view fills the window's width (Hor+),\n"
@@ -58,7 +61,8 @@ const game_info game = {
     "#godot_project = godot/project.godot\n"
     "# network: the local address to bind to (default all)\n"
     "#net_bind_ip = 0.0.0.0\n",
-    1
+    1,
+    { 0x2a4, 0x2a8 }    // lithtech.exe 0x4095b8: 0x40c2a0, 0x40c2e0
 };
 
 #ifdef __cplusplus

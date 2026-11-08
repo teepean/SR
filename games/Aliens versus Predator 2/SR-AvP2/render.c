@@ -559,6 +559,13 @@ uint32_t CCALL ren_Start3D_c(void) { in_3d = 1; return 1; }
 uint32_t CCALL ren_End3D_c(void) { in_3d = 0; return 1; }
 uint32_t CCALL ren_IsIn3D_c(void) { return in_3d; }
 
+// the game's screen (its render mode), for camera.c
+void ren_screen_size(int *w, int *h)
+{
+    *w = screen_w;
+    *h = screen_h;
+}
+
 int32_t CCALL ren_RenderScene_c(uint8_t *pScene)
 {
     int32_t *rect;

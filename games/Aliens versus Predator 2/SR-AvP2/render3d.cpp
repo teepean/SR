@@ -81,6 +81,7 @@
 
 #include "platform.h"
 #include "config.h"
+#include "camera.h"
 #include "render3d.h"
 #include "game.h"
 #include "asmsyms.h"
@@ -2201,6 +2202,9 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     if (close && g32(model + 0x140) && !((weapon_fov != NULL) && (strcmp(weapon_fov, "0") == 0)))
     {
         float vfx = gf(sd + SD_XFOV), vfy = gf(sd + SD_YFOV);
+        // (with camera.c's Hor+ the game's own FovX: the weapon keeps its 4:3 size on a wide screen)
+        float hp = camera_hor_plus();
+        if ((hp != 1.0f) && (vfx > 0.01f) && (vfx < 3.1f)) vfx = 2.0f * atanf(tanf(vfx * 0.5f) / hp);
         if ((vfx > 0.01f) && (vfx < 3.1f) && (vfy > 0.01f) && (vfy < 3.1f))
         {
             float wfx = cvar("ExtraFOVXOffset", 0) * 0.017453292f + gf(model + 0x144) + vfx;

@@ -535,6 +535,13 @@ def write_llasm(items, ifaces):
     stub('avp2_time_init_asm2c', 'avp2_time_init_c', 0, 0, 'time_Init (instruction_replacements.sci): timeGetTime\'s value')
     stub('avp2_time_get_asm2c', 'avp2_time_get_c', 0, 0, 'time_GetTime (instruction_replacements.sci): the time as a '
          'double at [esp+4]', args_ptr=4)
+    # camera.c's Hor+ (cdecl through function pointers; the C functions get the arguments' address)
+    stub('avp2_camera_get_asm2c', 'avp2_camera_get_c', 0, 0, 'ILTClient::GetCameraFOV (camera.c)', args_ptr=4)
+    stub('avp2_camera_set_asm2c', 'avp2_camera_set_c', 0, 0, 'ILTClient::SetCameraFOV (camera.c)', args_ptr=4)
+    stub('avp2_create_client_shell_asm2c', 'avp2_create_client_shell_c', 0, 0, 'cshell CreateClientShell (camera.c)',
+         args_ptr=4)
+    stub('avp2_get_client_shell_functions_asm2c', 'avp2_get_client_shell_functions_c', 0, 0,
+         'cshell GetClientShellFunctions (camera.c)', args_ptr=4)
     open(os.path.join(d, 'runtime-asm.llasm'), 'w').write(llasm_header + '''include llasm.llinc
 
 ''' + ''.join(decls) + '''

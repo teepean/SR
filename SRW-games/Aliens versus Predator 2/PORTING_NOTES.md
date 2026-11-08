@@ -643,3 +643,18 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   fov = ExtraFOVX/YOffset degrees + the model's offset + the view's FOV (95 x 115 in m1s1) and uses it IN PLACE of the
   view's mFOVScale (1 / tan(view fov / 2)): the weapon is scaled by tan(weapon / 2) x tan(view / 2) - x 1.09, y 1.27.
   The knife's blade angle then matches the Wine reference (27 degrees; the ratio tan / tan made it 14, none 31).
+
+### 2026-11-08 — wide-screen step 2: wide game resolutions with Hor+ in the engine
+- game_resolution = 1920x1080 (SR-AvP2.cfg / AVP2_GAME_RESOLUTION) writes the render mode into autoexec.cfg
+  (SCREENWIDTH/SCREENHEIGHT, GameScreenWidth/GameScreenHeight) before the engine reads it - the game's display menu
+  offers only 4:3 modes, but the engine and the game run in any (the HUD is in native pixels, anchored to the edges;
+  the menus are centred). Without more the 4:3 fields of view are spread over the wide screen (stretched).
+- camera.c: Hor+ where the engine keeps the FOV, the camera object, so the scene, Get3DCameraPt (target brackets,
+  the vision overlays' size) and culling all agree: ILTClient's SetCameraFOV stores FovX with tan(FovX / 2) x the
+  screen's aspect / (4/3) (FovY as it is), GetCameraFOV returns the game's own value (its zoom reads and re-sets the
+  FOV: no compounding). ILTClient is a function table the engine fills (lithtech.exe 0x4089b0, PH 0x409xxx; the
+  entries at +0x2a4/+0x2a8 hold the recompiled functions); cshell gets it in CreateClientShell, which the engine
+  takes from cshell's GetClientShellFunctions - our GetProcAddress returns a wrapper of that, which hands out a
+  wrapper of CreateClientShell, which changes the two entries. Bridges: x64/camera-asm.asm, the llasm ones from
+  gen_imports.py (runtime-asm.llasm), asmsyms.h for blob mode. m1s1 at 1600x900: FovX 90 -> 106.3 degrees.
+- The weapon's projection (render3d) takes the game's own FovX, so the weapon keeps its 4:3 look on a wide screen.

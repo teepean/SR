@@ -123,6 +123,78 @@ static void avp2_path(const char *name, char *path, size_t size)
     for (p = path; *p; p++) if (*p == '/') *(char *)p = '\\';
 }
 
+// SR-AvP2.cfg game_resolution = WxH (e.g. 1920x1080: a wide screen; the game's display menu offers only 4:3 modes):
+// the render mode in autoexec.cfg (SCREENWIDTH/SCREENHEIGHT and the game's GameScreenWidth/GameScreenHeight), set
+// before the engine reads it. camera.c widens the field of view for it (Hor+).
+static void apply_game_resolution(void)
+{
+    static const char *const keys[4] = { "SCREENWIDTH", "SCREENHEIGHT", "GameScreenWidth", "GameScreenHeight" };
+    const char *res = config_get("game_resolution");
+    char host[1024], values[4][16], *text = NULL, *out;
+    int w, h, i, found[4] = { 0, 0, 0, 0 };
+    long len = 0;
+    size_t pos = 0, cap;
+    FILE *f;
+
+    if ((res == NULL) || (sscanf(res, "%dx%d", &w, &h) != 2) || (w < 320) || (h < 200) || (w > 16384) || (h > 16384)) return;
+    snprintf(values[0], sizeof(values[0]), "%d", w);
+    snprintf(values[1], sizeof(values[1]), "%d", h);
+    snprintf(values[2], sizeof(values[2]), "%d", w);
+    snprintf(values[3], sizeof(values[3]), "%d", h);
+
+    if (!vfs_resolve("autoexec.cfg", host, sizeof(host))) snprintf(host, sizeof(host), "autoexec.cfg");
+    f = fopen(host, "rb");
+    if (f != NULL)
+    {
+        fseek(f, 0, SEEK_END);
+        len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        text = (char *) malloc(len + 1);
+        if ((text == NULL) || (fread(text, 1, len, f) != (size_t) len)) len = 0;
+        if (text != NULL) text[len] = 0;
+        fclose(f);
+    }
+    cap = (size_t) len + 512;
+    out = (char *) malloc(cap);
+    if (out == NULL) { free(text); return; }
+
+    // the lines ("KEY" "value"), the four replaced
+    for (const char *p = (text != NULL) ? text : ""; *p; )
+    {
+        const char *e = strchr(p, '\n');
+        size_t n = (e != NULL) ? (size_t)(e - p + 1) : strlen(p);
+        int replaced = 0;
+        for (i = 0; i < 4; i++)
+        {
+            size_t kl = strlen(keys[i]);
+            if ((n > kl + 2) && (p[0] == '"') && (strncasecmp(p + 1, keys[i], kl) == 0) && (p[kl + 1] == '"'))
+            {
+                pos += (size_t) snprintf(out + pos, cap - pos, "\"%s\" \"%s\"\r\n", keys[i], values[i]);
+                found[i] = replaced = 1;
+                break;
+            }
+        }
+        if (!replaced)
+        {
+            memcpy(out + pos, p, n);
+            pos += n;
+        }
+        p += n;
+    }
+    for (i = 0; i < 4; i++)
+        if (!found[i]) pos += (size_t) snprintf(out + pos, cap - pos, "\"%s\" \"%s\"\r\n", keys[i], values[i]);
+
+    f = fopen(host, "wb");
+    if (f != NULL)
+    {
+        fwrite(out, 1, pos, f);
+        fclose(f);
+        if (winapi_debug) eprintf("game resolution %dx%d (autoexec.cfg)\n", w, h);
+    }
+    free(out);
+    free(text);
+}
+
 static void prepare_command_line(int argc, char *argv[])
 {
     char path[1024];
@@ -256,6 +328,7 @@ int main(int argc, char *argv[])
     winapi_user32_init();
     winapi_gdi32_init();
 
+    apply_game_resolution();
     prepare_command_line(argc, argv);
     winapi_set_command_line(command_line);
     register_archives();

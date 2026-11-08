@@ -10,6 +10,8 @@
 #if !defined(_GAME_H_INCLUDED_)
 #define _GAME_H_INCLUDED_
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -22,6 +24,7 @@ typedef struct {
     const char *const *rez;
     const char *default_config;         // SR-AvP2.cfg written when there is none
     int primal_hunt;                    // Primal Hunt's engine: some structures differ (render3d.cpp)
+    uint32_t camera_fov[2];             // ILTClient's GetCameraFOV / SetCameraFOV entries (offsets; camera.c: Hor+)
 } game_info;
 
 extern const game_info game;

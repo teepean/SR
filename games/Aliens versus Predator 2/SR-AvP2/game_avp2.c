@@ -28,6 +28,9 @@ static const char *const avp2_rez[] = { "AVP2.REZ", "SOUNDS.REZ", "ALIEN.REZ", "
     "#rendering_method = forward_plus\n" \
     "# frame rate and frame times on screen (1 = on)\n" \
     "#show_fps = 0\n" \
+    "# the game's resolution (its display menu offers only 4:3 ones), e.g. 1920x1080 for a wide screen: the field\n" \
+    "# of view is widened for it (hor_plus = 0: not), the HUD uses the whole screen\n" \
+    "#game_resolution = 1920x1080\n" \
     "# the window's size (default: the game's resolution x window_scale), e.g. 1280x720\n" \
     "#window_size = 1280x720\n" \
     "# a window that isn't 4:3 (full screen on a wide screen): wide = the 3D view fills the window's width (Hor+),\n" \
@@ -56,7 +59,8 @@ const game_info game = {
     "Aliens versus Predator 2",
     avp2_rez,
     CONFIG_COMMON,
-    0
+    0,
+    { 0x2a4, 0x2a8 }    // lithtech.exe 0x4089b0 fills them: 0x40bae0, 0x40bb20
 };
 
 #ifdef __cplusplus

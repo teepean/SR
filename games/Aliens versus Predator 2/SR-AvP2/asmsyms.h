@@ -20,7 +20,8 @@
 #include <stdint.h>
 
 #define ASM_SYMBOLS(X) \
-    X(BinkCheckCursor_asm2c) X(BinkClose_asm2c) X(BinkCopyToBuffer_asm2c) X(BinkDoFrame_asm2c) \
+    X(avp2_camera_get_asm2c) X(avp2_camera_set_asm2c) X(avp2_create_client_shell_asm2c) \
+    X(avp2_get_client_shell_functions_asm2c) X(BinkCheckCursor_asm2c) X(BinkClose_asm2c) X(BinkCopyToBuffer_asm2c) X(BinkDoFrame_asm2c) \
     X(BinkIsSoftwareCursor_asm2c) X(BinkNextFrame_asm2c) X(BinkOpen_asm2c) X(BinkOpenDirectSound_asm2c) \
     X(BinkOpenMiles_asm2c) X(BinkRestoreCursor_asm2c) X(BinkSetSoundSystem_asm2c) X(BinkSetSoundTrack_asm2c) \
     X(BinkWait_asm2c) X(canvas_DrawPrimitive_asm2c) X(canvas_GetState_asm2c) X(canvas_GetTexelSize_asm2c) \
@@ -72,6 +73,10 @@ extern const uintptr_t blob_addr_c_call_asm_n, blob_addr_c_call_asm_this;
 #define BinkCopyToBuffer_asm2c ((char *)blob_addr[ASM_BinkCopyToBuffer_asm2c])
 #define BinkDoFrame_asm2c ((char *)blob_addr[ASM_BinkDoFrame_asm2c])
 #define BinkIsSoftwareCursor_asm2c ((char *)blob_addr[ASM_BinkIsSoftwareCursor_asm2c])
+#define avp2_camera_get_asm2c ((char *)blob_addr[ASM_avp2_camera_get_asm2c])
+#define avp2_camera_set_asm2c ((char *)blob_addr[ASM_avp2_camera_set_asm2c])
+#define avp2_create_client_shell_asm2c ((char *)blob_addr[ASM_avp2_create_client_shell_asm2c])
+#define avp2_get_client_shell_functions_asm2c ((char *)blob_addr[ASM_avp2_get_client_shell_functions_asm2c])
 #define BinkNextFrame_asm2c ((char *)blob_addr[ASM_BinkNextFrame_asm2c])
 #define BinkOpen_asm2c ((char *)blob_addr[ASM_BinkOpen_asm2c])
 #define BinkOpenDirectSound_asm2c ((char *)blob_addr[ASM_BinkOpenDirectSound_asm2c])

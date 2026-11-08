@@ -22,6 +22,7 @@
 #include "ptr32.h"
 #include "Game-Memory.h"
 #include "platform.h"
+#include "camera.h"
 #include "config.h"
 #include "vfs.h"
 #include "winapi.h"
@@ -1534,7 +1535,7 @@ void * CCALL GetProcAddress_c(module_info *hModule, const char *lpProcName)
 
     for (e = hModule->exports; e->name != NULL; e++)
     {
-        if (0 == strcmp(e->name, lpProcName)) return e->address;
+        if (0 == strcmp(e->name, lpProcName)) return camera_hook_export(lpProcName, e->address);
     }
     if (winapi_debug) eprintf("GetProcAddress: %s!%s not found\n", hModule->name, lpProcName);
     return NULL;
