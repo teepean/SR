@@ -213,6 +213,7 @@ struct wm_instance
 {
     MeshInstance3D *mi = NULL;
     uint32_t bsp = 0;           // its BSP (the mesh it has)
+    int chromakey = -1;         // the surface overrides are for FLAG2_CHROMAKEY (1) or not (0)
     uint32_t frame = 0;         // the last frame it was drawn in
     uint8_t alpha = 255;
     int shown = 0;
@@ -311,6 +312,7 @@ struct godot_scene
 static godot_scene *gs;
 
 static void fog_init(void);
+
 static void preload_shaders(void);
 static void update_viewport_mode(void);
 
@@ -561,7 +563,26 @@ enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
 // the fog (global shader parameters, set each frame from the console variables FogEnable, FogNearZ, FogFarZ,
 // FogR/G/B, SkyFogNearZ, SkyFogFarZ)
 #define STATE_UNIFORMS "uniform float st_colorop = 0.0;\nuniform vec4 st_fog = vec4(0.0);\nuniform vec3 st_fog_color = vec3(0.0);\nuniform float st_blend = 0.0;\n"
-#define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n"
+// (vertical fog: d3d.ren's d3d_CalcVerticalFogAlpha with the VFog console variables, by pixel - lt_vfog: on, VFogMinY,
+// VFogMaxY, VFogMinYVal; lt_vfog2: VFogMaxYVal, VFogMax, 255 / VFogDensity. The density is VFogMinYVal below VFogMinY,
+// VFogMaxYVal above VFogMaxY, linear between; integrated along the ray from the eye, a crossing point at VFogMaxY when
+// they are in different zones (as the original, also for the lower zone); the result 0-255 clamped to VFogMax)
+#define VFOG_GLSL "global uniform vec4 lt_vfog;\nglobal uniform vec4 lt_vfog2;\n" \
+    "float lt_vfog_density(float y) { return (y <= lt_vfog.y) ? lt_vfog.w : ((y >= lt_vfog.z) ? lt_vfog2.x : (y - lt_vfog.y) * (lt_vfog2.x - lt_vfog.w) / (lt_vfog.z - lt_vfog.y) + lt_vfog.w); }\n" \
+    "int lt_vfog_zone(float y) { return (y >= lt_vfog.z) ? 1 : ((y <= lt_vfog.y) ? 0 : 2); }\n" \
+    "float lt_vfog_amount(vec3 eye, vec3 p) {\n" \
+    "  int ze = lt_vfog_zone(eye.y), zp = lt_vfog_zone(p.y);\n" \
+    "  float s = lt_vfog2.z, f;\n" \
+    "  if (ze == zp) f = s * distance(eye, p) * ((ze == 2) ? (lt_vfog_density(p.y) + lt_vfog_density(eye.y)) : (lt_vfog_density(eye.y) * 2.0));\n" \
+    "  else {\n" \
+    "    float t = (lt_vfog.z - eye.y) / (p.y - eye.y);\n" \
+    "    vec3 c = vec3((p.x - eye.x) * t + eye.x, lt_vfog.z, (p.z - eye.z) * t + eye.z);\n" \
+    "    if (ze == 1) f = s * distance(eye, c) * (lt_vfog2.x * 2.0) + s * distance(c, p) * (lt_vfog_density(p.y) + lt_vfog2.x);\n" \
+    "    else f = s * distance(eye, c) * (lt_vfog_density(eye.y) + lt_vfog2.x) + s * distance(c, p) * (lt_vfog2.x * 2.0);\n" \
+    "  }\n" \
+    "  return clamp(f, 0.0, lt_vfog2.y) / 255.0;\n" \
+    "}\n"
+#define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n" VFOG_GLSL
 // the dynamic lights that light the world: a 32 x 2 float texture (position (Godot), radius; colour 0-255), count
 #define DL_MAX 32
 #define DL_UNIFORMS "global uniform sampler2D lt_lights;\nglobal uniform vec4 lt_light_count;\nglobal uniform sampler2D lt_anims;\n"
@@ -582,6 +603,8 @@ static void fog_init(void)
     rs->global_shader_parameter_add("lt_fog_color", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(1, 1, 1, 1));
     rs->global_shader_parameter_add("lt_sky_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 2000, 0, 0));
     rs->global_shader_parameter_add("lt_misc", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 0, 0));     // LMFullBright
+    rs->global_shader_parameter_add("lt_vfog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 1300, 0.5f));  // vertical fog
+    rs->global_shader_parameter_add("lt_vfog2", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 180, 255.0f / 1800.0f, 0));
     rs->global_shader_parameter_add("lt_scales", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(2, 2, 0, 0));    // light scales
     dl_image = Image::create_empty(DL_MAX, 2, false, Image::FORMAT_RGBAF);
     dl_texture = ImageTexture::create_from_image(dl_image);
@@ -601,6 +624,18 @@ static void fog_update(void)
     rs->global_shader_parameter_set("lt_fog", Vector4(on ? 1.0f : 0.0f, cvar("FogNearZ", 0), cvar("FogFarZ", 2000), 0));
     rs->global_shader_parameter_set("lt_fog_color", Vector4(cvar("FogR", 255) / 255.0f, cvar("FogG", 255) / 255.0f, cvar("FogB", 255) / 255.0f, 1));
     rs->global_shader_parameter_set("lt_sky_fog", Vector4(cvar("SkyFogNearZ", 0), cvar("SkyFogFarZ", 2000), 0, 0));
+    // vertical fog (VFog: instead of the distance fog; the defaults are d3d.ren's)
+    float vmin = cvar("VFogMinY", 0), vmax = cvar("VFogMaxY", 1300), vd = cvar("VFogDensity", 1800);
+    int vfog = (cvar("VFog", 0) != 0.0f) && (vmax > vmin) && (vd > 0.0f);
+    rs->global_shader_parameter_set("lt_vfog", Vector4(vfog ? 1.0f : 0.0f, vmin, vmax, cvar("VFogMinYVal", 0.5f)));
+    rs->global_shader_parameter_set("lt_vfog2", Vector4(cvar("VFogMaxYVal", 0), cvar("VFogMax", 180), (vd > 0.0f) ? 255.0f / vd : 0.0f, 0));
+    static int logged_vfog = -1;
+    if (winapi_debug && (vfog != logged_vfog))
+    {
+        logged_vfog = vfog;
+        eprintf("render3d: vertical fog %s (y %.0f - %.0f, density %.2f - %.2f, max %.0f, scale %.0f)\n", vfog ? "on" : "off", vmin, vmax,
+                cvar("VFogMinYVal", 0.5f), cvar("VFogMaxYVal", 0), cvar("VFogMax", 180), vd);
+    }
     // the light scales (shader_code): lightmaps 2x, vertex colours 2x with Saturate
     float lm = getenv("AVP2_R3D_LMSCALE") ? (float)atof(getenv("AVP2_R3D_LMSCALE")) : 2.0f;
     float vc = getenv("AVP2_R3D_VCSCALE") ? (float)atof(getenv("AVP2_R3D_VCSCALE")) : ((cvar("Saturate", 0) != 0.0f) ? 2.0f : 1.0f);
@@ -713,9 +748,11 @@ static const char *shader_code(int kind)
             "uniform float env_scale = 1.0;\n"
             "global uniform vec4 lt_scales;\n" FOG_UNIFORMS DL_UNIFORMS STATE_UNIFORMS
             "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
-            "varying vec4 v_anim;\nvarying vec4 v_lm;\nvarying vec3 v_c0;\nvarying vec3 v_c1;\n";
+            "varying vec4 v_anim;\nvarying vec4 v_lm;\nvarying vec3 v_c0;\nvarying vec3 v_c1;\nvarying float v_vfog;\n";
         c += "void vertex() {\n";
         if (!(kind & MAT_SKY)) c += "  v_anim = CUSTOM0;\n  v_lm = CUSTOM1;\n  v_c0 = CUSTOM2.rgb;\n  v_c1 = CUSTOM3.rgb;\n";
+        // the vertical fog by vertex, as d3d.ren (its fog is the vertices' specular alpha)
+        if (!(kind & MAT_SKY)) c += "  v_vfog = 0.0;\n  if (lt_vfog.x > 0.5) v_vfog = lt_vfog_amount(CAMERA_POSITION_WORLD, (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz);\n";
         // reverse z (near 1, far 0): the really close objects get [0.9, 1]
         if (kind & MAT_REALLYCLOSE)
             c += "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
@@ -809,7 +846,7 @@ static const char *shader_code(int kind)
         // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
         // surfaces fade to black)
         c += (kind & MAT_SKY) ? "  float f = lt_fog.x * clamp((-VERTEX.z - lt_sky_fog.x) / max(lt_sky_fog.y - lt_sky_fog.x, 0.001), 0.0, 1.0);\n"
-                              : "  float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n";
+                              : "  float f = lt_fog.x * ((lt_vfog.x > 0.5) ? v_vfog : clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0));\n";
         // the texture's own fog: none, all of its colour, or its range (FOGSTART/FOGEND, by depth)
         // (all of the colour: the texture pass is that colour; a lightmap pass still multiplies it)
         c += "  vec3 fc = lt_fog_color.rgb;\n"
@@ -1517,10 +1554,22 @@ struct batch
 // polygons grouped by (texture, material kind, lightmap page)
 typedef std::map<uint64_t, batch> batch_map;
 
+#define FLAG2_CHROMAKEY (1 << 1)
+
+// AVP2_R3D_WORLDALPHA=1: the world's (and world models') textures with alpha always alpha tested
+static int world_alpha_always(void)
+{
+    static int v = -1;
+    if (v < 0) v = (getenv("AVP2_R3D_WORLDALPHA") != NULL) && (atoi(getenv("AVP2_R3D_WORLDALPHA")) != 0);
+    return v;
+}
+
 struct build_stats
 {
     uint32_t polies, tris, lightmapped;
     uint32_t sprite_polies = 0;     // SURF_SPRITEANIMATE
+    uint32_t alpha_main = 0, alpha_wm = 0;      // alpha tested (the texture has alpha): the main world's, world models'
+    int main_world = 0;             // add_bsp: the main world's (or terrain's) BSP
 };
 
 static void clear_world(void)
@@ -1592,6 +1641,22 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
         if (sflags & SURF_ADDITIVE) kind = MAT_ADD;
         else if (sflags & SURF_TRANSPARENT) kind = MAT_BLEND;
         else if (get_texture(tex).has_alpha) kind = MAT_ALPHA_TEST;
+        if (kind == MAT_ALPHA_TEST) { if (st.main_world) st.alpha_main++; else st.alpha_wm++; }
+        if ((kind == MAT_ALPHA_TEST) && st.main_world && getenv("AVP2_R3D_DUMPALPHA"))
+        {
+            // debugging: the main world's alpha tested textures (their command strings), once each
+            static std::map<uint32_t, int> seen;
+            if (seen[tex]++ == 0)
+            {
+                uint32_t cl = g32(tex + 0x38);
+                eprintf("render3d: main world alpha texture %08x cmd \"%.80s\" surface flags %08x\n", tex,
+                        ((cl > 0x10000) && (cl < 0x80000000u)) ? (const char *)G2H(cl) : "", sflags);
+            }
+        }
+        // d3d.ren draws the main world without an alpha test (only the chroma key world models and models are drawn
+        // in its alpha tested pass): opaque, also where the texture is a cut-out (ColorKey/AlphaRef). AVP2_R3D_WORLDALPHA
+        // = 1: alpha tested anyway (the earlier behaviour), 0: as d3d.ren (default)
+        if ((kind == MAT_ALPHA_TEST) && st.main_world && !world_alpha_always()) kind = MAT_OPAQUE;
         texture_entry &te = get_texture(tex);
 
         // the lightmap
@@ -1740,7 +1805,8 @@ static void build_world(world_context *ctx)
             eprintf("render3d: bsp %u %08x \"%.64s\" wif %08x polies %u translation %.1f %.1f %.1f\n", i, bsp, (const char *)G2H(bsp + 4), wif, g32(bsp + WB_NPOLIES),
                     gf(bsp + 0xe8), gf(bsp + 0xec), gf(bsp + 0xf0));
         if (wif & WIF_VISBSP) continue;
-        if (wif & (WIF_MAINWORLD | WIF_TERRAIN)) add_bsp(mw, bsp, grid, batches, st);
+        st.main_world = (wif & (WIF_MAINWORLD | WIF_TERRAIN)) != 0;
+        if (st.main_world) add_bsp(mw, bsp, grid, batches, st);
         else add_bsp(mw, bsp, grid, bsp_batches[bsp], st);
     }
     upload_lm_pages();
@@ -1760,8 +1826,8 @@ static void build_world(world_context *ctx)
         for (auto &b : kv.second) keys.push_back(b.first);    // the surfaces' materials, in their order
     }
     ctx->built = 1;
-    if (winapi_debug) eprintf("render3d: built %u polies (%u lightmapped, %zu lightmap pages, %u sprite-animated), %u triangles, %zu static batches, %zu world model meshes, %zu textures\n",
-                              st.polies, st.lightmapped, wm->pages.size(), st.sprite_polies, st.tris, batches.size(), gs->bsp_meshes.size(), gs->textures.size());
+    if (winapi_debug) eprintf("render3d: built %u polies (%u lightmapped, %zu lightmap pages, %u sprite-animated, alpha tested: %u main world, %u world models), %u triangles, %zu static batches, %zu world model meshes, %zu textures\n",
+                              st.polies, st.lightmapped, wm->pages.size(), st.sprite_polies, st.alpha_main, st.alpha_wm, st.tris, batches.size(), gs->bsp_meshes.size(), gs->textures.size());
 }
 
 // LithTech's LTMatrix (rows, translation in the 4th column) -> Godot: S M S with S = diag(1, 1, -1)
@@ -1798,6 +1864,25 @@ static void update_world_models(uint32_t mw)
             {
                 wi.mi->set_mesh(mit->second);
                 wi.bsp = bsp;
+                wi.chromakey = -1;
+            }
+            // d3d.ren alpha tests a world model only with FLAG2_CHROMAKEY (d3d_DrawChromaKeyWorldModels); the others
+            // are drawn opaque: their alpha tested surfaces (the BSP's batches: the texture has alpha) get the opaque
+            // material instead
+            int chroma = (flags2 & FLAG2_CHROMAKEY) ? 1 : 0;
+            if ((chroma != wi.chromakey) && !world_alpha_always())
+            {
+                std::vector<uint64_t> &keys = gs->bsp_keys[bsp];
+                for (size_t k = 0; k < keys.size(); k++)
+                {
+                    uint64_t key = keys[k];
+                    int kind = (int)(key & 0xf);
+                    if (((kind & 3) != MAT_ALPHA_TEST) || (key & SPRITE_KEY)) continue;
+                    Ref<Material> m;
+                    if (!chroma) m = get_material(key_texture(key), (kind & ~3) | MAT_OPAQUE, (int)((key >> 4) & 0xfff) - 1);
+                    wi.mi->set_surface_override_material((int)k, m);
+                }
+                wi.chromakey = chroma;
             }
             wi.mi->set_transform(lt_matrix(o + WM_TRANSFORM));
             // the object's alpha fades the whole model (translucent world models)
@@ -1848,7 +1933,6 @@ static void update_world_models(uint32_t mw)
 #define FLAG_ONLYLIGHTWORLD (1 << 5)
 #define FLAG_REALLYCLOSE (1 << 6)
 #define FLAG_NOLIGHT (1 << 9)
-#define FLAG2_CHROMAKEY (1 << 1)
 #define FLAG2_ADDITIVE (1 << 2)
 #define FLAG2_DYNAMICDIRLIGHT (1 << 7)
 
@@ -2563,6 +2647,7 @@ static Ref<Shader> sprite_shader(int v)
     // fog: additive fades to black, multiplied to white (d3d_DrawSprite's fog colours)
     c += "  if (!" + flag(SPR_NOFOG) + ") {\n"
          "    float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n"
+         "    if (lt_vfog.x > 0.5) f = lt_fog.x * lt_vfog_amount(CAMERA_POSITION_WORLD, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);\n"
          "    vec3 fc = lt_fog_color.rgb;\n"
          "    if (st_fog.x > 2.5) { f = clamp((-VERTEX.z - st_fog.y) / max(st_fog.z - st_fog.y, 0.001), 0.0, 1.0); fc = st_fog_color; }\n"
          "    else if (st_fog.x > 1.5) { f = 1.0; fc = st_fog_color; }\n"

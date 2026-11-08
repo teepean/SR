@@ -668,3 +668,18 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   skin has one are drawn with that kind; INVSRCCOLOR as mix blending with alpha = src's luminance and colour
   src (1 - src) / alpha (Godot's blending can't weigh per channel). The skins' blend is in the model's rebuild key.
   Not compared with a reference (the Wine reference can't be steered into a vision mode).
+
+### 2026-11-08 — the world's alpha as d3d.ren, vertical fog
+- d3d.ren alpha tests only in its chroma key pass (d3d_BeginChromaKeyPolyPass: ALPHATESTENABLE / COLORKEYENABLE, off
+  again at its end): the FLAG2_CHROMAKEY world models and models. The main world is drawn without it - opaque, also
+  where a texture is a cut-out ("ColorKey 0 0 0;AlphaRef 128;": 8 such textures in m1s1's main world) - and world
+  models without the flag too. We alpha tested every texture with alpha (m1s1: 418 main world polies, a few hundred
+  to 8128 per level). Now: the main world opaque; world model instances without FLAG2_CHROMAKEY get the opaque
+  material for their alpha tested surfaces (set_surface_override_material; the BSP's mesh is shared).
+  AVP2_R3D_WORLDALPHA=1: the old behaviour; AVP2_R3D_DUMPALPHA=1 lists the main world's alpha textures. Not compared
+  with a reference (no level shows one at its start, where the Wine reference can look).
+- Vertical fog (VFog, VFogMinY/MaxY, VFogMinYVal/MaxYVal, VFogMax, VFogDensity): d3d_CalcVerticalFogAlpha ported to
+  GLSL, by vertex as d3d.ren (its fog is the vertices' specular alpha), instead of the distance fog when VFog is on.
+  m2s1 turns it on (y -2000 .. -1500, density 1). Sprites: by pixel.
+- GPU times vary with other GPU users (a vLLM engine shares this GPU): a1s1's cutscene measured 1 ms and 5.6 ms
+  with the same code; m1s1 0.2-1 ms.
