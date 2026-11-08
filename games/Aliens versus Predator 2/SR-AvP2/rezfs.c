@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <sys/stat.h>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -126,9 +127,8 @@ void rezfs_add(const char *winpath)
     a.winpath = winpath;
     vfs_resolve(winpath, host, sizeof(host));
     a.hostpath = host;
-    FILE *f = fopen(host, "rb");
-    a.directory = (f == NULL);          // custom: a directory (or nothing)
-    if (f != NULL) fclose(f);
+    struct stat st;
+    a.directory = (stat(host, &st) != 0) || S_ISDIR(st.st_mode);     // custom: a directory (or nothing)
     a.loaded = false;
     archives.push_back(a);
 }

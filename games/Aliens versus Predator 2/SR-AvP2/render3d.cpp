@@ -29,14 +29,15 @@
  *  (none, all of a colour, a range) and colour op (texture only, add signed) as material uniforms.
  *  Line systems (tracers, beams): lines in the object's space. Poly grids (height grids with a colour table).
  *  Canvases: the game's draw functions get an ILTCustomDraw whose methods are native (x64/canvas-asm.asm).
- *  To do: the state changes' blend modes, multi-frame light
- *  animations, shadow-map light animations,
- *  vertical fog, detail and environment textures, model LODs and static lights for models, sprite-animated
- *  surfaces (SURF_SPRITEANIMATE).
+ *  Detail textures and environment maps on world surfaces (d3d.ren's texel sizes: 2^UIMipmapOffset / mip 0),
+ *  sprite-animated surfaces (SURF_SPRITEANIMATE).
+ *  To do: the state changes' blend modes, multi-frame light animations, shadow-map light animations,
+ *  vertical fog, model environment maps, model LODs and static lights for models.
  *
  *  Debugging: AVP2_R3D_FULLBRIGHT=1 (textures only), AVP2_R3D_LMSCALE / AVP2_R3D_VCSCALE (light scales),
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
- *  AVP2_DEBUG=2 (the objects, once), AVP2_R3D_DUMPSTATES=1 (the textures' state changes).
+ *  AVP2_DEBUG=2 (the objects, once), AVP2_R3D_DUMPSTATES=1 (the textures' state changes), AVP2_R3D_DUMPDETAIL=1
+ *  (texture headers, detail / environment map links), AVP2_R3D_NOLINKS=1|2|3 (no links / no env maps / no detail).
  *
  */
 
@@ -135,10 +136,18 @@ static inline Vector3 lt_pos(uint32_t a) { return Vector3(gf(a), gf(a + 4), -gf(
 #define SURF_BRIGHT (1 << 5)
 #define SURF_LIGHTMAP (1 << 7)
 #define SURF_ADDITIVE (1 << 19)
+#define SURF_SPRITEANIMATE (1 << 14)    // the engine changes the surface's texture to its sprite's current frame
 // TextureData
 #define TD_BASEWIDTH 0x10           // m_Header.m_BaseWidth, m_BaseHeight
 #define TD_BPP 0x22                 // m_Header.m_Extra[2]
 #define TD_MIP0 0xcc                // TextureMipData: width, height, data, pitch
+#define TD_UIMIPOFFSET 0x24         // m_Header.m_Extra[4]
+#define TD_DETAILSCALE 0x26         // m_Header.m_Extra[6..9]
+#define TD_DETAILANGLE 0x2a         // m_Header.m_Extra[10..11]
+// SharedTexture: the texture the engine links to it (r_LoadSystemTexture, from the DTX command string): a detail
+// texture (type 0), an environment map (1) or an environment map by the texture's alpha (2)
+#define ST_LINKED 0x28
+#define ST_LINKTYPE 0x2c
 // SceneDesc
 #define SD_RECT 0xbc
 #define SD_XFOV 0xcc
@@ -175,7 +184,11 @@ struct texture_entry
 {
     Ref<ImageTexture> texture;  // null: none (missing or unsupported)
     int has_alpha;
-    float inv_w, inv_h;         // world UVs are in texels of the DTX's base size
+    float inv_w, inv_h;         // 1 / the DTX's base size (sprite and poly grid sizes)
+    float uv_w, uv_h;           // d3d.ren's texel size (RTexture +4/+8): 2^UIMipmapOffset / mip 0's size - world,
+                                // world model and sky UVs and detail coordinates are in these texels
+    float detail_scale = 1.0f;  // the DTX header's detail texture scale and angle (radians)
+    float detail_angle = 0.0f;
     uint32_t state_ptr = 0;     // the StateChange* the materials have
     texture_state state = { 0, 0, { 0, 0, 0 }, 0, 0 };
     std::vector<Ref<ShaderMaterial>> materials;     // the materials with this texture (their state uniforms follow)
@@ -335,7 +348,7 @@ static texture_entry make_texture(uint32_t shared)
 {
     texture_entry e;
     e.has_alpha = 0;
-    e.inv_w = e.inv_h = 1.0f / 64.0f;
+    e.inv_w = e.inv_h = e.uv_w = e.uv_h = 1.0f / 64.0f;
     if ((shared == 0) || (render_struct == NULL)) return e;
 
     uint32_t td = call_game(*(uint32_t *)(render_struct + RS_GETTEXTURE), 1, &shared);
@@ -344,11 +357,23 @@ static texture_entry make_texture(uint32_t shared)
     uint32_t base_w = g16(td + TD_BASEWIDTH), base_h = g16(td + TD_BASEWIDTH + 2);
     if (base_w) e.inv_w = 1.0f / (float)base_w;
     if (base_h) e.inv_h = 1.0f / (float)base_h;
+    // DtxHeader::GetDetailTextureScale (m_Extra[6..9] + 1) and GetDetailTextureAngle (m_Extra[10..11], degrees)
+    float dscale;
+    memcpy(&dscale, (const void *)(uintptr_t)(td + TD_DETAILSCALE), 4);
+    if (std::isfinite(dscale) && (dscale > -1.0f) && (dscale < 1000.0f)) e.detail_scale = dscale + 1.0f;
+    e.detail_angle = (float)(int16_t)g16(td + TD_DETAILANGLE) * 3.14159265f / 180.0f;
     int bpp = g8(td + TD_BPP);
     if (bpp == 0) bpp = BPP_32;     // DtxHeader::GetBPPIdent
     uint32_t w = g32(td + TD_MIP0), h = g32(td + TD_MIP0 + 4), data = g32(td + TD_MIP0 + 8);
     int32_t pitch = (int32_t)g32(td + TD_MIP0 + 12);
     if ((w == 0) || (h == 0) || (w > 4096) || (h > 4096) || (data == 0)) return e;
+    // DtxHeader::GetUIMipmapScale (m_Extra[4]: a 512 texture can be mapped as a 256 or a 128 one)
+    uint32_t ui_offset = g8(td + TD_UIMIPOFFSET);
+    float ui_scale = (ui_offset < 8) ? (float)(1u << ui_offset) : 1.0f;
+    e.uv_w = ui_scale / (float)w;
+    e.uv_h = ui_scale / (float)h;
+    if (getenv("AVP2_R3D_DUMPDETAIL"))
+        eprintf("render3d: texture %08x: base %ux%u mip0 %ux%u ui mip offset %u scale %.2f angle %d cmd \"%.60s\"\n", shared, base_w, base_h, w, h, g8(td + 0x24), e.detail_scale, (int)(int16_t)g16(td + TD_DETAILANGLE), (const char *)(uintptr_t)(td + 0x2c));
 
     Ref<Image> img;
     PackedByteArray px;
@@ -534,15 +559,23 @@ static const char *shader_code(int kind)
         std::string modes = "unshaded, cull_disabled";
         if (blend == MAT_ADD) modes += ", blend_add";
         if (kind & MAT_SKY) modes += ", depth_draw_never";
-        // D3D's arithmetic: texture * light in the stored (sRGB) values, the lightmap stage 2x (MODULATE2X, as
-        // d3d.ren uses when the card has it), the vertex colour 1x; the result is converted for Godot (linear)
+        // D3D's arithmetic: texture * light in the stored (sRGB) values, the lightmap 2x (MODULATE2X, or the
+        // multipass blend below); the vertex colour 2x with the Saturate console variable (autoexec.cfg has 1):
+        // d3d.ren draws the light (lightmap or gouraud colour) first and the texture over it with SRCBLEND
+        // DESTCOLOR + DESTBLEND SRCCOLOR = 2 x texture x light (ZERO + SRCCOLOR = 1x without Saturate). m1s1's
+        // vertex lit ground matches the Wine reference with 2x. The result is converted for Godot (linear).
         char scales[160];
+        float vc_default = (cvar("Saturate", 0) != 0.0f) ? 2.0f : 1.0f;
         snprintf(scales, sizeof(scales), "const float LM_SCALE = %.3f;\nconst float VC_SCALE = %.3f;\n",
-                 getenv("AVP2_R3D_LMSCALE") ? atof(getenv("AVP2_R3D_LMSCALE")) : 2.0, getenv("AVP2_R3D_VCSCALE") ? atof(getenv("AVP2_R3D_VCSCALE")) : 1.0);
+                 getenv("AVP2_R3D_LMSCALE") ? atof(getenv("AVP2_R3D_LMSCALE")) : 2.0, getenv("AVP2_R3D_VCSCALE") ? atof(getenv("AVP2_R3D_VCSCALE")) : vc_default);
         std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
             "uniform sampler2D albedo : filter_linear_mipmap_anisotropic, repeat_enable;\n"
             "uniform sampler2D lightmap : filter_linear, repeat_disable;\n"
-            "uniform float use_lightmap = 0.0;\n" + std::string(scales) + FOG_UNIFORMS + DL_UNIFORMS + STATE_UNIFORMS +
+            "uniform float use_lightmap = 0.0;\n"
+            "uniform sampler2D detail_tex : filter_linear_mipmap, repeat_enable;\n"
+            "uniform float use_detail = 0.0;\nuniform vec4 detail_m = vec4(1.0, 0.0, 0.0, 1.0);\nuniform float detail_add = 1.0;\n"
+            "uniform float env_scale = 1.0;\n"
+            + std::string(scales) + FOG_UNIFORMS + DL_UNIFORMS + STATE_UNIFORMS +
             "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
             "varying vec4 v_anim;\nvarying vec4 v_lm;\nvarying vec3 v_c0;\nvarying vec3 v_c1;\n";
         c += "void vertex() {\n";
@@ -556,8 +589,25 @@ static const char *shader_code(int kind)
             c += "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
                  "  POSITION.z = POSITION.w * 1e-7;\n";
         c += "}\n";
+        // a detail texture (d3d.ren's second stage: ADDSIGNED, or MODULATE without DetailTextureAdd) on the texture
+        // before the lightmap pass, on a vertex lit poly after its light
+        // use_detail 1: a detail texture; 2, 3: an environment map (d3d_CalcEnvMapUV: the view direction reflected
+        // by the poly's plane, in LithTech's coordinates; on the texture ADDSIGNED or MODULATE, or by the texture's
+        // alpha: MODULATEALPHA_ADDCOLOR)
         c += "void fragment() {\n"
             "  vec4 t = texture(albedo, UV);\n"
+            "  vec3 dt = vec3(0.5);\n"
+            "  if ((use_detail > 0.5) && (use_detail < 1.5)) dt = texture(detail_tex, vec2(dot(detail_m.xy, UV), dot(detail_m.zw, UV))).rgb;\n"
+            "  if ((use_detail > 0.5) && (use_detail < 1.5) && (use_lightmap > 0.5)) t.rgb = (detail_add > 0.5) ? clamp(t.rgb + dt - 0.5, 0.0, 1.0) : t.rgb * dt;\n"
+            "  if (use_detail > 1.5) {\n"
+            "    vec3 ewp = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
+            "    vec3 en = normalize(cross(dFdx(ewp), dFdy(ewp))) * vec3(1.0, 1.0, -1.0);\n"
+            "    vec3 ei = (ewp - CAMERA_POSITION_WORLD) * vec3(1.0, 1.0, -1.0);\n"
+            "    vec3 er = normalize(ei - en * (2.0 * dot(ei, en)));\n"
+            "    vec2 euv = vec2(0.5 - ((en.y * en.y > 0.54439 || en.x * en.x < en.z * en.z) ? er.x : er.z) * 0.5, 0.5 - er.y * 0.5) * env_scale;\n"
+            "    vec3 env = texture(detail_tex, euv).rgb;\n"
+            "    t.rgb = (use_detail > 2.5) ? clamp(t.rgb + t.a * env, 0.0, 1.0) : ((detail_add > 0.5) ? clamp(env + t.rgb - 0.5, 0.0, 1.0) : env * t.rgb);\n"
+            "  }\n"
             "  vec3 light;\n";
         if (kind & MAT_SKY)
             c += "  light = (use_lightmap > 0.5) ? texture(lightmap, UV2).rgb * LM_SCALE : COLOR.rgb * VC_SCALE;\n";
@@ -617,6 +667,7 @@ static const char *shader_code(int kind)
         c += "  vec3 lit = clamp(t.rgb * clamp(light, 0.0, 2.0) + add, 0.0, 1.0);\n"
              "  vec3 col = (st_colorop > 1.5) ? clamp(t.rgb + clamp(light, 0.0, 2.0) - 0.5 + add, 0.0, 1.0)\n"
              "            : ((st_colorop > 0.5) && (use_lightmap < 0.5)) ? t.rgb : lit;\n";
+        c += "  if ((use_detail > 0.5) && (use_detail < 1.5) && (use_lightmap < 0.5)) col = (detail_add > 0.5) ? clamp(col + dt - 0.5, 0.0, 1.0) : col * dt;\n";
         if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  col = t.rgb;\n";
         // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
         // surfaces fade to black)
@@ -648,14 +699,27 @@ struct lm_page
     Ref<ImageTexture> texture;
 };
 
+// a sprite-animated surface's own material (its texture follows the surface's)
+struct animated_surface
+{
+    uint32_t surface;
+    uint32_t tex;
+    Ref<ShaderMaterial> m;
+};
+
 struct world_materials
 {
     Ref<Shader> shaders[MAT_KINDS];
     std::map<uint64_t, Ref<ShaderMaterial>> materials;
     std::map<uint64_t, Ref<ShaderMaterial>> sky_materials;
+    std::map<uint64_t, Ref<ShaderMaterial>> surface_materials;     // by batch key (SPRITE_KEY)
+    std::vector<animated_surface> animated;
     std::vector<lm_page> pages;
 };
 static world_materials *wm;
+
+// a batch key with the surface (SURF_SPRITEANIMATE) in place of the texture
+#define SPRITE_KEY (1ull << 49)
 
 // D3D7 render and texture stage states (d3dtypes.h)
 #define D3DRS_FOGENABLE 28
@@ -733,9 +797,60 @@ static void track_material(uint32_t shared, const Ref<ShaderMaterial> &m)
     apply_state(m, te.state);
 }
 
-static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page)
+// the texture's detail texture (d3d_DrawPieceQueue / d3d_DrawDetailPieces): its UVs are the texture's (in the
+// texture's texels) over the detail texture's size, times DetailTextureScale and the DTX's own scale, turned by its
+// angle
+static void set_detail(const Ref<ShaderMaterial> &m, uint32_t shared, const texture_entry &t)
 {
-    uint64_t key = ((uint64_t)shared << 16) | ((uint64_t)(page + 1) << 4) | (uint64_t)kind;
+    static int dump = -1;
+    if (dump < 0) dump = (getenv("AVP2_R3D_DUMPDETAIL") != NULL);
+    // debugging: AVP2_R3D_NOLINKS=1 none, 2 no environment maps, 3 no detail textures
+    int nolinks = getenv("AVP2_R3D_NOLINKS") ? atoi(getenv("AVP2_R3D_NOLINKS")) : 0;
+    if ((shared == 0) || (nolinks == 1)) return;
+    uint32_t linked = g32(shared + ST_LINKED), type = g32(shared + ST_LINKTYPE);
+    if ((linked == 0) || (type > 2)) return;
+    if (((nolinks == 2) && (type != 0)) || ((nolinks == 3) && (type == 0))) return;
+    if ((type == 0) && (cvar("DetailTextures", 1) == 0.0f)) return;
+    if ((type != 0) && (cvar("EnvMapWorld", 1) == 0.0f)) return;
+    texture_entry &d = get_texture(linked);
+    if (d.texture.is_null()) return;
+    if (type != 0)
+    {
+        m->set_shader_parameter("detail_tex", d.texture);
+        m->set_shader_parameter("env_scale", cvar("DetailTextureScale", 0.2f));
+        m->set_shader_parameter("detail_add", (cvar("DetailTextureAdd", 1) != 0.0f) ? 1.0f : 0.0f);
+        m->set_shader_parameter("use_detail", (float)(type + 1));
+        if (dump) eprintf("render3d: environment map %08x -> %08x (type %u)\n", shared, linked, type);
+        return;
+    }
+    float s = cvar("DetailTextureScale", 0.2f) * t.detail_scale;
+    float c = cosf(t.detail_angle), sn = sinf(t.detail_angle);
+    float bw = 1.0f / t.uv_w, bh = 1.0f / t.uv_h;
+    m->set_shader_parameter("detail_tex", d.texture);
+    m->set_shader_parameter("detail_m", Vector4(c * bw * d.uv_w * s, -sn * bh * d.uv_h * s, sn * bw * d.uv_w * s, c * bh * d.uv_h * s));
+    m->set_shader_parameter("detail_add", (cvar("DetailTextureAdd", 1) != 0.0f) ? 1.0f : 0.0f);
+    m->set_shader_parameter("use_detail", 1.0f);
+    if (dump)
+    {
+        Ref<Image> im = d.texture->get_image();
+        Color avg(0, 0, 0, 0);
+        if (im.is_valid() && !im->is_empty())
+        {
+            int n = 0;
+            for (int y = 0; y < im->get_height(); y += 8)
+                for (int x = 0; x < im->get_width(); x += 8) { avg += im->get_pixel(x, y); n++; }
+            if (n) avg = avg / (float)n;
+        }
+        eprintf("render3d: detail %08x -> %08x: base %.0fx%.0f detail %.0fx%.0f scale %.2f angle %.2f avg %.2f %.2f %.2f m %.3f %.3f %.3f %.3f\n", shared, linked, bw, bh, 1.0f / d.uv_w, 1.0f / d.uv_h, s, t.detail_angle,
+                avg.r, avg.g, avg.b, c * bw * d.uv_w * s, -sn * bh * d.uv_h * s, sn * bw * d.uv_w * s, c * bh * d.uv_h * s);
+    }
+}
+
+// links: the texture's detail texture / environment map (world surfaces; d3d.ren's models do their own)
+static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page, int links = 1)
+{
+    if (kind & MAT_SKY) links = 0;
+    uint64_t key = ((uint64_t)shared << 16) | ((uint64_t)(page + 1) << 4) | (uint64_t)kind | (links ? 0 : (1ull << 48));
     auto it = wm->materials.find(key);
     if (it != wm->materials.end()) return it->second;
 
@@ -754,9 +869,45 @@ static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page)
         m->set_shader_parameter("lightmap", wm->pages[page].texture);
         m->set_shader_parameter("use_lightmap", 1.0f);
     }
+    if (links) set_detail(m, shared, t);
     wm->materials[key] = m;
     track_material(shared, m);
     return m;
+}
+
+// the texture of a batch key (a sprite-animated surface's: its texture now)
+static uint32_t key_texture(uint64_t key)
+{
+    return (key & SPRITE_KEY) ? g32((uint32_t)(key >> 16) + SF_TEXTURE) : (uint32_t)(key >> 16);
+}
+
+// a batch's material: the texture's, or a sprite-animated surface's own (update_animated_surfaces)
+static Ref<ShaderMaterial> batch_material(uint64_t key)
+{
+    int kind = (int)(key & 0xf), page = (int)((key >> 4) & 0xfff) - 1;
+    if (!(key & SPRITE_KEY)) return get_material((uint32_t)(key >> 16), kind, page);
+    auto it = wm->surface_materials.find(key);
+    if (it != wm->surface_materials.end()) return it->second;
+    uint32_t surface = (uint32_t)(key >> 16), tex = g32(surface + SF_TEXTURE);
+    Ref<ShaderMaterial> m = get_material(tex, kind, page)->duplicate();
+    wm->surface_materials[key] = m;
+    wm->animated.push_back({ surface, tex, m });
+    track_material(tex, m);
+    return m;
+}
+
+// each frame: the sprite-animated surfaces' current frames
+static void update_animated_surfaces(void)
+{
+    if (wm == NULL) return;
+    for (animated_surface &a : wm->animated)
+    {
+        uint32_t t = g32(a.surface + SF_TEXTURE);
+        if ((t == a.tex) || (t == 0)) continue;
+        a.tex = t;
+        texture_entry &te = get_texture(t);
+        if (te.texture.is_valid()) a.m->set_shader_parameter("albedo", te.texture);
+    }
 }
 
 // a sky object's version of a material (its order among the sky objects in the render priority)
@@ -768,10 +919,10 @@ static Ref<ShaderMaterial> sky_material(uint64_t key, int index)
     int kind = (int)(key & 0xf) | MAT_SKY;
     // d3d_DrawSkyObjects draws the surfaces that aren't translucent without blending or alpha test
     if ((kind & 3) == MAT_ALPHA_TEST) kind &= ~3;
-    Ref<ShaderMaterial> m = get_material((uint32_t)(key >> 16), kind, (int)((key >> 4) & 0xfff) - 1)->duplicate();
+    Ref<ShaderMaterial> m = get_material(key_texture(key), kind, (int)((key >> 4) & 0xfff) - 1)->duplicate();
     m->set_render_priority(-120 + ((index < 200) ? index : 200));
     wm->sky_materials[k] = m;
-    track_material((uint32_t)(key >> 16), m);
+    track_material(key_texture(key), m);
     return m;
 }
 
@@ -1207,6 +1358,7 @@ typedef std::map<uint64_t, batch> batch_map;
 struct build_stats
 {
     uint32_t polies, tris, lightmapped;
+    uint32_t sprite_polies = 0;     // SURF_SPRITEANIMATE
 };
 
 static void clear_world(void)
@@ -1252,6 +1404,7 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
         if (surface == 0) continue;
         uint32_t sflags = g32(surface + SF_FLAGS);
         if (sflags & (SURF_INVISIBLE | SURF_NONEXISTANT | SURF_SKY)) continue;
+        if (sflags & SURF_SPRITEANIMATE) st.sprite_polies++;
         uint32_t tex = g32(surface + SF_TEXTURE);
         uint32_t verts = g32(poly + WP_PVERTICES);
         // the poly's own vertices, or a reallocated list of m_nExtraVertices (the poly grew)
@@ -1284,7 +1437,8 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
             org[0] = gf(poly + WP_LMORIGIN); org[1] = gf(poly + WP_LMORIGIN + 4); org[2] = gf(poly + WP_LMORIGIN + 8);
             st.lightmapped++;
         }
-        batch &b = batches[((uint64_t)tex << 16) | ((uint64_t)(page + 1) << 4) | (uint64_t)kind];
+        batch &b = batches[(sflags & SURF_SPRITEANIMATE) ? (((uint64_t)surface << 16) | ((uint64_t)(page + 1) << 4) | (uint64_t)kind | SPRITE_KEY)
+                                                       : (((uint64_t)tex << 16) | ((uint64_t)(page + 1) << 4) | (uint64_t)kind)];
         if ((page < 0) && (n <= 1024))
         {
             if (sflags & (SURF_BRIGHT | SURF_LIGHTMAP)) pl.n = 0;
@@ -1309,7 +1463,7 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
                     }
                     for (int q = 0; q < 4; q++) { b.c2.push_back(v0[q]); b.c3.push_back(v1[q]); }
                 }
-                b.uv.push_back(Vector2(gf(pv + PV_U) * te.inv_w, gf(pv + PV_V) * te.inv_h));
+                b.uv.push_back(Vector2(gf(pv + PV_U) * te.uv_w, gf(pv + PV_V) * te.uv_h));
                 if (page >= 0)
                 {
                     float d[3] = { gf(pt) - org[0], gf(pt + 4) - org[1], gf(pt + 8) - org[2] };
@@ -1364,8 +1518,7 @@ static std::vector<Ref<ArrayMesh>> make_meshes(batch_map &batches)
         int64_t fmt = ((int64_t)Mesh::ARRAY_CUSTOM_RGBA_FLOAT << Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT) | ((int64_t)Mesh::ARRAY_CUSTOM_RGBA_FLOAT << Mesh::ARRAY_FORMAT_CUSTOM1_SHIFT) |
                       ((int64_t)Mesh::ARRAY_CUSTOM_RGBA_FLOAT << Mesh::ARRAY_FORMAT_CUSTOM2_SHIFT) | ((int64_t)Mesh::ARRAY_CUSTOM_RGBA_FLOAT << Mesh::ARRAY_FORMAT_CUSTOM3_SHIFT);
         mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays, Array(), Dictionary(), (BitField<Mesh::ArrayFormat>)fmt);
-        int page = (int)((kv.first >> 4) & 0xfff) - 1;
-        mesh->surface_set_material(surfaces, get_material((uint32_t)(kv.first >> 16), (int)(kv.first & 0xf), page));
+        mesh->surface_set_material(surfaces, batch_material(kv.first));
         surfaces++;
     }
     return out;
@@ -1384,7 +1537,16 @@ static void build_world(world_context *ctx)
 
     float grid = gf(mw + MW_LMGRIDSIZE);
     if (!(grid > 0.0f)) grid = 32.0f;
-    if (winapi_debug) eprintf("render3d: %u light animations, lightmap grid %.1f\n", g32(mw + MW_LIGHTANIMS + 8), grid);
+    if (winapi_debug)
+    {
+        uint32_t multi = 0, shadow = 0, base = g32(mw + MW_LIGHTANIMS + 4);
+        for (uint32_t a = 0; a < g32(mw + MW_LIGHTANIMS + 8); a++)
+        {
+            if (g8(base + a * LA_SIZE + LA_NFRAMES) > 1) multi++;
+            if (g32(base + a * LA_SIZE + LA_SHADOWMAP)) shadow++;
+        }
+        eprintf("render3d: %u light animations (%u multi-frame, %u shadow-map), lightmap grid %.1f\n", g32(mw + MW_LIGHTANIMS + 8), multi, shadow, grid);
+    }
     if (winapi_debug >= 2)
         for (uint32_t a = 0; a < g32(mw + MW_LIGHTANIMS + 8); a++)
         {
@@ -1428,8 +1590,8 @@ static void build_world(world_context *ctx)
         for (auto &b : kv.second) keys.push_back(b.first);    // the surfaces' materials, in their order
     }
     ctx->built = 1;
-    if (winapi_debug) eprintf("render3d: built %u polies (%u lightmapped, %zu lightmap pages), %u triangles, %zu static batches, %zu world model meshes, %zu textures\n",
-                              st.polies, st.lightmapped, wm->pages.size(), st.tris, batches.size(), gs->bsp_meshes.size(), gs->textures.size());
+    if (winapi_debug) eprintf("render3d: built %u polies (%u lightmapped, %zu lightmap pages, %u sprite-animated), %u triangles, %zu static batches, %zu world model meshes, %zu textures\n",
+                              st.polies, st.lightmapped, wm->pages.size(), st.sprite_polies, st.tris, batches.size(), gs->bsp_meshes.size(), gs->textures.size());
 }
 
 // LithTech's LTMatrix (rows, translation in the 4th column) -> Godot: S M S with S = diag(1, 1, -1)
@@ -1853,7 +2015,7 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
         arrays[Mesh::ARRAY_TEX_UV] = s[t].uv;
         arrays[Mesh::ARRAY_COLOR] = s[t].col;
         mi.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
-        mi.mesh->surface_set_material(nsurf++, get_material(skin, kind, -1));
+        mi.mesh->surface_set_material(nsurf++, get_material(skin, kind, -1, 0));
     }
 }
 
@@ -2672,8 +2834,8 @@ extern "C" uint32_t canvas_SetTexture_c(uint32_t self, uint32_t name)
 extern "C" uint32_t canvas_GetTexelSize_c(uint32_t self, uint32_t pu, uint32_t pv)
 {
     texture_entry &te = get_texture(cdraw.texture);
-    if (pu != 0) *(float *)(uintptr_t)pu = te.inv_w;
-    if (pv != 0) *(float *)(uintptr_t)pv = te.inv_h;
+    if (pu != 0) *(float *)(uintptr_t)pu = te.uv_w;
+    if (pv != 0) *(float *)(uintptr_t)pv = te.uv_h;
     return 0;
 }
 
@@ -2852,6 +3014,7 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     fog_update();
     post_update(sd);
     update_texture_states();
+    update_animated_surfaces();
     if (getenv("AVP2_R3D_DUMPSTATES") && ((gs->frame % 300) == 100))
     {
         // debugging: the textures' D3D state changes (SharedTexture::m_pStateChange)

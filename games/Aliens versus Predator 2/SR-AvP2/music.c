@@ -415,6 +415,7 @@ uint32_t CCALL music_InitLevel_c(uint32_t self, const uint32_t *args)
     (void)self;
     if (!music.initialized || (dir == NULL) || (file == NULL)) return LT_ERROR;
     if (music.level) return LT_ERROR;
+    uint32_t t0 = SDL_GetTicks();
 
     music.directory = dir;
     if (!music.directory.empty() && music.directory.back() != '\\' && music.directory.back() != '/') music.directory += '\\';
@@ -489,7 +490,7 @@ uint32_t CCALL music_InitLevel_c(uint32_t self, const uint32_t *args)
         }
     }
     music.level = true;
-    if (winapi_debug) eprintf("music: InitLevel %s%s: %d intensities, %u segments\n", music.directory.c_str(), file, music.num_intensities, (unsigned)music.loaded.size());
+    if (winapi_debug) eprintf("music: InitLevel %s%s: %d intensities, %u segments (%u ms)\n", music.directory.c_str(), file, music.num_intensities, (unsigned)music.loaded.size(), (unsigned)(SDL_GetTicks() - t0));
     return LT_OK;
 }
 

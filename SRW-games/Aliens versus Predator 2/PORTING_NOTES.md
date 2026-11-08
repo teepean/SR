@@ -392,3 +392,30 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - rezfs.c: the runtime reads the archives itself (the engine's -rez list from the final command line, later ones
   override, custom is a directory).
 - Test directories: autoexec.cfg's MusicVolume was 0 (the retail default is 50).
+
+### 2026-11-08 — smoke test, warped blits, animated surfaces
+- Smoke test: every AvP2 single-player world (50) loaded with +runworld for 25 s (scratchpad smoke.sh): no crash,
+  170-190 frames/s. Two game instances at once (the same game directory, and the window focus: AvP2 pauses and
+  draws black when it loses it) spoil each other's runs - tests run one at a time.
+- RenderStruct::WarpToScreen (the Alien HUD's warped surfaces): the warp points' polygon (source xy -> screen xy,
+  d3d_WarpOptimized's triangle fan) rasterized into the 2D frame with BlitToScreen's pixel rules.
+- SURF_SPRITEANIMATE world surfaces (the engine sets the surface's texture to its sprite's current frame each
+  update; p3s2/p3s3 have a few): their batches are keyed by the surface and get their own material, whose texture
+  follows the surface's (update_animated_surfaces).
+- rezfs: custom is recognized as a directory (fopen succeeds on directories on Linux).
+- Music: the game asks for death motifs (PlayerDeathMotifB, AIDeathMotifA) that no style or control file has -
+  the original engine fails them too.
+- Detail textures and environment maps on world surfaces (SharedTexture::m_pLinkedTexture, +0x2c link type: 0
+  detail, 1 env map, 2 env map with alpha): AVP2-Reconstructed's d3dren (unk/100098d0.cpp d3d_DrawWorldTextureBucket,
+  d3d_DrawDualTextureWorldBucket) has d3d.ren's arithmetic. Detail UV = the base texel coordinate turned by the
+  base DTX's angle x the detail texture's texel size x DetailTextureScale (autoexec.cfg 1.0) x the base DTX's detail
+  scale (m_Extra[6..9] + 1); stage 1 ADDSIGNED (DetailTextureAdd 1) or MODULATE. Env maps: sphere-map UVs from the
+  reflected view vector (d3d_CalcWorldReflectionUVs) x DetailTextureScale. Detail sampled trilinear (no anisotropy).
+- Texel sizes (RTexture +4/+8, g_TextureStageTexelSizes) are 2^UIMipmapOffset / mip 0's size (DtxHeader m_Extra[4]:
+  "a 512 can be mapped as a 256 or a 128"): world, world model and sky UVs and detail coordinates use them - about
+  a third of m1s1's textures have offset 1 and were drawn twice too large before. Sprites keep the base size.
+- Saturate (autoexec.cfg 1): d3d.ren draws the light (lightmap or gouraud colour) first and the texture over it with
+  SRCBLEND DESTCOLOR + DESTBLEND SRCCOLOR = 2 x texture x light, so vertex lit world polies are 2x too (they were
+  1x: m1s1's ground was half as bright as the Wine reference; now within ~5%).
+- AVP2-Reconstructed (lemiur) reconstructs d3d.ren too (src/d3dren, 53% matched): the first place to look for
+  renderer behaviour. The NOLF2 modernizer has no engine/renderer source (SDK + game code only).

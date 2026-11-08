@@ -816,11 +816,79 @@ void CCALL ren_BlitToScreen_c(BlitRequest32 *req)
     }
 }
 
+// a surface drawn through a polygon of warp points (LTWarpPt: source x, y -> destination x, y; d3d_WarpOptimized
+// draws it as a triangle fan with the source as texture coordinates): rasterized here, the source interpolated
+// across each triangle, the pixels as BlitToScreen's
+typedef struct { float sx, sy, dx, dy; } LTWarpPt32;
+
 uint32_t CCALL ren_WarpToScreen_c(BlitRequest32 *req)
 {
-    static int reported;
-    if (!reported && winapi_debug) { reported = 1; eprintf("render: WarpToScreen (not supported yet)\n"); }
-    return 0;
+    surface *s;
+    const LTWarpPt32 *pts;
+    int n, i, alpha256, use_key, optimized;
+    uint32_t key, mod_r, mod_g, mod_b;
+
+    if ((screen == NULL) || (req == NULL) || ((s = get_surface(req->hBuffer)) == NULL)) return 0;
+    pts = (const LTWarpPt32 *)(uintptr_t)req->pWarpPts;
+    n = req->nWarpPts;
+    if ((pts == NULL) || (n < 3) || (n > 64)) return 0;
+
+    optimized = in_optimized2d && s->optimized;
+    use_key = (req->options & 1) != 0;
+    key = (optimized ? s->transparent : req->transparent) & 0xFFFFFF;
+    alpha256 = (int)(req->alpha * 256.0f);
+    if (alpha256 < 0) alpha256 = 0; else if (alpha256 > 256) alpha256 = 256;
+    mod_r = (blend_color >> 16) & 0xFF; mod_g = (blend_color >> 8) & 0xFF; mod_b = blend_color & 0xFF;
+
+    for (i = 1; i + 1 < n; i++)
+    {
+        const LTWarpPt32 *a = &pts[0], *b = &pts[i], *c = &pts[i + 1];
+        float area = (b->dx - a->dx) * (c->dy - a->dy) - (c->dx - a->dx) * (b->dy - a->dy);
+        int x0, x1, y0, y1, x, y;
+        if (fabsf(area) < 1e-6f) continue;
+        x0 = (int)floorf(fminf(a->dx, fminf(b->dx, c->dx)));
+        x1 = (int)ceilf(fmaxf(a->dx, fmaxf(b->dx, c->dx)));
+        y0 = (int)floorf(fminf(a->dy, fminf(b->dy, c->dy)));
+        y1 = (int)ceilf(fmaxf(a->dy, fmaxf(b->dy, c->dy)));
+        if (x0 < 0) x0 = 0;
+        if (y0 < 0) y0 = 0;
+        if (x1 > screen_w) x1 = screen_w;
+        if (y1 > screen_h) y1 = screen_h;
+        for (y = y0; y < y1; y++)
+        {
+            float py = (float)y + 0.5f;
+            for (x = x0; x < x1; x++)
+            {
+                float px = (float)x + 0.5f;
+                // barycentric weights of b and c (top-left fill: a pixel on a shared edge belongs to one triangle)
+                float wb = ((px - a->dx) * (c->dy - a->dy) - (c->dx - a->dx) * (py - a->dy)) / area;
+                float wc = ((b->dx - a->dx) * (py - a->dy) - (px - a->dx) * (b->dy - a->dy)) / area;
+                float wa = 1.0f - wb - wc;
+                int sx, sy;
+                uint32_t p, *d;
+                if ((wa < 0.0f) || (wb < 0.0f) || (wc <= 0.0f)) continue;
+                sx = (int)floorf(wa * a->sx + wb * b->sx + wc * c->sx);
+                sy = (int)floorf(wa * a->sy + wb * b->sy + wc * c->sy);
+                if (sx < 0) sx = 0; else if (sx >= s->width) sx = s->width - 1;
+                if (sy < 0) sy = 0; else if (sy >= s->height) sy = s->height - 1;
+                p = s->pixels[sy * s->width + sx] & 0xFFFFFF;
+                if (use_key && (p == key)) continue;
+                d = &screen[y * screen_w + x];
+                if (optimized)
+                {
+                    if ((mod_r & mod_g & mod_b) != 0xFF)
+                        p = (((p >> 16 & 0xFF) * mod_r / 255) << 16) | (((p >> 8 & 0xFF) * mod_g / 255) << 8) | ((p & 0xFF) * mod_b / 255);
+                    *d = blend_pixel(p, *d, blend_mode, alpha256);
+                }
+                else if (alpha256 < 256)
+                {
+                    *d = blend_pixel(p, *d, 0, alpha256);
+                }
+                else *d = p | 0xFF000000;
+            }
+        }
+    }
+    return 1;
 }
 
 void CCALL ren_BlitFromScreen_c(BlitRequest32 *req)
