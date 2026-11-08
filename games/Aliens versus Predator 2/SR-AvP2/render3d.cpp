@@ -31,8 +31,9 @@
  *  Canvases: the game's draw functions get an ILTCustomDraw whose methods are native (x64/canvas-asm.asm).
  *  Detail textures and environment maps on world surfaces (d3d.ren's texel sizes: 2^UIMipmapOffset / mip 0),
  *  sprite-animated surfaces (SURF_SPRITEANIMATE).
- *  Shader preloading: a small fixed set of shaders (variants as uniforms) made and drawn once when the renderer starts
- *  (preload_shaders), so that Godot doesn't compile them when an effect first appears.
+ *  Shader preloading as Godot's documentation recommends: a small fixed set of shaders (variants as uniforms) made
+ *  when the renderer starts, with a hidden instance of each in the scene (preload_shaders), so that Godot compiles
+ *  their pipelines then and not when an effect first appears.
  *  To do: the state changes' blend modes, multi-frame light animations, shadow-map light animations,
  *  vertical fog, model environment maps, model LODs and static lights for models.
  *
@@ -3065,26 +3066,33 @@ extern "C" void r3d_delete_context(uint32_t context)
 /* ------------------------------------------------------------------ */
 /* shader preloading                                                   */
 
-// Every shader is made when the renderer starts (r3d_init: ren_Init, before the game's first frame) and drawn with
-// each vertex format it's used with in the next few Godot frames, as zero-area triangles in front of the camera
-// (nothing is drawn, but the draws need the shaders and their pipelines), so that Godot compiles them then.
-// Otherwise the first object with a new shader waits for its compilation: with a cold cache (the first run, a new
-// Godot or driver) that stalled the frame 30-70 ms for each (m1s1's first shots). Godot keeps them in its caches
-// (user://shader_cache, the Vulkan pipeline cache).
+// As Godot's documentation recommends ("Reducing stutter from shader (pipeline) compilations",
+// tutorials/performance/pipeline_compilations): every shader is made when the renderer starts (r3d_init: ren_Init,
+// before the game's first frame), and the scene keeps a hidden instance of each, with each vertex format it's used
+// with, for the whole run. Forward+ and Mobile compile the pipelines of every surface added to the scene, hidden ones
+// too, at the next frame in the background (the "surface" step), and again for all of them when a rendering feature
+// is turned on later (MSAA, ...): an effect's pipelines are ready before it first appears. Otherwise the first object
+// with a new shader waits for the compilation: with a cold cache (the first run, a new Godot or driver) that stalled
+// the frame 30-70 ms for each (m1s1's first shots). The Compatibility renderer (OpenGL) can't precompile: there the
+// documented way is the legacy one, drawing them in the view for a frame - they're shown for PRELOAD_FRAMES frames
+// (zero-area triangles: nothing shows; their AABB keeps them in the view), then hidden. Godot keeps the results in
+// its caches (user://shader_cache, the driver's pipeline cache).
 enum { WU_UV = 1, WU_UV2 = 2, WU_COLOR = 4, WU_CUSTOM = 8, WU_LINES = 16 };
-#define WARMUP_FRAMES 3
+#define PRELOAD_FRAMES 3
 
 static struct
 {
-    Node3D *node;
-    uint64_t frame;             // Godot's frame count when it was made
+    Node3D *node;               // the hidden instances (kept)
+    int pending;                // the log after the first frame(s); compatibility: shown until then
+    int compatibility;
+    uint64_t frame;             // Godot's frame count when they were made
     uint64_t start_us;
-} warmup;
+} preload;
 
 // a surface with the arrays of the objects' meshes (world: UV, UV2, colour, 4 x custom; models, poly grids,
 // canvases: UV, colour; sprites: UV; particles: UV, UV2, colour; lines: colour): one triangle (line) with all its
-// vertices at the origin and transparent - no pixels (the instance's custom AABB keeps it from being culled)
-static void warmup_surface(const Ref<ArrayMesh> &mesh, int format, const Ref<Material> &m)
+// vertices at the origin and transparent - no pixels when drawn (compatibility)
+static void preload_surface(const Ref<ArrayMesh> &mesh, int format, const Ref<Material> &m)
 {
     static const int64_t custom_shift[4] = { Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM1_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM2_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM3_SHIFT };
     int n = (format & WU_LINES) ? 2 : 3;
@@ -3116,17 +3124,17 @@ static void warmup_surface(const Ref<ArrayMesh> &mesh, int format, const Ref<Mat
     mesh->surface_set_material(mesh->get_surface_count() - 1, m);
 }
 
-static MeshInstance3D *warmup_instance(const Ref<ArrayMesh> &mesh, float transparency = 0.0f)
+// an AABB that contains every camera (compatibility: never culled)
+static void preload_instance(const Ref<ArrayMesh> &mesh, float transparency = 0.0f)
 {
     MeshInstance3D *mi = memnew(MeshInstance3D);
     mi->set_mesh(mesh);
-    mi->set_custom_aabb(AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2)));
+    mi->set_custom_aabb(AABB(Vector3(-1e7f, -1e7f, -1e7f), Vector3(2e7f, 2e7f, 2e7f)));
     if (transparency > 0.0f) mi->set_transparency(transparency);
-    warmup.node->add_child(mi);
-    return mi;
+    preload.node->add_child(mi);
 }
 
-static Ref<ShaderMaterial> warmup_material(const Ref<Shader> &sh, int flags = -1)
+static Ref<ShaderMaterial> preload_material(const Ref<Shader> &sh, int flags = -1)
 {
     Ref<ShaderMaterial> m;
     m.instantiate();
@@ -3141,61 +3149,63 @@ static void preload_shaders(void)
     // alpha tested: sky_material)
     static const int world_kinds[] = { MAT_OPAQUE, MAT_ALPHA_TEST, MAT_BLEND, MAT_ADD };
     static const int sky_kinds[] = { MAT_SKY | MAT_OPAQUE, MAT_SKY | MAT_BLEND, MAT_SKY | MAT_ADD };
-    warmup.start_us = Time::get_singleton()->get_ticks_usec();
-    warmup.frame = Engine::get_singleton()->get_frames_drawn();
-    // in front of the camera (warmup_update keeps it there; not under the scene's root: that's hidden until the
-    // first scene)
-    warmup.node = memnew(Node3D);
-    warmup.node->set_transform(gs->camera->get_transform() * Transform3D(Basis(), Vector3(0, 0, -10)));
-    gs->viewport->add_child(warmup.node);
+    RenderingServer *rs = RenderingServer::get_singleton();
+    preload.start_us = Time::get_singleton()->get_ticks_usec();
+    preload.frame = Engine::get_singleton()->get_frames_drawn();
+    preload.compatibility = (rs->get_current_rendering_method() == String("gl_compatibility"));
+    // not under the scene's root: that's hidden and shown with the game's scenes
+    preload.node = memnew(Node3D);
+    preload.node->set_visible(preload.compatibility);
+    gs->viewport->add_child(preload.node);
 
     Ref<ArrayMesh> world, faded, sky, model, quad, particles, lines;
     world.instantiate(); faded.instantiate(); sky.instantiate(); model.instantiate(); quad.instantiate(); particles.instantiate(); lines.instantiate();
     const int W = WU_UV | WU_UV2 | WU_COLOR | WU_CUSTOM, M = WU_UV | WU_COLOR;
     for (int k : world_kinds)
     {
-        warmup_surface(world, W, warmup_material(world_shader(k)));
-        warmup_surface(faded, W, warmup_material(world_shader(k)));         // world models fading out
-        warmup_surface(model, M, warmup_material(world_shader(k)));
-        warmup_surface(model, M, warmup_material(world_shader(k | MAT_REALLYCLOSE)));
+        preload_surface(world, W, preload_material(world_shader(k)));
+        preload_surface(faded, W, preload_material(world_shader(k)));         // world models fading out
+        preload_surface(model, M, preload_material(world_shader(k)));
+        preload_surface(model, M, preload_material(world_shader(k | MAT_REALLYCLOSE)));
     }
-    for (int k : sky_kinds) warmup_surface(sky, W, warmup_material(world_shader(k)));
+    for (int k : sky_kinds) preload_surface(sky, W, preload_material(world_shader(k)));
     // the sprite shaders: quads, meshes (poly grids, canvases), particle systems (no depth test off)
     static const int blends[3] = { 0, SPR_ADD, SPR_MUL };
     for (int b : blends)
         for (int noz = 0; noz < 2; noz++)
         {
             int v = b | (noz ? SPR_NOZ : 0);
-            warmup_surface(quad, WU_UV, warmup_material(sprite_shader(v), v));
-            warmup_surface(model, M, warmup_material(sprite_shader(v), v | SPR_MESH));
-            if (!noz) warmup_surface(particles, WU_UV | WU_UV2 | WU_COLOR, warmup_material(sprite_shader(v), v | SPR_PARTICLES));
+            preload_surface(quad, WU_UV, preload_material(sprite_shader(v), v));
+            preload_surface(model, M, preload_material(sprite_shader(v), v | SPR_MESH));
+            if (!noz) preload_surface(particles, WU_UV | WU_UV2 | WU_COLOR, preload_material(sprite_shader(v), v | SPR_PARTICLES));
         }
-    for (int close = 0; close < 2; close++) warmup_surface(lines, WU_COLOR | WU_LINES, line_material(close));
-    warmup_instance(world);
-    warmup_instance(faded, 0.5f);
-    warmup_instance(sky);
-    warmup_instance(model);
-    warmup_instance(quad);
-    warmup_instance(particles);
-    warmup_instance(lines);
+    for (int close = 0; close < 2; close++) preload_surface(lines, WU_COLOR | WU_LINES, line_material(close));
+    preload_instance(world);
+    preload_instance(faded, 0.5f);
+    preload_instance(sky);
+    preload_instance(model);
+    preload_instance(quad);
+    preload_instance(particles);
+    preload_instance(lines);
     shaders_preloaded = 1;
-    if (winapi_debug) eprintf("render3d: preloading shaders (%.1f ms)\n", (Time::get_singleton()->get_ticks_usec() - warmup.start_us) / 1000.0);
+    preload.pending = 1;
+    if (winapi_debug) eprintf("render3d: preloading shaders (%s, %.1f ms)\n", preload.compatibility ? "compatibility: drawn" : "hidden instances", (Time::get_singleton()->get_ticks_usec() - preload.start_us) / 1000.0);
 }
 
-// the warm-up objects follow the camera and go after WARMUP_FRAMES Godot frames
-static void warmup_update(void)
+// after Godot's first frame (Forward+, Mobile: the pipelines are queued) or PRELOAD_FRAMES frames (compatibility:
+// the shaders are compiled; hidden from then on)
+static void preload_update(void)
 {
-    if (warmup.node == NULL) return;
-    uint64_t drawn = Engine::get_singleton()->get_frames_drawn() - warmup.frame;
-    if (drawn < WARMUP_FRAMES)
-    {
-        warmup.node->set_transform(gs->camera->get_transform() * Transform3D(Basis(), Vector3(0, 0, -10)));
-        return;
-    }
-    warmup.node->set_visible(false);
-    warmup.node->queue_free();
-    warmup.node = NULL;
-    if (winapi_debug) eprintf("render3d: shaders preloaded (%u frames, %.1f ms)\n", (unsigned)drawn, (Time::get_singleton()->get_ticks_usec() - warmup.start_us) / 1000.0);
+    if (!preload.pending) return;
+    uint64_t drawn = Engine::get_singleton()->get_frames_drawn() - preload.frame;
+    if (drawn < (preload.compatibility ? PRELOAD_FRAMES : 1)) return;
+    preload.pending = 0;
+    if (preload.compatibility) preload.node->set_visible(false);
+    if (winapi_debug)
+        eprintf("render3d: shaders preloaded (pipelines so far: surface %u, draw %u; seen after %u Godot frames)\n",
+                (unsigned)RenderingServer::get_singleton()->get_rendering_info(RenderingServer::RENDERING_INFO_PIPELINE_COMPILATIONS_SURFACE),
+                (unsigned)RenderingServer::get_singleton()->get_rendering_info(RenderingServer::RENDERING_INFO_PIPELINE_COMPILATIONS_DRAW),
+                (unsigned)drawn);
 }
 
 /* ------------------------------------------------------------------ */
@@ -3337,7 +3347,7 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         update_canvases(ctx->world);
     }
 
-    warmup_update();
+    preload_update();
     if (!gs->shown)
     {
         gs->root->set_visible(true);
@@ -3351,7 +3361,7 @@ extern "C" void r3d_end_frame(int drawn)
 {
     // from the game's first frame on: the scene is made (and the shaders preloaded) while Godot draws the 2D frames
     if (!ready()) return;
-    warmup_update();
+    preload_update();
     if (!drawn && gs->shown)
     {
         gs->root->set_visible(false);

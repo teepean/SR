@@ -485,14 +485,29 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   to new directories) m1s1's first frame took 117-144 ms in Godot and each new sprite variant stalled its frame by
   33-73 ms (the first shots: muzzle flash, smoke, shells). With warm caches none of that showed.
 - Now every shader is made once when the renderer starts (r3d_init from ren_Init) and kept for the whole run (the
-  world's were remade for each level), and drawn with each vertex format it's used with in the next Godot frames:
-  zero-area, transparent triangles in front of the camera (custom AABB), so nothing shows but the draws compile the
-  shaders and pipelines. The set is small and fixed: 11 world kinds (world, models, really close, sky), 6 sprite
-  shaders (blending x depth test: the rest of the old ~160 variants - placement, glow, bias, really close, fog - is
-  the material's `flags` uniform), 2 line shaders; 46 pipelines. The light scales (lightmap 2x, vertex colour 2x
+  world's were remade for each level). The set is small and fixed: 11 world kinds (world, models, really close,
+  sky), 6 sprite shaders (blending x depth test: the rest of the old ~160 variants - placement, glow, bias, really
+  close, fog - is the material's `flags` uniform), 2 line shaders. The light scales (lightmap 2x, vertex colour 2x
   with Saturate) became the global uniform lt_scales (set with the fog), so no shader depends on console variables.
-- Cold caches, same run: the 46 pipelines are compiled in the game's first frame (341 ms, once), m1s1's first frame
-  takes 3.5 ms in Godot, no slow frame and no pipeline compilation after the start (also Primal Hunt, blob mode).
+- Preloading as Godot's documentation recommends (tutorials/performance/pipeline_compilations.rst, "Reducing
+  stutter from shader (pipeline) compilations"): the scene keeps a hidden instance of each shader with each vertex
+  format it's used with, for the whole run. Forward+ and Mobile compile the pipelines of every surface in the scene,
+  hidden ones too, at the next frame (the "surface" step, in the background; checked in Godot 4.7's
+  render_forward_clustered.cpp: _update_dirty_geometry_pipelines has no visibility test), and recompile them all
+  when a rendering feature is turned on later (MSAA, ...), which is why they stay. The Compatibility renderer
+  (OpenGL) can't precompile; the documented way there is the legacy one: draw them in the view for a frame. So with
+  gl_compatibility they're shown for the first 3 frames (zero-area, transparent triangles; an AABB containing every
+  camera keeps them from being culled), then hidden. (The first version drew them in front of the camera with every
+  renderer.) The documentation's shader baker is for exported projects' shader files, not runtime-made shaders.
+- Cold caches, m1s1 with three weapons fired:
+  - Forward+: the 46 pipelines in the game's first frame (264 ms once; 57 ms warm), the level's first frame 3.6 ms in
+    Godot, no slow frame and no pipeline compilation after the start; before the preload: the level's first frame
+    144 ms, 33-73 ms per new effect.
+  - Mobile: 38 pipelines at the start, none while drawing.
+  - Compatibility (opengl3): 2.0 s once in the first frame, nothing after; before the preload: the level's first
+    frame 1.2 s and 80-100 ms per new effect.
+  - Also Primal Hunt (exp1s1) and blob mode (a1s1): 46 at the start, none while drawing. a1s1's picture unchanged
+    (a matching frame identical to the earlier builds').
 - AVP2_FRAMESTATS=1 also logs Godot's pipeline compilations (per second; while drawing = stutter) and each slow
   frame (> 25 ms in Godot or > 50 ms in the game) with its compilations; AVP2_DEBUG logs every shader made (" late"
   after the preload).
