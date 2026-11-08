@@ -447,3 +447,12 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   alpha testing they vanished and the nest showed; now the view matches the Wine reference (the chest's inside).
 - Debugging: AVP2_R3D_DUMPBSP=<name part> (a BSP's polies: surface flags, texture), AVP2_R3D_DUMPMODEL=<file name
   part> (model rebuilds: box, skins, alpha).
+- The 3D picture follows d3d.ren's projection: FovX across the scene rectangle's width and FovY across its height,
+  independently (m1s1: 90 x 78 degrees, not 4:3). The camera keeps FovY (KEEP_HEIGHT), the SubViewport's aspect is
+  tan(FovX/2) / tan(FovY/2) and its picture is stretched into SceneDesc m_Rect (game screen pixels mapped to the
+  window; render.c passes the screen size: r3d_set_screen_size). Before, the view was ~94 degrees wide at 4:3; m1s1's
+  rock edges now line up with the Wine reference (1 px at 640x480). The player-view weapon's own FOV (ExtraFOVX/
+  YOffset, 95 x 115 in AVP2-Reconstructed's formula) made the knife lie flat - left out (AVP2_R3D_WEAPONFOV=x|y|xy).
+- Wide-screen and multi-platform research done (local notes): Hor+ plan (pillarboxed 2D first; then wide modes,
+  the menu's 4:3 filter, engine-side Hor+ so Get3DCameraPt agrees); Windows via MinGW on I76's base, macOS via
+  Rosetta needs NASM Mach-O relocations for 32-bit absolute addresses, native arm64 means SRW's OUT_LLASM.

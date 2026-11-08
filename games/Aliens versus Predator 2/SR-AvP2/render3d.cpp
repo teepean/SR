@@ -315,6 +315,13 @@ static int ready(void)
     return 1;
 }
 
+static int r3d_screen_w = 640, r3d_screen_h = 480;
+
+extern "C" void r3d_set_screen_size(int w, int h)
+{
+    if ((w > 0) && (h > 0)) { r3d_screen_w = w; r3d_screen_h = h; }
+}
+
 extern "C" void r3d_set_render_struct(uint8_t *rs)
 {
     render_struct = rs;
@@ -539,13 +546,24 @@ static void post_update(uint32_t sd)
     gs->post->set_shader_parameter("scale", scale);
     gs->post->set_shader_parameter("add", add);
     gs->post->set_shader_parameter("invert", cv_invert ? 1.0f : 0.0f);
-    // the picture follows the window's size
+    // the picture: the scene rectangle (SceneDesc m_Rect, in the game's screen pixels; the 2D frame is stretched over
+    // the window), with d3d.ren's projection - FovX across the rectangle's width and FovY across its height,
+    // independently: the camera keeps FovY (KEEP_HEIGHT) and the viewport's aspect is tan(FovX/2) / tan(FovY/2), its
+    // picture stretched into the rectangle
     SceneTree *tree = Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
-    Vector2i size = tree->get_root()->get_size();
-    if (gs->viewport->get_size() != size)
+    Vector2i win = tree->get_root()->get_size();
+    int l = (int)g32(sd + SD_RECT), t = (int)g32(sd + SD_RECT + 4), r = (int)g32(sd + SD_RECT + 8), b = (int)g32(sd + SD_RECT + 12);
+    if ((r <= l) || (b <= t) || (l < 0) || (t < 0) || (r > r3d_screen_w) || (b > r3d_screen_h)) { l = 0; t = 0; r = r3d_screen_w; b = r3d_screen_h; }
+    float sx = (float)win.x / (float)r3d_screen_w, sy = (float)win.y / (float)r3d_screen_h;
+    Vector2 pos(floorf(l * sx + 0.5f), floorf(t * sy + 0.5f)), end(floorf(r * sx + 0.5f), floorf(b * sy + 0.5f));
+    float fx = gf(sd + SD_XFOV), fy = gf(sd + SD_YFOV);
+    float ratio = ((fx > 0.01f) && (fx < 3.1f) && (fy > 0.01f) && (fy < 3.1f)) ? tanf(fx * 0.5f) / tanf(fy * 0.5f) : (end.x - pos.x) / fmaxf(end.y - pos.y, 1.0f);
+    Vector2i vsize((int)fmaxf(1.0f, floorf((end.y - pos.y) * ratio + 0.5f)), (int)fmaxf(1.0f, end.y - pos.y));
+    if (gs->viewport->get_size() != vsize) gs->viewport->set_size(vsize);
+    if ((gs->picture->get_position() != pos) || (gs->picture->get_size() != end - pos))
     {
-        gs->viewport->set_size(size);
-        gs->picture->set_size(Vector2(size));
+        gs->picture->set_position(pos);
+        gs->picture->set_size(end - pos);
     }
     gs->sky_root->set_visible(cv_drawsky != 0);
 }
@@ -1904,7 +1922,30 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
         (close ? (Node *)gs->camera : (Node *)gs->root)->add_child(mi.mi);
         mi.close = close;
     }
-    mi.mi->set_transform(xf);
+    // a really close model with a FOV offset (the player-view weapon: Model m_bFovOffset +0x140, offsets +0x144/+0x148)
+    // is projected with its own FOV in AVP2-Reconstructed's d3d.ren (SetupModel: ExtraFOVXOffset/YOffset degrees + the
+    // model's offsets + the view's FovX/FovY; the game sets the variables to ViewModelBaseFOVX/Y - the view's FOV,
+    // 95 x 115): x and y in camera space scaled by tan(view FOV / 2) / tan(its FOV / 2). Applied as is the knife in
+    // m1s1 turns nearly flat, unlike the Wine reference (AvP2's d3d.ren is another build) - not done by default;
+    // AVP2_R3D_WEAPONFOV=x, y or xy tries it (TODO: compare with a steady reference)
+    Transform3D placed = xf;
+    if (close && g32(model + 0x140) && getenv("AVP2_R3D_WEAPONFOV"))
+    {
+        float vfx = gf(sd + SD_XFOV), vfy = gf(sd + SD_YFOV);
+        if ((vfx > 0.01f) && (vfx < 3.1f) && (vfy > 0.01f) && (vfy < 3.1f))
+        {
+            float wfx = cvar("ExtraFOVXOffset", 0) * 0.017453292f + gf(model + 0x144) + vfx;
+            float wfy = cvar("ExtraFOVYOffset", 0) * 0.017453292f + gf(model + 0x148) + vfy;
+            wfx = fminf(fmaxf(wfx, 0.17453292f), 2.9670596f);
+            wfy = fminf(fmaxf(wfy, 0.17453292f), 2.9670596f);
+            const char *mode = getenv("AVP2_R3D_WEAPONFOV");
+            float kx = tanf(vfx * 0.5f) / tanf(wfx * 0.5f), ky = tanf(vfy * 0.5f) / tanf(wfy * 0.5f);
+            if (!strchr(mode, 'x')) kx = 1.0f;
+            if (!strchr(mode, 'y')) ky = 1.0f;
+            placed = Transform3D(Basis().scaled(Vector3(kx, ky, 1.0f)), Vector3()) * xf;
+        }
+    }
+    mi.mi->set_transform(placed);
     mi.frame = gs->frame;
     if (!mi.shown) { mi.mi->set_visible(true); mi.shown = 1; }
 
@@ -2003,6 +2044,8 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
                     render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTCOLOR + 8) : 0.0f, render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTDIR) : 0.0f,
                     render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTDIR + 4) : 0.0f, render_struct ? gf((uint32_t)(uintptr_t)render_struct + RS_LIGHTDIR + 8) : 0.0f,
                     gf(sd + 0x74), gf(sd + 0x78), gf(sd + 0x7c), gf(sd + 0x50), gf(sd + 0x54), gf(sd + 0x58), render_struct ? g32((uint32_t)(uintptr_t)render_struct + 0x150) : 0);
+            eprintf("render3d: ExtraFOVXOffset %.3f ExtraFOVYOffset %.3f ModelFovTest %.0f, view fov %.3f %.3f\n", cvar("ExtraFOVXOffset", -999), cvar("ExtraFOVYOffset", -999),
+                    cvar("ModelFovTest", -1), gf(sd + SD_XFOV), gf(sd + SD_YFOV));
             eprintf("render3d: really close model \"%s\" fov offset %u %.3f %.3f, box %.1f %.1f %.1f - %.1f %.1f %.1f, at %.2f %.2f %.2f\n", g32(model + 4) ? (const char *)(uintptr_t)g32(model + 4) : "?",
                     g32(model + 0x140), gf(model + 0x144), gf(model + 0x148), box.position.x, box.position.y, box.position.z, box.get_end().x, box.get_end().y, box.get_end().z,
                     xf.origin.x, xf.origin.y, xf.origin.z);

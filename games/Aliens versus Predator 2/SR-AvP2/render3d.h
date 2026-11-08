@@ -25,6 +25,8 @@ int r3d_render_scene(uint8_t *scene);
 void r3d_end_frame(int drawn);
 // a texture changed or is released (SharedTexture*)
 void r3d_unbind_texture(void *texture);
+// the game's screen (render mode) size: the scene rectangle (SceneDesc m_Rect) is in its pixels
+void r3d_set_screen_size(int w, int h);
 
 #ifdef __cplusplus
 }
