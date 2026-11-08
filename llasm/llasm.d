@@ -1884,15 +1884,21 @@ void compare_float_instr(int paramtype, int pop, param_struct paramvals0, bool l
             break;
     }
 
+    // (numbered in the order of the lines)
     string tmp2 = get_new_temporary_register();
     string tmp3 = get_new_temporary_register();
+    string tmp5 = get_new_temporary_register();
     string tmp4 = get_new_temporary_register();
+    string tmp6 = get_new_temporary_register();
     string dst = get_new_temporary_register();
 
+    // less: C0, equal: C3, unordered (a NaN): C3 C2 C0 (as the x87)
     add_output_line(tmp2 ~ " = fcmp olt double " ~ src1 ~ ", " ~ src2);
     add_output_line(tmp3 ~ " = fcmp oeq double " ~ src1 ~ ", " ~ src2);
+    add_output_line(tmp5 ~ " = fcmp uno double " ~ src1 ~ ", " ~ src2);
     add_output_line(tmp4 ~ " = select i1 " ~ tmp3 ~ ", i32 " ~ to!string(0x4000) ~ ", i32 0");
-    add_output_line(dst ~ " = select i1 " ~ tmp2 ~ ", i32 " ~ to!string(0x0100) ~ ", i32 " ~ tmp4);
+    add_output_line(tmp6 ~ " = select i1 " ~ tmp5 ~ ", i32 " ~ to!string(0x4500) ~ ", i32 " ~ tmp4);
+    add_output_line(dst ~ " = select i1 " ~ tmp2 ~ ", i32 " ~ to!string(0x0100) ~ ", i32 " ~ tmp6);
 
     store_temporary_register_to_reg(dst, "st_sw_cond", last_reg_write0);
 
@@ -3106,8 +3112,16 @@ bool process_proc_body(string proc_name)
                         {
                             register_state[i] = RegisterState.Empty;
                         }
-                        // todo: vycistit vsetko, alebo iba x86 registre ?
-                        current_temporary_register = (string[string]).init; // clear list
+                        // the x86 registers are reloaded (the function can change them through the cpu structure);
+                        // the temporaries are SSA values (optimization level 2), which stay valid across the call
+                        // (SRW can put a call between a comparison and its jump: a store to an absolute address)
+                        foreach (reg; current_temporary_register.keys)
+                        {
+                            if (!is_temporary_register(reg))
+                            {
+                                current_temporary_register.remove(reg);
+                            }
+                        }
 
                         for (int i = 0; i < num_float_regs; i++)
                         {

@@ -246,8 +246,12 @@ loc_1025C164,0x00,0x01 ; CF from the jumps to it
 loc_1025C179,0x01,0x00 ; CF for loc_1025C164
 loc_1025C190,0x01,0x00 ; CF for loc_1025C164
 loc_1025C199,0x01,0x00 ; CF for loc_1025C164
-loc_1025D2B6,0x08,0x00 ; ZF for loc_102575BD; ZF for loc_102582AD
-loc_1025D2E7,0x08,0x00 ; ZF for loc_102575BD; ZF for loc_102582AD
+loc_1025D2B6,0x08,0x00 ; ZF for loc_102575BD; ZF for loc_102582AD; ZF for loc_102575BD; ZF for loc_102582AD; ZF for loc_102575BD; ZF for loc_102582AD
+loc_1025D2E7,0x08,0x00 ; ZF for loc_102575BD; ZF for loc_102582AD; ZF for loc_102575BD; ZF for loc_102582AD; ZF for loc_102575BD; ZF for loc_102582AD
+loc_1025D2F6,0x08,0x00 ; ZF for loc_1025D2F8; ZF for loc_1025D2F9
+loc_1025D2F8,0x08,0x08 ; ZF for loc_102575BD; ZF for loc_102582AD; ZF from the jumps to it; ZF for loc_102575BD; ZF for loc_102582AD
+loc_1025D2F9,0x00,0x08 ; ZF from the jumps to it
+loc_1025D2FD,0x08,0x00 ; ZF for loc_102575BD; ZF for loc_102582AD; ZF for loc_102575BD; ZF for loc_102582AD
 loc_1025E551,0x08,0x00 ; ZF for loc_1025E568
 loc_1025E566,0x08,0x00 ; ZF for loc_1025E568
 loc_1025E568,0x00,0x08 ; ZF from the jumps to it

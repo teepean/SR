@@ -237,8 +237,12 @@ loc_1022E209,0x08,0x00 ; ZF for loc_1022E20D
 loc_1022E20D,0x00,0x08 ; ZF from the jumps to it
 loc_1022EA28,0x08,0x00 ; ZF for loc_1022EAFD
 loc_1022EAFD,0x00,0x08 ; ZF from the jumps to it
-loc_1022FCD6,0x08,0x00 ; ZF for loc_1022A1DD; ZF for loc_1022A34D
-loc_1022FD07,0x08,0x00 ; ZF for loc_1022A1DD; ZF for loc_1022A34D
+loc_1022FCD6,0x08,0x00 ; ZF for loc_1022A1DD; ZF for loc_1022A34D; ZF for loc_1022A1DD; ZF for loc_1022A34D; ZF for loc_1022A1DD; ZF for loc_1022A34D
+loc_1022FD07,0x08,0x00 ; ZF for loc_1022A1DD; ZF for loc_1022A34D; ZF for loc_1022A1DD; ZF for loc_1022A34D; ZF for loc_1022A1DD; ZF for loc_1022A34D
+loc_1022FD16,0x08,0x00 ; ZF for loc_1022FD18; ZF for loc_1022FD19
+loc_1022FD18,0x08,0x08 ; ZF for loc_1022A1DD; ZF for loc_1022A34D; ZF from the jumps to it; ZF for loc_1022A1DD; ZF for loc_1022A34D
+loc_1022FD19,0x00,0x08 ; ZF from the jumps to it
+loc_1022FD1D,0x08,0x00 ; ZF for loc_1022A1DD; ZF for loc_1022A34D; ZF for loc_1022A1DD; ZF for loc_1022A34D
 loc_102311E0,0x08,0x00 ; ZF for loc_102311F7
 loc_102311F5,0x08,0x00 ; ZF for loc_102311F7
 loc_102311F7,0x00,0x08 ; ZF from the jumps to it

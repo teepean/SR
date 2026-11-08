@@ -2,5 +2,12 @@
 ;;  Aliens versus Predator 2: procedures of the runtime that the recompiled code calls (external_procedures.sci)
 ;;
 
+; the imports' names -> the runtime's procedures (gen_imports.py)
+include imports.llinc
+
 proc memcpy external
 proc memmove external
+
+; the runtime's procedures in instruction_replacements.sci (runtime-asm.llasm)
+proc avp2_time_init_asm2c external
+proc avp2_time_get_asm2c external

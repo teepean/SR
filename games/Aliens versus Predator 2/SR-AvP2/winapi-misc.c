@@ -36,10 +36,10 @@ uint32_t CCALL avp2_time_init_c(void)
     return winapi_get_ticks();
 }
 
-void CCALL avp2_time_get_c(uint32_t out)
+void CCALL avp2_time_get_c(void *out)
 {
     double t = (double)(SDL_GetPerformanceCounter() - avp2_time_base) / (double)SDL_GetPerformanceFrequency();
-    memcpy((void *)(uintptr_t)out, &t, sizeof(t));
+    memcpy(out, &t, sizeof(t));
 }
 
 

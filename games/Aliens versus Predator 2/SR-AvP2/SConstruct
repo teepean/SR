@@ -16,19 +16,44 @@ vars.Add(EnumVariable('blob', 'Recompiled code as a separate image (1) or linked
 # blob_kit=<dir>: the images and their link tables made elsewhere (tools/mkmackit.sh on Linux: <dir>/<program>.blob,
 # <dir>/blob_link_<program>.cpp) - then neither nasm, GNU binutils nor the generated assembler are needed here
 vars.Add(PathVariable('blob_kit', 'Prebuilt recompiled-code images (blob mode)', '', PathVariable.PathAccept))
+# llasm=1: the recompiled code from SRW's llasm output (llasm/SConscript: llasm -> LLVM -> llc) instead of the x86-64
+# assembler - how native arm64 works; on x86-64 Linux it tests the llasm version. ptrofs=1: game addresses are 32-bit
+# offsets from a base (PTROFS_64BIT, a position independent program) - required on arm64 macOS
+vars.Add(EnumVariable('llasm', 'Recompiled code through llasm (1) or the x86-64 assembler (0)', '0',
+                                 allowed_values=('0', '1')))
+vars.Add(EnumVariable('ptrofs', 'llasm: game addresses as offsets from a base (1) or direct low addresses (0)', '0',
+                                 allowed_values=('0', '1')))
 env = Environment(variables = vars)
 
 debug = int(env['debug'])
 device = env['device']
 blob = (env['blob'] == '1') or (device == 'pc64-macos')     # macOS: always
 blob_kit = env['blob_kit'] or (os.path.isdir('mac-kit') and device == 'pc64-macos' and 'mac-kit') or ''
+use_llasm = env['llasm'] == '1'
+ptrofs = use_llasm and env['ptrofs'] == '1'
+if use_llasm:
+    blob = False
 
 Help(vars.GenerateHelpText(env))
 
 if device == 'pc64-linux':
     # x86-64 (SRW OUT_X64): the runtime is compiled as C++ (PTR32 types, Game-Memory.c low-memory allocator);
     # recompiled code uses absolute 32-bit addresses, so the non-PIE executable is linked low (at 0x10000000)
-    if blob:
+    if use_llasm and ptrofs:
+        env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fPIE -fno-exceptions -fno-rtti',
+                   LINKFLAGS = '-m64 -pie -Wl,-z,noexecstack',
+                   CPPDEFINES = ['SR_LLASM', 'PTROFS_64BIT'],
+                   LLASMFLAGS = '-m64 -inline-idiv -inline-float -pic -ptrofs',
+                   LLVMFLAGS = '-mtriple=x86_64-unknown-linux-gnu --relocation-model=pic')
+        env['OBJSUFFIX'] = '.llp.o'
+    elif use_llasm:
+        env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fno-PIE -fno-exceptions -fno-rtti',
+                   LINKFLAGS = '-m64 -no-pie -Wl,-Ttext-segment,0x10000000 -Wl,-z,noexecstack',
+                   CPPDEFINES = ['SR_LLASM'],
+                   LLASMFLAGS = '-m64 -inline-idiv -inline-float',
+                   LLVMFLAGS = '-mtriple=x86_64-unknown-linux-gnu')
+        env['OBJSUFFIX'] = '.lla.o'
+    elif blob:
         env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fPIE -fno-exceptions -fno-rtti',
                    LINKFLAGS = '-m64 -pie -Wl,-z,noexecstack',
                    CPPDEFINES = ['SR_BLOB'])
@@ -36,7 +61,8 @@ if device == 'pc64-linux':
         env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fno-PIE -fno-exceptions -fno-rtti',
                    LINKFLAGS = '-m64 -no-pie -Wl,-Ttext-segment,0x10000000 -Wl,-z,noexecstack')
     env['LINK'] = 'g++'
-    env['OBJSUFFIX'] = '.pie.o64' if blob else '.o64'   # the 32-bit build uses .o in the same directories
+    if not use_llasm:
+        env['OBJSUFFIX'] = '.pie.o64' if blob else '.o64'   # the 32-bit build uses .o in the same directories
 elif device == 'pc64-windows':
     # Windows x64, cross-compiled with MinGW-w64 (x86_64-w64-mingw32-*). SDL2 and freetype for MinGW:
     # WIN_DEPS=<dir> with <dir>/include/SDL2, <dir>/include/freetype2 and <dir>/lib (see BUILDING.md).
@@ -113,7 +139,12 @@ if device in ('pc64-linux', 'pc64-macos') and os.path.exists(os.path.join(dmusic
 else:
     print('dmusic not found: no music')
 
-common_asm_objs, common_c_objs, avp2_objs, ph_objs = SConscript('x64/SConscript', exports='device env')
+if use_llasm:
+    # the llasm version: its own CPU emulation and entry points instead of x64/*.asm and x64/asm-cpu.c
+    common_asm_objs, avp2_objs, ph_objs = SConscript('llasm/SConscript', exports='env')
+    common_c_objs = []
+else:
+    common_asm_objs, common_c_objs, avp2_objs, ph_objs = SConscript('x64/SConscript', exports='device env')
 
 # Godot (LibGodot) as the window system and 3D renderer: host_godot.cpp with godot-cpp
 # (GODOT_CPP=<godot-cpp checkout with bin/libgodot-cpp.*.a built for the libgodot used>). libgodot itself is
@@ -141,7 +172,7 @@ else:
 
 # two programs from the same runtime: Aliens versus Predator 2 and Primal Hunt (game_avp2.c / game_ph.c and
 # each game's recompiled modules)
-suffix = ('-x64-blob' if blob else '-x64') if device == 'pc64-linux' else ''
+suffix = ('-llasm-ptrofs' if ptrofs else '-llasm' if use_llasm else '-x64-blob' if blob else '-x64') if device == 'pc64-linux' else ''
 def runtime_object(f):
     # blob: the runtime's allocations below 2 GB (lowalloc.h) - not in the allocator itself, nor where the memory
     # never reaches the game (rezfs/music: dmusic frees what it gets with the system's free; the mixer and Bink's

@@ -733,7 +733,7 @@ static void arm_slack(heap_block *b)
     memset((uint8_t *)(b + 1) + b->size, HEAP_CANARY, HEAP_SLACK);
 }
 
-#if !defined(__x86_64__) && !defined(__SANITIZE_ADDRESS__)
+#if defined(__i386__) && !defined(__SANITIZE_ADDRESS__)
 // 32-bit build: blocks come from glibc's malloc - checks the size field of the malloc chunk header
 // (damaged by writes before the block or after the previous one; glibc aborts when it's freed)
 static int check_host_chunk(heap_block *b, uint32_t size, const char *where)
@@ -755,7 +755,7 @@ static int check_block(heap_block *b, const char *where)
     const uint8_t *slack = (const uint8_t *)(b + 1) + b->size;
     int i;
     if (use_heap_guard()) return 1;
-#if !defined(__x86_64__) && !defined(__SANITIZE_ADDRESS__)
+#if defined(__i386__) && !defined(__SANITIZE_ADDRESS__)
     if (!check_host_chunk(b, b->size, where)) return 0;
 #endif
     if (b->magic != HEAP_BLOCK_MAGIC)
@@ -836,7 +836,7 @@ void heap_check_all(void)
         if (h == NULL) continue;
         for (b = h->first; b != NULL; b = b->next) check_block(b, "periodic check");
     }
-#if !defined(__x86_64__) && !defined(__SANITIZE_ADDRESS__)
+#if defined(__i386__) && !defined(__SANITIZE_ADDRESS__)
     if (!use_heap_guard())
     {
         static int reported;
@@ -1190,11 +1190,14 @@ uint32_t winapi_get_ticks(void)
 
 uint32_t CCALL GetTickCount_c(void) { return winapi_get_ticks(); }
 
+uint32_t CCALL GetCurrentThreadId_c(void);
+
 void CCALL Sleep_c(uint32_t dwMilliseconds)
 {
     struct timespec ts;
 
     winapi_process_events();
+    if (winapi_debug && (dwMilliseconds >= 50)) eprintf("Sleep: thread %u sleeps %u ms, caller %08x\n", GetCurrentThreadId_c(), dwMilliseconds, game_caller());
     ts.tv_sec = dwMilliseconds / 1000;
     ts.tv_nsec = (dwMilliseconds % 1000) * 1000000;
     nanosleep(&ts, NULL);
@@ -2299,10 +2302,27 @@ static int signalled(void *h, int consume)
     }
 }
 
+static uint64_t now_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+// AVP2_DEBUG: waits of 50 ms or more (the thread, the recompiled code's return address)
+static void report_long_wait(const char *what, uint64_t start, uint32_t timeout, uint32_t result)
+{
+    uint64_t t = now_ms() - start;
+    if (winapi_debug && (t >= 50))
+        eprintf("%s: thread %u waited %u ms (timeout %d, result %u), caller %08x\n", what, GetCurrentThreadId_c(), (unsigned)t,
+                (int)timeout, result, game_caller());
+}
+
 static uint32_t wait_objects(uint32_t n, void *const *h, int all, uint32_t ms)
 {
     struct timespec deadline;
     uint32_t i, result = 0x102;     // WAIT_TIMEOUT
+    uint64_t start = now_ms();
 
     clock_gettime(CLOCK_REALTIME, &deadline);
     deadline.tv_sec += ms / 1000;
@@ -2327,6 +2347,7 @@ static uint32_t wait_objects(uint32_t n, void *const *h, int all, uint32_t ms)
         else if (pthread_cond_timedwait(&wait_cond, &wait_mutex, &deadline) != 0) break;
     }
     pthread_mutex_unlock(&wait_mutex);
+    report_long_wait("wait", start, ms, result);
     return result;
 }
 
@@ -2387,7 +2408,16 @@ void CCALL DeleteCriticalSection_c(void *lpCriticalSection)
     }
 }
 
-void CCALL EnterCriticalSection_c(void *lpCriticalSection) { pthread_mutex_lock(cs_mutex(lpCriticalSection)); }
+void CCALL EnterCriticalSection_c(void *lpCriticalSection)
+{
+    pthread_mutex_t *m = cs_mutex(lpCriticalSection);
+    if (pthread_mutex_trylock(m) != 0)
+    {
+        uint64_t start = now_ms();
+        pthread_mutex_lock(m);
+        report_long_wait("EnterCriticalSection", start, 0xFFFFFFFFu, 0);
+    }
+}
 void CCALL LeaveCriticalSection_c(void *lpCriticalSection) { pthread_mutex_unlock(cs_mutex(lpCriticalSection)); }
 
 int32_t CCALL InterlockedIncrement_c(int32_t *lpAddend) { return __atomic_add_fetch(lpAddend, 1, __ATOMIC_SEQ_CST); }

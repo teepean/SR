@@ -258,6 +258,10 @@ loc_4C63DB,0x08,0x00 ; ZF for loc_4C64B0
 loc_4C64B0,0x00,0x08 ; ZF from the jumps to it
 loc_4C7D56,0x08,0x00 ; ZF for loc_4C149D
 loc_4C7D87,0x08,0x00 ; ZF for loc_4C149D
+loc_4C7D96,0x08,0x00 ; ZF for loc_4C7D98; ZF for loc_4C7D99
+loc_4C7D98,0x08,0x08 ; ZF for loc_4C149D; ZF from the jumps to it
+loc_4C7D99,0x00,0x08 ; ZF from the jumps to it
+loc_4C7D9D,0x08,0x00 ; ZF for loc_4C149D
 loc_4CA904,0x01,0x00 ; CF for loc_4CA934
 loc_4CA90D,0x01,0x00 ; CF for loc_4CA934
 loc_4CA919,0x01,0x00 ; CF for loc_4CA934

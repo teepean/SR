@@ -542,3 +542,33 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   canvas, raw, fs memory) in llasm, game pointers through pointer_offset in the C runtime (ptr32_t, REG2PTR;
   ~230 direct casts), the memory layout (lithtech.exe's image at offset 0x400000, the low allocator inside the
   4 GB window). Built and tested first on Linux x86-64 with -ptrofs, then arm64 macOS.
+
+### 2026-11-08 — the llasm version runs (Linux x86-64, direct low addresses)
+- `scons llasm=1` -> SR-AvP2-llasm / SR-AvP2PH-llasm: the recompiled code from the llasm output (llasm/SConscript:
+  llasm -O | llc -O=2, all 8 modules in ~40 s), the runtime unchanged (game addresses still low: a non-PIE program at
+  0x10000000). It separates the translation's bugs from the pointer offset work (ptrofs=1, next). m1s1 and Primal
+  Hunt's exp1s1 play like the x64 build: game code 1.2-1.4 ms per frame (x64 build 1.05-1.3 ms), same load times.
+- The runtime's llasm side: gen_imports.py writes llasm/imports.llinc (import name -> <name>_asm2c, included by
+  extern.llinc before the modules' "proc <import> external"), imports-asm.llasm / com-asm.llasm (each procedure takes
+  its arguments from the emulated stack, calls the C function, eax = result, pops for stdcall; pointer arguments and
+  results from the C prototypes - llasm converts them with -ptrofs) and runtime-asm.llasm (music/canvas thiscall
+  stubs, time_Init/time_GetTime, call_asm_eax). llasm/llasm-cpu.c: the CPU state per thread (Septerra's), C ->
+  recompiled code (call_game: arguments onto the emulated stack, eax = the function, llasm's global procedure pushes
+  its return procedure), the helpers' handlers for int/absolute addresses (Raw_UnexpectedHandler).
+  The DLL exports get their module prefix as in gen_all.sh (tools/prefix_exports.py, also llasm's c_<name>).
+  The llasm procedures are made internal (sed in the build): local symbols loc_<address> for perf and gdb.
+- Translation bugs found by running it:
+  - llasm -O forgot its temporaries after every call (they're SSA values, valid after it): a store to an absolute low
+    address (a helper call) between cmp and jae -> "uninitialized register tmpcnd". Now only the x86 registers are
+    reloaded after a call.
+  - x87 compares with a NaN: llasm's inline fcom and the helpers' X87_CMP gave "greater" (no bits), the x87 sets
+    C3 C2 C0 (unordered).
+  - The CRT's _CIacos (in every module): `call <load helper>; call L` with `L: push edx; fstcw; je special` - the je
+    reads ZF from the helper's rets (cshell 0x10174498) through a call to a label inside the function. mkiflags.py now also follows
+    the calls to a flags label (the instruction before each call, or that call's callee's rets). Without it acos
+    took the special-value path with stale flags: an angle of -inf and an endless `while (a < 0) a += 2pi` loop
+    while loading m1s1.
+- Diagnostics: AVP2_DEBUG=1 reports waits / blocked critical sections of 50 ms or more and Sleeps of 50 ms or more
+  with the thread and the recompiled caller (llasm: the return address on the emulated stack, nm -> loc_<address>).
+- Both builds spend ~16% of the CPU time in Game-Memory.c's allocator (find_largest_free_block: a linear search of
+  the free blocks for the game's HeapAlloc) - worth a better allocator for the choppiness item.

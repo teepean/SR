@@ -45,7 +45,9 @@ gen() {
         [ -e "$HERE/$sub/x64/$f.sci" ] && cp "$HERE/$sub/x64/$f.sci" "$dir/"
     done
     for f in "$HERE/$sub/llasm/"*.sci; do [ -e "$f" ] && cp "$f" "$dir/"; done
-    (cd "$dir" && ./SRW.exe "$orig" "$mod.llasm" > srw.out 2> srw.err; echo "$mod: SRW rc=$?"; grep -E "^Error" srw.err | head -5)
+    (cd "$dir" && ./SRW.exe "$orig" "$mod.llasm" > srw.out 2> srw.err; echo "$mod: SRW rc=$?"; grep -E "^Error" srw.err | head -5
+     # the modules export the same names (SetInstanceHandle, ...): <module>_<name>, as in gen_all.sh
+     [ -e "$HERE/$sub/exports.txt" ] && python3 "$HERE/tools/prefix_exports.py" "$mod" "$HERE/$sub/exports.txt" "$mod.llasm" seg*.llinc)
     mkdir -p "$out"
     cp "$dir/$mod.llasm" "$dir/"seg*.llinc "$out/"
 }

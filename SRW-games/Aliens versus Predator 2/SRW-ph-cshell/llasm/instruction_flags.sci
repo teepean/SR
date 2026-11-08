@@ -164,6 +164,10 @@ loc_1015DC9F,0x08,0x00 ; ZF for loc_1015DCA3
 loc_1015DCA3,0x00,0x08 ; ZF from the jumps to it
 loc_1015E1F6,0x08,0x00 ; ZF for loc_101587ED
 loc_1015E227,0x08,0x00 ; ZF for loc_101587ED
+loc_1015E236,0x08,0x00 ; ZF for loc_1015E238; ZF for loc_1015E239
+loc_1015E238,0x08,0x08 ; ZF for loc_101587ED; ZF from the jumps to it
+loc_1015E239,0x00,0x08 ; ZF from the jumps to it
+loc_1015E23D,0x08,0x00 ; ZF for loc_101587ED
 loc_10160771,0x08,0x00 ; ZF for loc_10160788
 loc_10160786,0x08,0x00 ; ZF for loc_10160788
 loc_10160788,0x00,0x08 ; ZF from the jumps to it

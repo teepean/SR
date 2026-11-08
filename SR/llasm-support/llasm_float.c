@@ -138,13 +138,16 @@ const static double const_ln2 = M_LN2;
 
 #define CLEAR_X87_FLAGS { st_sw_cond = 0; }
 
+// unordered (a NaN): C3 C2 C0 all set, as the x87 does
 #define X87_CMP(x, y)  { \
     if ( (x) < (y) ) { \
         st_sw_cond = X87_CF; \
     } else if ( (x) == (y) ) { \
         st_sw_cond = X87_ZF; \
-    } else { \
+    } else if ( (x) > (y) ) { \
         st_sw_cond = 0; \
+    } else { \
+        st_sw_cond = X87_C0 | X87_C2 | X87_C3; \
     } \
 }
 
@@ -1107,14 +1110,7 @@ EXTERNC void CCALL x87_fsincos_void(CPU)
 // compare ST0 with 0.0
 EXTERNC void CCALL x87_ftst_void(CPU)
 {
-    if (isnan(ST0))
-    {
-        st_sw_cond = X87_C0 | X87_C2 | X87_C3;
-    }
-    else
-    {
-        X87_CMP(ST0, const_0_0)
-    }
+    X87_CMP(ST0, const_0_0)
 }
 
 // classify ST0 (C3 C2 C0): NaN 001, normal 010, infinity 011, zero 100, denormal 110; C1 = sign

@@ -1,0 +1,62 @@
+#
+#  The llasm version of the recompiled code (SConstruct llasm=1): SRW's OUT_LLASM output of the modules
+#  (SRW-games/Aliens versus Predator 2/gen_all_llasm.sh -> llasm/<module>/, Primal Hunt's llasm/ph-<module>/),
+#  the runtime's entry points (gen_imports.py: imports-asm.llasm, com-asm.llasm, runtime-asm.llasm) and the
+#  emulated CPU's parts in C (llasm-cpu.c, SR/llasm-support). llasm -> LLVM IR -> llc -> an object for any target.
+#
+
+import os
+import re
+import shutil
+
+Import('env')
+
+llasm_include_re = re.compile(r'^include\s+(\S+)\r?$', re.M)
+
+here = Dir('.').srcnode().abspath
+support = os.path.normpath(os.path.join(here, '..', '..', '..', '..', 'SR', 'llasm-support'))
+
+def llasmfile_scan(node, env, path):
+    # the includes as llasm finds them: the including file's directory, then -I (this directory, SR/llasm-support)
+    found = []
+    for inc in llasm_include_re.findall(node.get_text_contents()):
+        for d in [os.path.dirname(node.srcnode().abspath), here, support]:
+            if os.path.exists(os.path.join(d, inc)):
+                found.append(env.File(os.path.join(d, inc)))
+                break
+    return found
+
+SourceFileScanner.add_scanner('.llasm', Scanner(function = llasmfile_scan, skeys = ['.llasm', '.llinc'], recursive = True))
+
+env_path = env['ENV']['PATH'].split(os.pathsep)
+for util in ['llasm', 'llc']:
+    util_path = shutil.which(util)
+    if util_path is not None and os.path.dirname(util_path) not in env_path:
+        env_path.append(os.path.dirname(util_path))
+env['ENV']['PATH'] = os.pathsep.join(env_path)
+
+# llasm's includes: the module's own directory, this one (llasm.llinc, extern.llinc, ...) and SR/llasm-support.
+# The procedures (loc_<original address>) are internal instead of private: local symbols, which profilers and
+# debuggers show.
+env.Append(BUILDERS = {'llasm': Builder(
+    action = 'llasm $LLASMFLAGS -O -I ${SOURCE.dir.abspath} -I "' + here + '" -I "' + support + '" ${SOURCE.abspath} | sed -e "s/^define private fastcc/define internal fastcc/" | llc -O=2 -filetype=obj $LLVMFLAGS -o $TARGET',
+    suffix = '$OBJSUFFIX', src_suffix = '.llasm')})
+
+# the emulated CPU (C): SR/llasm-support's procedures that llasm.llinc includes
+cenv = env.Clone()
+cenv.Append(CPPPATH = [support])
+support_objs = [cenv.Object('support/' + name + env['OBJSUFFIX'], os.path.join(support, name + '.c'))
+                for name in ['llasm_cmps', 'llasm_divide', 'llasm_float', 'llasm_fs_mem', 'llasm_int', 'llasm_movmem',
+                             'llasm_movs', 'llasm_pushx', 'llasm_scas', 'llasm_stos']]
+common_objs = support_objs + [cenv.Object('llasm-cpu.c')] + [env.llasm(f) for f in ['imports-asm.llasm', 'com-asm.llasm', 'runtime-asm.llasm']]
+
+modules = ['lithtech', 'cshell', 'server', 'object']
+avp2_objs = [env.llasm(m + '/' + m + '.llasm') for m in modules if os.path.exists(os.path.join(here, m, m + '.llasm'))]
+ph_objs = [env.llasm('ph-' + m + '/' + m + '.llasm') for m in modules if os.path.exists(os.path.join(here, 'ph-' + m, m + '.llasm'))]
+if len(avp2_objs) != len(modules):
+    print('llasm: AvP2 modules missing in llasm/ (gen_all_llasm.sh)')
+    avp2_objs = []
+if len(ph_objs) != len(modules):
+    ph_objs = []
+
+Return('common_objs avp2_objs ph_objs')

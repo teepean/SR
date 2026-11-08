@@ -94,7 +94,7 @@ loc_10059FD3,0x01,0x00 ; CF for loc_10059FE5
 loc_10059FD7,0x01,0x00 ; CF for loc_10059FE5
 loc_10059FE1,0x01,0x00 ; CF for loc_10059FE5
 loc_10059FE3,0x01,0x00 ; CF for loc_10059FE5
-loc_10059FE5,0x01,0x01 ; CF for loc_10059FEA; CF from the jumps to it
+loc_10059FE5,0x01,0x01 ; CF for loc_10059FEA; CF from the jumps to it; CF from the jumps to it; CF for loc_10059FEA; CF from the jumps to it; CF for loc_10059FEA
 loc_10059FEA,0x00,0x01 ; CF from the jumps to it
 loc_10059FFC,0x01,0x00 ; CF for loc_10059FE5
 loc_1005A003,0x01,0x00 ; CF for loc_10059FE5
@@ -127,8 +127,10 @@ loc_1005DDD3,0x08,0x00 ; ZF for loc_1005DDD7
 loc_1005DDD7,0x00,0x08 ; ZF from the jumps to it
 loc_1005E922,0x08,0x00 ; ZF for loc_1005E924
 loc_1005E924,0x00,0x08 ; ZF from the jumps to it
-loc_1005E926,0x08,0x00 ; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD
-loc_1005E957,0x08,0x00 ; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD
+loc_1005E926,0x08,0x00 ; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD
+loc_1005E957,0x08,0x00 ; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD
+loc_1005E968,0x08,0x00 ; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD
+loc_1005E96D,0x08,0x00 ; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD; ZF for loc_100587FD; ZF for loc_10058EDD; ZF for loc_10059A9D; ZF for loc_1005A1FD
 loc_1005EE11,0x08,0x00 ; ZF for loc_1005EEE6
 loc_1005EEE6,0x00,0x08 ; ZF from the jumps to it
 loc_10062A68,0x01,0x00 ; CF for loc_10062A6A

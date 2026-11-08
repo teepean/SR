@@ -9,6 +9,8 @@ label - each jump to it and the instruction before it, when it falls through - w
   mkiflags.py <module (PE)> <srw.err from SRW_LIST_ERRORS=1> [<instruction_flags.sci so far>] > instruction_flags.sci
 
 After a call the flags come from the callee (MSVC's CRT _fload returns ZF): then its ret instructions write them.
+A label that is also called (the CRT's _CIacos: `call _fload; call L` ... `L: push edx; fstcw; je`) gets its flags
+from before each call too.
 
 The jumps come from a linear disassembly of the code sections (objdump). Run SRW again with the result: an entry can
 move the need to an earlier label (the jump's own region), which the next run reports - repeat until none is left.
@@ -42,6 +44,8 @@ def main():
             sites.append((int(m.group(1), 16), int(m.group(2), 16)))
     if not sites:
         print('mkiflags: no flags errors in ' + err, file=sys.stderr)
+    # the labels of the existing entries again (what writes their flags is derived anew: new rules apply to them)
+    sites += [(a, e[1]) for a, e in sorted(entries.items()) if e[1] and (a, e[1]) not in sites]
 
     # linear disassembly of the code: every instruction's address, the jumps' targets
     out = subprocess.run(['objdump', '-d', '--no-show-raw-insn', pe], capture_output=True, text=True).stdout
@@ -58,10 +62,10 @@ def main():
                 t = int(tm.group(2), 16)
         insns.append((a, mn, t))
     index = {a: i for i, (a, mn, t) in enumerate(insns)}
-    sources = {}
+    sources, callers = {}, {}
     for a, mn, t in insns:
-        if t is not None and not mn.startswith('call'):
-            sources.setdefault(t, []).append(a)
+        if t is not None:
+            (callers if mn.startswith('call') else sources).setdefault(t, []).append(a)
 
     def returns(entry):
         # the ret instructions of the function at entry (following its jumps)
@@ -88,22 +92,32 @@ def main():
         e[1] |= flags
         e[2].append('%s from the jumps to it' % names(flags))
         preds = list(sources.get(site, []))
-        i = index.get(site)
-        if i is not None and i > 0:
+
+        def before(a, what):
+            # the instruction that runs before the one at a (falls through to it) writes the flags; a call: its rets
+            i = index.get(a)
+            if i is None or i == 0:
+                print('mkiflags: 0x%x is not an instruction start in the linear disassembly' % a, file=sys.stderr)
+                return
             pa, pmn, pt = insns[i - 1]
             if pmn.startswith('call'):
                 # after a call the flags come from the callee (MSVC's _fload returns ZF): its rets write them
                 if pt is None:
-                    print('mkiflags: 0x%x follows an indirect call' % site, file=sys.stderr)
+                    print('mkiflags: 0x%x follows an indirect call' % a, file=sys.stderr)
                 else:
                     rets = returns(pt)
                     if not rets:
-                        print('mkiflags: no ret found in 0x%x (called before 0x%x)' % (pt, site), file=sys.stderr)
+                        print('mkiflags: no ret found in 0x%x (called before 0x%x)' % (pt, a), file=sys.stderr)
                     preds.extend(rets)
             elif not (pmn.startswith('jmp') or pmn.startswith('ret') or pmn in ('int3', 'hlt')):
                 preds.append(pa)
-        else:
-            print('mkiflags: 0x%x is not an instruction start in the linear disassembly' % site, file=sys.stderr)
+            elif what == 'call':
+                print('mkiflags: nothing before the call at 0x%x writes the flags of 0x%x' % (a, site), file=sys.stderr)
+
+        before(site, 'label')
+        # a label that is also called: the flags come from before each call (the call itself keeps them)
+        for c in callers.get(site, []):
+            before(c, 'call')
         if not preds:
             print('mkiflags: nothing reaches 0x%x' % site, file=sys.stderr)
         for p in preds:

@@ -87,7 +87,7 @@ loc_100632E3,0x01,0x00 ; CF for loc_100632F5
 loc_100632E7,0x01,0x00 ; CF for loc_100632F5
 loc_100632F1,0x01,0x00 ; CF for loc_100632F5
 loc_100632F3,0x01,0x00 ; CF for loc_100632F5
-loc_100632F5,0x01,0x01 ; CF for loc_100632FA; CF from the jumps to it
+loc_100632F5,0x01,0x01 ; CF for loc_100632FA; CF from the jumps to it; CF from the jumps to it; CF for loc_100632FA; CF from the jumps to it; CF for loc_100632FA
 loc_100632FA,0x00,0x01 ; CF from the jumps to it
 loc_1006330C,0x01,0x00 ; CF for loc_100632F5
 loc_10063313,0x01,0x00 ; CF for loc_100632F5
@@ -120,8 +120,10 @@ loc_10066D81,0x08,0x00 ; ZF for loc_10066D83
 loc_10066D83,0x00,0x08 ; ZF from the jumps to it
 loc_10068572,0x08,0x00 ; ZF for loc_10068574
 loc_10068574,0x00,0x08 ; ZF from the jumps to it
-loc_10068576,0x08,0x00 ; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D
-loc_100685A7,0x08,0x00 ; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D
+loc_10068576,0x08,0x00 ; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D
+loc_100685A7,0x08,0x00 ; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D
+loc_100685B8,0x08,0x00 ; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D
+loc_100685BD,0x08,0x00 ; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D; ZF for loc_1006199D; ZF for loc_1006207D; ZF for loc_10062E3D; ZF for loc_1006350D
 loc_10068A61,0x08,0x00 ; ZF for loc_10068B36
 loc_10068B36,0x00,0x08 ; ZF from the jumps to it
 loc_1006C208,0x01,0x00 ; CF for loc_1006C20A

@@ -190,6 +190,10 @@ loc_10173FE6,0x08,0x00 ; ZF for loc_10173FEA
 loc_10173FEA,0x00,0x08 ; ZF from the jumps to it
 loc_10174466,0x08,0x00 ; ZF for loc_1016E7DD
 loc_10174497,0x08,0x00 ; ZF for loc_1016E7DD
+loc_101744A6,0x08,0x00 ; ZF for loc_101744A8; ZF for loc_101744A9
+loc_101744A8,0x08,0x08 ; ZF for loc_1016E7DD; ZF from the jumps to it
+loc_101744A9,0x00,0x08 ; ZF from the jumps to it
+loc_101744AD,0x08,0x00 ; ZF for loc_1016E7DD
 loc_101763D0,0x08,0x00 ; ZF for loc_101763E7
 loc_101763E5,0x08,0x00 ; ZF for loc_101763E7
 loc_101763E7,0x00,0x08 ; ZF from the jumps to it
