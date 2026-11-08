@@ -46,6 +46,11 @@ const uint8_t *host_keyboard_state(void);
 // SDL_BUTTON masks; window coordinates
 uint32_t host_mouse_state(int *x, int *y);
 void host_window_size(int *w, int *h);
+// the game's frame (game_w x game_h) in the window: x, y, w, h in window pixels (ghost_frame_rect)
+void host_frame_rect(int game_w, int game_h, float r[4]);
+// how the 3D view fills the window: SR-AvP2.cfg aspect
+enum { HOST_ASPECT_STRETCH, HOST_ASPECT_KEEP, HOST_ASPECT_WIDE };
+int host_aspect_mode(void);
 void host_warp_mouse(int wx, int wy);
 void host_set_relative_mouse(int on);
 void host_show_cursor(int show);

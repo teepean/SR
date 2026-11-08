@@ -562,7 +562,7 @@ uint32_t CCALL ren_IsIn3D_c(void) { return in_3d; }
 int32_t CCALL ren_RenderScene_c(uint8_t *pScene)
 {
     int32_t *rect;
-    int x, y;
+    int y;
 
     if (pScene == NULL) return RENDER_OK;
     if (!r3d_render_scene(pScene)) return RENDER_OK;
@@ -574,7 +574,7 @@ int32_t CCALL ren_RenderScene_c(uint8_t *pScene)
         LTRect32 r = { rect[0], rect[1], rect[2], rect[3] };
         clip_rect(&r, screen_w, screen_h);
         for (y = r.top; y < r.bottom; y++)
-            for (x = r.left; x < r.right; x++) screen[y * screen_w + x] = 0;
+            if (r.right > r.left) memset(&screen[y * screen_w + r.left], 0, sizeof(uint32_t) * (size_t)(r.right - r.left));
     }
     return RENDER_OK;
 }
@@ -599,7 +599,10 @@ void CCALL ren_Clear_c(LTRect32 *pRect, uint32_t flags, LTVector32 *pColor)
         c |= ((uint32_t)(cr & 0xFF) << 16) | ((uint32_t)(cg & 0xFF) << 8) | (uint32_t)(cb & 0xFF);
     }
     for (y = r.top; y < r.bottom; y++)
-        for (x = r.left; x < r.right; x++) screen[y * screen_w + x] = c;
+    {
+        uint32_t *row = &screen[y * screen_w];
+        for (x = r.left; x < r.right; x++) row[x] = c;
+    }
 }
 
 // frame pacing: the original renderer waited for the vertical retrace; AVP2_FPS (default 60, 0 = unlimited)
@@ -760,12 +763,32 @@ static inline uint32_t blend_pixel(uint32_t src, uint32_t dst, uint32_t mode, in
     }
 }
 
+// one row of a blit (mode: -1 opaque copy, else blend_pixel's mode). The store is unconditional - the color key
+// selects the old pixel - so that the loops vectorize.
+static inline __attribute__((always_inline)) void blit_row(uint32_t *__restrict d, const uint32_t *__restrict srow, int n, int use_key,
+                                                           uint32_t key, int modulate, uint32_t mod_r, uint32_t mod_g, uint32_t mod_b,
+                                                           int mode, int alpha256)
+{
+    int x;
+    for (x = 0; x < n; x++)
+    {
+        uint32_t p = srow[x] & 0xFFFFFF, o = d[x], m = p, v;
+        if (modulate) m = (((p >> 16 & 0xFF) * mod_r / 255) << 16) | (((p >> 8 & 0xFF) * mod_g / 255) << 8) | ((p & 0xFF) * mod_b / 255);
+        v = (mode < 0) ? (m | 0xFF000000) : blend_pixel(m, o, (uint32_t) mode, alpha256);
+        d[x] = (use_key && (p == key)) ? o : v;
+    }
+}
+
 void CCALL ren_BlitToScreen_c(BlitRequest32 *req)
 {
+    static int *xmap_buf;
+    static uint32_t *row_buf;
+    static int xmap_cap;
     surface *s;
     LTRect32 src, dst;
-    int x, y, dw, dh, sw, sh, alpha256, use_key, optimized;
+    int x, y, dw, dh, sw, sh, alpha256, use_key, optimized, modulate, mode, x0, x1, y0, y1;
     uint32_t key, mod_r, mod_g, mod_b;
+    const int *xmap;
 
     if ((screen == NULL) || (req == NULL) || ((s = get_surface(req->hBuffer)) == NULL)) return;
     if (req->pSrcRect != NULL) src = *(LTRect32 *)req->pSrcRect; else { src.left = 0; src.top = 0; src.right = s->width; src.bottom = s->height; }
@@ -780,34 +803,67 @@ void CCALL ren_BlitToScreen_c(BlitRequest32 *req)
     alpha256 = (int)(req->alpha * 256.0f);
     if (alpha256 < 0) alpha256 = 0; else if (alpha256 > 256) alpha256 = 256;
     mod_r = (blend_color >> 16) & 0xFF; mod_g = (blend_color >> 8) & 0xFF; mod_b = blend_color & 0xFF;
+    modulate = optimized && ((mod_r & mod_g & mod_b) != 0xFF);
+    if (optimized) mode = ((blend_mode >= 1) && (blend_mode <= 6)) ? (int) blend_mode : 0;
+    else mode = (alpha256 < 256) ? 0 : -1;
+    if (mode == 1) mode = -1;   // solid
 
-    for (y = 0; y < dh; y++)
+    // the destination pixels whose source pixel is inside the surface and which are on the screen
+    x0 = (dst.left < 0) ? -dst.left : 0;
+    x1 = (dst.left + dw > screen_w) ? screen_w - dst.left : dw;
+    y0 = (dst.top < 0) ? -dst.top : 0;
+    y1 = (dst.top + dh > screen_h) ? screen_h - dst.top : dh;
+    if ((x0 >= x1) || (y0 >= y1)) return;
+
+    if ((sw == dw) && (src.left >= 0) && (src.right <= s->width))
     {
-        int ty = dst.top + y, sy;
-        if ((ty < 0) || (ty >= screen_h)) continue;
-        sy = src.top + (int)((int64_t)y * sh / dh);
-        if ((sy < 0) || (sy >= s->height)) continue;
-        for (x = 0; x < dw; x++)
+        xmap = NULL;    // 1:1 columns
+    }
+    else
+    {
+        if (xmap_cap < dw)
         {
-            int tx = dst.left + x, sx;
-            uint32_t p, *d;
-            if ((tx < 0) || (tx >= screen_w)) continue;
-            sx = src.left + (int)((int64_t)x * sw / dw);
-            if ((sx < 0) || (sx >= s->width)) continue;
-            p = s->pixels[sy * s->width + sx] & 0xFFFFFF;
-            if (use_key && (p == key)) continue;
-            d = &screen[ty * screen_w + tx];
-            if (optimized)
-            {
-                if ((mod_r & mod_g & mod_b) != 0xFF)
-                    p = (((p >> 16 & 0xFF) * mod_r / 255) << 16) | (((p >> 8 & 0xFF) * mod_g / 255) << 8) | ((p & 0xFF) * mod_b / 255);
-                *d = blend_pixel(p, *d, blend_mode, alpha256);
-            }
-            else if (alpha256 < 256)
-            {
-                *d = blend_pixel(p, *d, 0, alpha256);
-            }
-            else *d = p | 0xFF000000;
+            free(xmap_buf);
+            free(row_buf);
+            xmap_cap = dw;
+            xmap_buf = (int *) malloc(sizeof(int) * (size_t) xmap_cap);
+            row_buf = (uint32_t *) malloc(sizeof(uint32_t) * (size_t) xmap_cap);
+            if ((xmap_buf == NULL) || (row_buf == NULL)) { free(xmap_buf); free(row_buf); xmap_buf = NULL; row_buf = NULL; xmap_cap = 0; return; }
+        }
+        for (x = x0; x < x1; x++) xmap_buf[x] = src.left + (int)((int64_t)x * sw / dw);
+        // the columns outside the surface are skipped (as the per pixel version did): trim them at both ends
+        while ((x0 < x1) && ((xmap_buf[x0] < 0) || (xmap_buf[x0] >= s->width))) x0++;
+        while ((x1 > x0) && ((xmap_buf[x1 - 1] < 0) || (xmap_buf[x1 - 1] >= s->width))) x1--;
+        if (x0 >= x1) return;
+        xmap = xmap_buf + x0;
+    }
+
+    for (y = y0; y < y1; y++)
+    {
+        int sy = src.top + (int)((int64_t)y * sh / dh);
+        uint32_t *d;
+        const uint32_t *srow;
+        int n = x1 - x0;
+        if ((sy < 0) || (sy >= s->height)) continue;
+        d = &screen[(dst.top + y) * screen_w + dst.left + x0];
+        if (xmap != NULL)
+        {
+            // scaled: the row's source pixels first
+            const uint32_t *line = &s->pixels[sy * s->width];
+            for (x = 0; x < n; x++) row_buf[x] = line[xmap[x]];
+            srow = row_buf;
+        }
+        else srow = &s->pixels[sy * s->width + src.left + x0];
+        // a constant mode in each call: the compiler makes one loop per mode
+        switch (mode)
+        {
+            case -1: blit_row(d, srow, n, use_key, key, modulate, mod_r, mod_g, mod_b, -1, alpha256); break;
+            case 2: blit_row(d, srow, n, use_key, key, modulate, mod_r, mod_g, mod_b, 2, alpha256); break;
+            case 3: blit_row(d, srow, n, use_key, key, modulate, mod_r, mod_g, mod_b, 3, alpha256); break;
+            case 4: blit_row(d, srow, n, use_key, key, modulate, mod_r, mod_g, mod_b, 4, alpha256); break;
+            case 5: blit_row(d, srow, n, use_key, key, modulate, mod_r, mod_g, mod_b, 5, alpha256); break;
+            case 6: blit_row(d, srow, n, use_key, key, modulate, mod_r, mod_g, mod_b, 6, alpha256); break;
+            default: blit_row(d, srow, n, use_key, key, modulate, mod_r, mod_g, mod_b, 0, alpha256); break;
         }
     }
 }

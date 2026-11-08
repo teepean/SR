@@ -48,6 +48,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <map>
 #include <algorithm>
@@ -79,6 +80,7 @@
 #include <godot_cpp/variant/array.hpp>
 
 #include "platform.h"
+#include "config.h"
 #include "render3d.h"
 #include "game.h"
 #include "asmsyms.h"
@@ -90,6 +92,9 @@ using namespace godot;
 
 extern "C" int winapi_debug;
 extern "C" int ghost_ready(void);
+extern "C" int ghost_aspect_mode(void);
+extern "C" void ghost_frame_rect(int game_w, int game_h, int ww, int wh, float r[4]);
+enum { HOST_ASPECT_STRETCH, HOST_ASPECT_KEEP, HOST_ASPECT_WIDE };    // host.h
 extern "C" int host_is_godot(void);
 extern "C" uint32_t call_game(uint32_t func, uint32_t nargs, const uint32_t *args);
 extern "C" uint32_t call_game_this(uint32_t func, uint32_t nargs, const uint32_t *args);
@@ -211,12 +216,49 @@ struct wm_instance
     int shown = 0;
 };
 
+/* ------------------------------------------------------------------ */
+/* dynamic meshes                                                      */
+
+// Models, particle and line systems, poly grids and canvases change every frame. Adding a surface allocates its GPU
+// buffers and sets up every instance of the mesh again, so a surface is rebuilt only when its layout changes (its
+// arrays, vertex or index count, indices, primitive or material); otherwise its vertices are written into the
+// buffers it has (mesh_surface_update_vertex_region / _attribute_region, the Godot documentation's way for meshes that
+// change every frame; the AABB isn't updated by that: the callers set the instance's). The data in Godot's layout
+// (the RenderingServer's offsets and strides: positions as floats, colours RGBA8, UVs floats) - checked against
+// Godot's own encoding once for each combination of arrays; where it differs, the surfaces are rebuilt as before.
+struct dyn_arrays
+{
+    PackedVector3Array v;
+    PackedVector2Array uv, uv2;
+    PackedColorArray col;
+    PackedInt32Array ind;
+};
+
+enum { DA_UV = 1, DA_UV2 = 2, DA_COLOR = 4, DA_INDEX = 8, DA_LINES = 16 };
+
+struct dyn_surface
+{
+    int mask;                   // DA_*
+    int64_t count, index_count;
+    uint64_t index_hash;
+    RID material;
+    int64_t format;             // Godot's (ArrayMesh::surface_get_format)
+};
+
+struct dyn_part
+{
+    const dyn_arrays *a;
+    Ref<Material> material;
+};
+
+
 // a model object's mesh, rebuilt when its pose or light changes
 struct model_instance
 {
     MeshInstance3D *mi = NULL;
     Ref<ArrayMesh> mesh;
     uint64_t key = 0;           // hash of what the mesh was built from
+    std::vector<dyn_surface> dyn;   // its surfaces' layout (dyn_update)
     uint32_t frame = 0;
     int shown = 0;
     int close = 0;              // parented to the camera
@@ -228,7 +270,9 @@ struct model_instance
 struct sprite_instance
 {
     MeshInstance3D *mi = NULL;
-    Ref<ArrayMesh> mesh;        // particle systems
+    Ref<ArrayMesh> mesh;        // particle and line systems, poly grids, canvases
+    std::vector<dyn_surface> dyn;   // its surfaces' layout (dyn_update)
+    std::map<uint64_t, uint32_t> rooms;     // canvases: each batch's room (triangles)
     uint32_t tex = 0;
     int variant = -1;
     uint32_t frame = 0;
@@ -266,6 +310,29 @@ static godot_scene *gs;
 
 static void fog_init(void);
 static void preload_shaders(void);
+static void update_viewport_mode(void);
+
+// SR-AvP2.cfg's 3D settings: MSAA, the resolution scale and upscaler, anisotropic filtering
+static void viewport_settings(SubViewport *vp)
+{
+    int msaa = config_get_int("msaa", 0);
+    vp->set_msaa_3d((msaa >= 8) ? Viewport::MSAA_8X : ((msaa >= 4) ? Viewport::MSAA_4X : ((msaa >= 2) ? Viewport::MSAA_2X : Viewport::MSAA_DISABLED)));
+    const char *scale = config_get("render_scale");
+    float f = (scale != NULL) ? (float)atof(scale) : 1.0f;
+    vp->set_scaling_3d_scale((f < 0.25f) ? 0.25f : ((f > 2.0f) ? 2.0f : f));
+    static const struct { const char *name; Viewport::Scaling3DMode mode; } upscalers[] = {
+        { "bilinear", Viewport::SCALING_3D_MODE_BILINEAR }, { "fsr", Viewport::SCALING_3D_MODE_FSR }, { "fsr2", Viewport::SCALING_3D_MODE_FSR2 },
+        { "nearest", Viewport::SCALING_3D_MODE_NEAREST }, { "metalfx_spatial", Viewport::SCALING_3D_MODE_METALFX_SPATIAL },
+        { "metalfx_temporal", Viewport::SCALING_3D_MODE_METALFX_TEMPORAL } };
+    const char *up = config_get("upscaler");
+    for (const auto &u : upscalers)
+        if ((up != NULL) && (strcasecmp(up, u.name) == 0)) vp->set_scaling_3d_mode(u.mode);
+    int aniso = config_get_int("anisotropy", 4);
+    vp->set_anisotropic_filtering_level((aniso >= 16) ? Viewport::ANISOTROPY_16X : ((aniso >= 8) ? Viewport::ANISOTROPY_8X :
+                                        ((aniso >= 4) ? Viewport::ANISOTROPY_4X : ((aniso >= 2) ? Viewport::ANISOTROPY_2X : Viewport::ANISOTROPY_DISABLED))));
+    if (winapi_debug)
+        eprintf("render3d: 3D view: msaa %d, render scale %.2f (%s), anisotropy %d\n", msaa, (f < 0.25f) ? 0.25f : ((f > 2.0f) ? 2.0f : f), (up != NULL) ? up : "bilinear", aniso);
+}
 
 static int ready(void)
 {
@@ -282,6 +349,7 @@ static int ready(void)
         gs->viewport = memnew(SubViewport);
         gs->viewport->set_update_mode(SubViewport::UPDATE_ALWAYS);
         gs->viewport->set_size(tree->get_root()->get_size());
+        viewport_settings(gs->viewport);
         tree->get_root()->add_child(gs->viewport);
         gs->layer = memnew(CanvasLayer);
         gs->layer->set_layer(-1);
@@ -565,21 +633,35 @@ static void post_update(uint32_t sd)
         if ((gf(sd + 0x50 + 4 * i) > 0.99f) && (gf(sd + 0x50 + 4 * i) < 1.01f) && !cv_invert) scale[i] = 1.0f;
         add[i] = (add[i] < 0.001f) ? 0.0f : floorf(fminf(add[i], 1.0f) * 255.0f) / 255.0f;
     }
-    gs->post->set_shader_parameter("scale", scale);
-    gs->post->set_shader_parameter("add", add);
-    gs->post->set_shader_parameter("invert", cv_invert ? 1.0f : 0.0f);
+    // (the parameter names as StringNames made once: a name from a string is looked up in Godot's table every time)
+    static const StringName p_scale("scale"), p_add("add"), p_invert("invert");
+    gs->post->set_shader_parameter(p_scale, scale);
+    gs->post->set_shader_parameter(p_add, add);
+    gs->post->set_shader_parameter(p_invert, cv_invert ? 1.0f : 0.0f);
     // the picture: the scene rectangle (SceneDesc m_Rect, in the game's screen pixels; the 2D frame is stretched over
     // the window), with d3d.ren's projection - FovX across the rectangle's width and FovY across its height,
     // independently: the camera keeps FovY (KEEP_HEIGHT) and the viewport's aspect is tan(FovX/2) / tan(FovY/2), its
     // picture stretched into the rectangle
+    // The game's screen is the 2D frame's rectangle in the window (ghost_frame_rect: the whole window, or centred
+    // with the game's aspect). Wide (aspect = wide, the default): a scene as wide as the game's screen spans the
+    // window's width - Hor+, the same vertical field of view and more to the sides (the tangent grows with the width);
+    // its rows stay the scene's (a cutscene's bars span the window)
     SceneTree *tree = Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
     Vector2i win = tree->get_root()->get_size();
     int l = (int)g32(sd + SD_RECT), t = (int)g32(sd + SD_RECT + 4), r = (int)g32(sd + SD_RECT + 8), b = (int)g32(sd + SD_RECT + 12);
     if ((r <= l) || (b <= t) || (l < 0) || (t < 0) || (r > r3d_screen_w) || (b > r3d_screen_h)) { l = 0; t = 0; r = r3d_screen_w; b = r3d_screen_h; }
-    float sx = (float)win.x / (float)r3d_screen_w, sy = (float)win.y / (float)r3d_screen_h;
-    Vector2 pos(floorf(l * sx + 0.5f), floorf(t * sy + 0.5f)), end(floorf(r * sx + 0.5f), floorf(b * sy + 0.5f));
+    float fr[4];
+    ghost_frame_rect(r3d_screen_w, r3d_screen_h, win.x, win.y, fr);
+    float sx = fr[2] / (float)r3d_screen_w, sy = fr[3] / (float)r3d_screen_h;
+    Vector2 pos(floorf(fr[0] + l * sx + 0.5f), floorf(fr[1] + t * sy + 0.5f)), end(floorf(fr[0] + r * sx + 0.5f), floorf(fr[1] + b * sy + 0.5f));
     float fx = gf(sd + SD_XFOV), fy = gf(sd + SD_YFOV);
     float ratio = ((fx > 0.01f) && (fx < 3.1f) && (fy > 0.01f) && (fy < 3.1f)) ? tanf(fx * 0.5f) / tanf(fy * 0.5f) : (end.x - pos.x) / fmaxf(end.y - pos.y, 1.0f);
+    if ((ghost_aspect_mode() == HOST_ASPECT_WIDE) && (l == 0) && (r == r3d_screen_w) && (fr[2] + 1.0f < (float)win.x))
+    {
+        ratio *= (float)win.x / fmaxf(end.x - pos.x, 1.0f);
+        pos.x = 0.0f;
+        end.x = (float)win.x;
+    }
     Vector2i vsize((int)fmaxf(1.0f, floorf((end.y - pos.y) * ratio + 0.5f)), (int)fmaxf(1.0f, end.y - pos.y));
     if (gs->viewport->get_size() != vsize) gs->viewport->set_size(vsize);
     if ((gs->picture->get_position() != pos) || (gs->picture->get_size() != end - pos))
@@ -962,7 +1044,8 @@ static void update_animated_surfaces(void)
         if ((t == a.tex) || (t == 0)) continue;
         a.tex = t;
         texture_entry &te = get_texture(t);
-        if (te.texture.is_valid()) a.m->set_shader_parameter("albedo", te.texture);
+        static const StringName p_albedo("albedo");
+        if (te.texture.is_valid()) a.m->set_shader_parameter(p_albedo, te.texture);
     }
 }
 
@@ -1857,6 +1940,151 @@ static uint64_t hash_bytes(uint64_t h, const void *p, size_t n)
     return h;
 }
 
+static int dyn_mask(const dyn_arrays &a, int lines)
+{
+    return (a.uv.is_empty() ? 0 : DA_UV) | (a.uv2.is_empty() ? 0 : DA_UV2) | (a.col.is_empty() ? 0 : DA_COLOR) |
+           (a.ind.is_empty() ? 0 : DA_INDEX) | (lines ? DA_LINES : 0);
+}
+
+static inline uint8_t unorm8(float f)
+{
+    double d = (double)f * 255.0;
+    return (uint8_t)((d < 0.0) ? 0.0 : ((d > 255.0) ? 255.0 : d));
+}
+
+// Godot's vertex and attribute buffers for these arrays
+static void dyn_encode(int64_t format, const dyn_arrays &a, PackedByteArray &vb, PackedByteArray &ab)
+{
+    RenderingServer *rs = RenderingServer::get_singleton();
+    BitField<RenderingServer::ArrayFormat> f = (BitField<RenderingServer::ArrayFormat>)format;
+    int32_t n = (int32_t)a.v.size();
+    uint32_t vs = rs->mesh_surface_get_format_vertex_stride(f, n), as = rs->mesh_surface_get_format_attribute_stride(f, n);
+    uint32_t ov = rs->mesh_surface_get_format_offset(f, n, Mesh::ARRAY_VERTEX);
+    uint32_t ocol = rs->mesh_surface_get_format_offset(f, n, Mesh::ARRAY_COLOR);
+    uint32_t ouv = rs->mesh_surface_get_format_offset(f, n, Mesh::ARRAY_TEX_UV), ouv2 = rs->mesh_surface_get_format_offset(f, n, Mesh::ARRAY_TEX_UV2);
+    vb.resize((int64_t)n * vs);
+    ab.resize((int64_t)n * as);
+    uint8_t *pv = vb.ptrw(), *pa = ab.ptrw();
+    const Vector3 *V = a.v.ptr();
+    const Vector2 *U = a.uv.is_empty() ? NULL : a.uv.ptr(), *U2 = a.uv2.is_empty() ? NULL : a.uv2.ptr();
+    const Color *C = a.col.is_empty() ? NULL : a.col.ptr();
+    for (int32_t i = 0; i < n; i++)
+    {
+        float p[3] = { (float)V[i].x, (float)V[i].y, (float)V[i].z };
+        memcpy(pv + (size_t)i * vs + ov, p, sizeof(p));
+        uint8_t *at = pa + (size_t)i * as;
+        if (C != NULL)
+        {
+            uint8_t c[4] = { unorm8(C[i].r), unorm8(C[i].g), unorm8(C[i].b), unorm8(C[i].a) };
+            memcpy(at + ocol, c, sizeof(c));
+        }
+        if (U != NULL) { float t[2] = { (float)U[i].x, (float)U[i].y }; memcpy(at + ouv, t, sizeof(t)); }
+        if (U2 != NULL) { float t[2] = { (float)U2[i].x, (float)U2[i].y }; memcpy(at + ouv2, t, sizeof(t)); }
+    }
+}
+
+// can the surfaces with these arrays be updated in place? (once per combination: our encoding of the surface Godot
+// just made against Godot's)
+static int dyn_layout_ok(const Ref<ArrayMesh> &mesh, int surface, int mask, const dyn_arrays &a)
+{
+    static std::map<int, int> checked;
+    auto it = checked.find(mask);
+    if (it != checked.end()) return it->second;
+    static const char *off = getenv("AVP2_R3D_NOINPLACE");
+    int ok = 0;
+    if (off == NULL)
+    {
+        Dictionary d = RenderingServer::get_singleton()->mesh_get_surface(mesh->get_rid(), surface);
+        PackedByteArray vb, ab, gvb = d["vertex_data"], gab = d["attribute_data"];
+        dyn_encode((int64_t)mesh->surface_get_format(surface), a, vb, ab);
+        ok = (vb == gvb) && (ab == gab);
+        if (winapi_debug || !ok)
+            eprintf("render3d: dynamic meshes with arrays %02x: %s (vertex data %lld/%lld bytes, attributes %lld/%lld)\n", mask,
+                    ok ? "updated in place" : "rebuilt (the data layout isn't Godot's)", (long long)vb.size(), (long long)gvb.size(),
+                    (long long)ab.size(), (long long)gab.size());
+    }
+    checked[mask] = ok;
+    return ok;
+}
+
+static uint64_t dyn_index_hash(const dyn_arrays &a)
+{
+    return a.ind.is_empty() ? 0 : hash_bytes(0xcbf29ce484222325ull, a.ind.ptr(), (size_t)a.ind.size() * sizeof(int32_t));
+}
+
+static AABB dyn_bounds(const std::vector<dyn_part> &parts)
+{
+    AABB box;
+    int first = 1;
+    for (const dyn_part &p : parts)
+    {
+        const Vector3 *V = p.a->v.ptr();
+        for (int64_t i = 0, n = p.a->v.size(); i < n; i++)
+        {
+            if (first) { box = AABB(V[i], Vector3()); first = 0; }
+            else box.expand_to(V[i]);
+        }
+    }
+    return box;
+}
+
+enum { DYN_MODEL, DYN_PARTICLES, DYN_LINES, DYN_POLYGRID, DYN_CANVAS, DYN_KINDS };
+static struct { uint64_t in_place[DYN_KINDS], rebuilt[DYN_KINDS]; } dyn_stats;
+
+// the mesh's surfaces: these parts (empty ones left out by the caller); returns the vertices' bounding box
+static AABB dyn_update(int kind, const Ref<ArrayMesh> &mesh, std::vector<dyn_surface> &state, const std::vector<dyn_part> &parts, int lines = 0)
+{
+    RenderingServer *rs = RenderingServer::get_singleton();
+    int same = (state.size() == parts.size()) && (mesh->get_surface_count() == (int32_t)parts.size());
+    for (size_t i = 0; same && (i < parts.size()); i++)
+    {
+        const dyn_arrays &a = *parts[i].a;
+        const dyn_surface &s = state[i];
+        RID m = parts[i].material.is_valid() ? parts[i].material->get_rid() : RID();
+        same = (s.mask == dyn_mask(a, lines)) && (s.count == a.v.size()) && (s.index_count == a.ind.size()) && (s.material == m) &&
+               (s.index_hash == dyn_index_hash(a)) && dyn_layout_ok(mesh, (int)i, s.mask, a);
+    }
+    if (same)
+    {
+        static PackedByteArray vb, ab;
+        for (size_t i = 0; i < parts.size(); i++)
+        {
+            dyn_encode(state[i].format, *parts[i].a, vb, ab);
+            rs->mesh_surface_update_vertex_region(mesh->get_rid(), (int32_t)i, 0, vb);
+            if (!ab.is_empty()) rs->mesh_surface_update_attribute_region(mesh->get_rid(), (int32_t)i, 0, ab);
+        }
+        dyn_stats.in_place[kind]++;
+        return dyn_bounds(parts);
+    }
+
+    mesh->clear_surfaces();
+    state.clear();
+    for (size_t i = 0; i < parts.size(); i++)
+    {
+        const dyn_arrays &a = *parts[i].a;
+        Array arrays;
+        arrays.resize(Mesh::ARRAY_MAX);
+        arrays[Mesh::ARRAY_VERTEX] = a.v;
+        if (!a.uv.is_empty()) arrays[Mesh::ARRAY_TEX_UV] = a.uv;
+        if (!a.uv2.is_empty()) arrays[Mesh::ARRAY_TEX_UV2] = a.uv2;
+        if (!a.col.is_empty()) arrays[Mesh::ARRAY_COLOR] = a.col;
+        if (!a.ind.is_empty()) arrays[Mesh::ARRAY_INDEX] = a.ind;
+        mesh->add_surface_from_arrays(lines ? Mesh::PRIMITIVE_LINES : Mesh::PRIMITIVE_TRIANGLES, arrays);
+        mesh->surface_set_material((int32_t)i, parts[i].material);
+        dyn_surface s;
+        s.mask = dyn_mask(a, lines);
+        s.count = a.v.size();
+        s.index_count = a.ind.size();
+        s.index_hash = dyn_index_hash(a);
+        s.material = parts[i].material.is_valid() ? parts[i].material->get_rid() : RID();
+        s.format = (int64_t)mesh->surface_get_format((int32_t)i);
+        state.push_back(s);
+        dyn_layout_ok(mesh, (int)i, s.mask, a);
+    }
+    dyn_stats.rebuilt[kind]++;
+    return dyn_bounds(parts);
+}
+
 static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &cam, const std::vector<uint32_t> &lights)
 {
     uint32_t flags = g32(o + OB_FLAGS), flags2 = g32(o + OB_FLAGS2);
@@ -2001,8 +2229,9 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     mi.key = key;
 
     // a surface per skin
-    struct surf { PackedVector3Array v; PackedVector2Array uv; PackedColorArray col; };
-    surf s[4];
+    // (kept between calls: the arrays keep their capacity)
+    static dyn_arrays s[4];
+    for (int t = 0; t < 4; t++) { s[t].v.clear(); s[t].uv.clear(); s[t].col.clear(); }
     uint32_t hidden = g32(o + MI_HIDDENPIECES);
     static std::vector<float> pos, col;
     for (uint32_t pi = 0; pi < npieces; pi++)
@@ -2051,7 +2280,7 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
             }
             for (int j = 0; j < 3; j++) col[i * 3 + j] = (c[j] > 255.0f) ? 1.0f : ((c[j] < 0.0f) ? 0.0f : c[j] / 255.0f);
         }
-        surf &S = s[tex];
+        dyn_arrays &S = s[tex];
         for (uint32_t t = 0; t < ntris; t++)
         {
             uint32_t tri = tris + t * 0x20;
@@ -2106,8 +2335,7 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
                 eprintf("render3d:   skin %d: %08x %s has alpha %d, %lld vertices\n", t, g32(o + MI_SKINS + 4 * t), te.texture.is_null() ? "(no texture)" : "", te.has_alpha, (long long)s[t].v.size());
             }
     }
-    mi.mesh->clear_surfaces();
-    int nsurf = 0;
+    std::vector<dyn_part> parts;
     for (int t = 0; t < 4; t++)
     {
         if (s[t].v.is_empty()) continue;
@@ -2119,14 +2347,11 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
         else if (alpha < 255) kind = MAT_BLEND;
         else if ((flags2 & FLAG2_CHROMAKEY) && get_texture(skin).has_alpha) kind = MAT_ALPHA_TEST;
         if (close) kind |= MAT_REALLYCLOSE;
-        Array arrays;
-        arrays.resize(Mesh::ARRAY_MAX);
-        arrays[Mesh::ARRAY_VERTEX] = s[t].v;
-        arrays[Mesh::ARRAY_TEX_UV] = s[t].uv;
-        arrays[Mesh::ARRAY_COLOR] = s[t].col;
-        mi.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
-        mi.mesh->surface_set_material(nsurf++, get_material(skin, kind, -1, 0));
+        parts.push_back({ &s[t], get_material(skin, kind, -1, 0) });
     }
+    // the mesh's AABB isn't updated in place: the instance's
+    AABB box = dyn_update(DYN_MODEL, mi.mesh, mi.dyn, parts);
+    if (!parts.empty()) mi.mi->set_custom_aabb(box.grow(1.0f));
 }
 
 // Objects attached to others (a marine's rifle and shoulder lamp) are placed by the engine when the renderer asks:
@@ -2192,7 +2417,8 @@ static void update_world_lights(uint32_t mw)
             eprintf("render3d: world light %d: %08x at %.0f %.0f %.0f radius %.0f colour %u %u %u flags %08x\n", i, l, gf(l + OB_POS), gf(l + OB_POS + 4), gf(l + OB_POS + 8),
                     gf(l + DL_RADIUS), g8(l + OB_COLOR), g8(l + OB_COLOR + 1), g8(l + OB_COLOR + 2), g32(l + OB_FLAGS));
         }
-    RenderingServer::get_singleton()->global_shader_parameter_set("lt_light_count", Vector4((float)n, 0, 0, 0));
+    static const StringName p_light_count("lt_light_count");
+    RenderingServer::get_singleton()->global_shader_parameter_set(p_light_count, Vector4((float)n, 0, 0, 0));
 }
 
 static void update_models(uint32_t mw, uint32_t sd)
@@ -2423,8 +2649,9 @@ static void draw_sprite(uint32_t mw, uint32_t sd, uint32_t o)
     si.mi->set_transform(xf);
     float r = fmaxf(fabsf(hx), fabsf(hy)) * 2.0f + 1.0f;
     si.mi->set_custom_aabb(AABB(Vector3(-r, -r, -r), Vector3(2 * r, 2 * r, 2 * r)));
-    si.mi->set_instance_shader_parameter("half_size", Vector2(hx, hy));
-    si.mi->set_instance_shader_parameter("color", sprite_color(mw, sd, o));
+    static const StringName p_half_size("half_size"), p_color("color");
+    si.mi->set_instance_shader_parameter(p_half_size, Vector2(hx, hy));
+    si.mi->set_instance_shader_parameter(p_color, sprite_color(mw, sd, o));
     si.frame = gs->frame;
     if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
 }
@@ -2489,18 +2716,24 @@ static void draw_particles(uint32_t o)
     }
     si.mi->set_transform(lt_object_transform(o));
 
-    // the quads: the centre in each vertex, the corner offset (view space, 2 x the particle's size) in UV2
+    // the quads: the centre in each vertex, the corner offset (view space, 2 x the particle's size) in UV2. Room for
+    // a number of particles that changes only now and then (a power of two, kept while the particles fill more than
+    // a quarter of it): the surface is updated in place (dyn_update) as the count changes; the rest are empty quads
     float sr = g8(o + OB_COLOR) / 255.0f, sg = g8(o + OB_COLOR + 1) / 255.0f, sb = g8(o + OB_COLOR + 2) / 255.0f, sa = g8(o + OB_COLOR + 3) / 255.0f;
-    PackedVector3Array pv;
-    PackedVector2Array uv, uv2;
-    PackedColorArray col;
-    pv.resize((int64_t)n * 6);
-    uv.resize((int64_t)n * 6);
-    uv2.resize((int64_t)n * 6);
-    col.resize((int64_t)n * 6);
-    Vector3 *P = pv.ptrw();
-    Vector2 *U = uv.ptrw(), *U2 = uv2.ptrw();
-    Color *C = col.ptrw();
+    uint32_t room = si.dyn.empty() ? 0 : (uint32_t)(si.dyn[0].count / 6);
+    if ((n > room) || (n * 4 < room))
+    {
+        room = 16;
+        while (room < n) room *= 2;
+    }
+    static dyn_arrays a;
+    a.v.resize((int64_t)room * 6);
+    a.uv.resize((int64_t)room * 6);
+    a.uv2.resize((int64_t)room * 6);
+    a.col.resize((int64_t)room * 6);
+    Vector3 *P = a.v.ptrw();
+    Vector2 *U = a.uv.ptrw(), *U2 = a.uv2.ptrw();
+    Color *C = a.col.ptrw();
     static const float corner[6][2] = { { -1, 1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } };
     uint32_t head = o + PS_HEAD, k = 0;
     AABB box;
@@ -2523,20 +2756,19 @@ static void draw_particles(uint32_t o)
         if (h > maxsize) maxsize = h;
         k++;
     }
-    si.mesh->clear_surfaces();
-    if (k > 0)
+    // the rest: quads of size 0 (no pixels), transparent, at the first particle
+    Vector3 rest = (k > 0) ? P[0] : Vector3();
+    for (uint32_t i = k * 6; i < room * 6; i++)
     {
-        pv.resize((int64_t)k * 6); uv.resize((int64_t)k * 6); uv2.resize((int64_t)k * 6); col.resize((int64_t)k * 6);
-        Array arrays;
-        arrays.resize(Mesh::ARRAY_MAX);
-        arrays[Mesh::ARRAY_VERTEX] = pv;
-        arrays[Mesh::ARRAY_TEX_UV] = uv;
-        arrays[Mesh::ARRAY_TEX_UV2] = uv2;
-        arrays[Mesh::ARRAY_COLOR] = col;
-        si.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
-        si.mesh->surface_set_material(0, sprite_material(tex, v));
-        si.mi->set_custom_aabb(box.grow(maxsize + 1.0f));
+        P[i] = rest;
+        U[i] = Vector2();
+        U2[i] = Vector2();
+        C[i] = Color(0, 0, 0, 0);
     }
+    std::vector<dyn_part> parts;
+    if (k > 0) parts.push_back({ &a, sprite_material(tex, v) });
+    (void) dyn_update(DYN_PARTICLES, si.mesh, si.dyn, parts);
+    if (k > 0) si.mi->set_custom_aabb(box.grow(maxsize + 1.0f));
     si.frame = gs->frame;
     if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
 }
@@ -2687,8 +2919,11 @@ static void draw_lines(uint32_t o)
     uint32_t flags = g32(o + OB_FLAGS);
     int close = (flags & FLAG_REALLYCLOSE) != 0;
     float oa = g8(o + OB_COLOR + 3) / 255.0f;
-    PackedVector3Array v;
-    PackedColorArray col;
+    static dyn_arrays a;
+    PackedVector3Array &v = a.v;
+    PackedColorArray &col = a.col;
+    v.clear();
+    col.clear();
     uint32_t head = o + LS_HEAD, n = 0;
     AABB box;
     for (uint32_t l = g32(head + LL_NEXT); (l != head) && (l != 0) && (n < 65536); l = g32(l + LL_NEXT), n++)
@@ -2718,17 +2953,10 @@ static void draw_lines(uint32_t o)
         si.close = close;
     }
     si.mi->set_transform(lt_object_transform(o));
-    si.mesh->clear_surfaces();
-    if (n > 0)
-    {
-        Array arrays;
-        arrays.resize(Mesh::ARRAY_MAX);
-        arrays[Mesh::ARRAY_VERTEX] = v;
-        arrays[Mesh::ARRAY_COLOR] = col;
-        si.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_LINES, arrays);
-        si.mesh->surface_set_material(0, line_material(close));
-        si.mi->set_custom_aabb(box.grow(1.0f));
-    }
+    std::vector<dyn_part> parts;
+    if (n > 0) parts.push_back({ &a, line_material(close) });
+    (void) dyn_update(DYN_LINES, si.mesh, si.dyn, parts, 1);
+    if (n > 0) si.mi->set_custom_aabb(box.grow(1.0f));
     si.frame = gs->frame;
     if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
 }
@@ -2789,10 +3017,11 @@ static void draw_polygrid(uint32_t sd, uint32_t o)
     float cx = (w - 1) * 0.5f, cz = (h - 1) * 0.5f;
     float gx = ((float)(w + 1) / w) * sx, gz = ((float)(h + 1) / h) * sz;
 
-    PackedVector3Array v;
-    PackedVector2Array uv;
-    PackedColorArray col;
-    PackedInt32Array ind;
+    static dyn_arrays a;
+    PackedVector3Array &v = a.v;
+    PackedVector2Array &uv = a.uv;
+    PackedColorArray &col = a.col;
+    PackedInt32Array &ind = a.ind;
     v.resize((int64_t)w * h);
     uv.resize((int64_t)w * h);
     col.resize((int64_t)w * h);
@@ -2835,15 +3064,10 @@ static void draw_polygrid(uint32_t sd, uint32_t o)
     Quaternion q(-gf(o + OB_ROTATION), -gf(o + OB_ROTATION + 4), gf(o + OB_ROTATION + 8), gf(o + OB_ROTATION + 12));
     if (q.length_squared() < 1e-6f) q = Quaternion();
     si.mi->set_transform(Transform3D(Basis(q.normalized()), lt_pos(o + OB_POS)));
-    si.mesh->clear_surfaces();
-    Array arrays;
-    arrays.resize(Mesh::ARRAY_MAX);
-    arrays[Mesh::ARRAY_VERTEX] = v;
-    arrays[Mesh::ARRAY_TEX_UV] = uv;
-    arrays[Mesh::ARRAY_COLOR] = col;
-    arrays[Mesh::ARRAY_INDEX] = ind;
-    si.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
-    si.mesh->surface_set_material(0, sprite_material(tex, v_));
+    std::vector<dyn_part> parts;
+    parts.push_back({ &a, sprite_material(tex, v_) });
+    AABB box = dyn_update(DYN_POLYGRID, si.mesh, si.dyn, parts);
+    si.mi->set_custom_aabb(box.grow(1.0f));
     si.frame = gs->frame;
     if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
 }
@@ -2879,12 +3103,7 @@ enum { LTRSTATE_ALPHABLENDENABLE = 0, LTRSTATE_ZREADENABLE, LTRSTATE_ZWRITEENABL
 #define LTBLEND_SRCCOLOR 3
 
 
-struct canvas_batch
-{
-    PackedVector3Array v;
-    PackedVector2Array uv;
-    PackedColorArray col;
-};
+typedef dyn_arrays canvas_batch;
 
 // the ILTCustomDraw the game gets (its vtable pointer) and the vtable: below 2 GB (LOW_OBJ)
 static struct { uint32_t object[4]; uint32_t vtable[5]; } canvas_iface_init;
@@ -2995,21 +3214,41 @@ static void draw_canvas(uint32_t o)
         si.mi->set_extra_cull_margin(16384.0f);
         gs->root->add_child(si.mi);
     }
-    si.mesh->clear_surfaces();
-    int nsurf = 0;
+    // each batch padded to a room (triangles: a power of two, kept while it's more than a quarter full) with empty
+    // triangles, so that the surfaces keep their size as the canvas draws more or less and are updated in place
+    std::map<uint64_t, uint32_t> rooms;
+    for (auto &kv : batches)
+    {
+        canvas_batch &b = kv.second;
+        uint32_t tris = (uint32_t)(b.v.size() / 3), room = 0;
+        if (tris == 0) continue;
+        auto it = si.rooms.find(kv.first);
+        if (it != si.rooms.end()) room = it->second;
+        if ((tris > room) || (tris * 4 < room))
+        {
+            room = 16;
+            while (room < tris) room *= 2;
+        }
+        rooms[kv.first] = room;
+        Vector3 at = b.v[0];
+        for (uint32_t i = tris * 3; i < room * 3; i++)
+        {
+            b.v.push_back(at);
+            b.uv.push_back(Vector2());
+            b.col.push_back(Color(0, 0, 0, 0));
+        }
+    }
+    si.rooms.swap(rooms);
+    std::vector<dyn_part> parts;
     for (auto &kv : batches)
     {
         if (kv.second.v.is_empty()) continue;
         int v = (int)(kv.first & 0xffff);
         if (flags & FLAG_FOGDISABLE) v |= SPR_NOFOG;
-        Array arrays;
-        arrays.resize(Mesh::ARRAY_MAX);
-        arrays[Mesh::ARRAY_VERTEX] = kv.second.v;
-        arrays[Mesh::ARRAY_TEX_UV] = kv.second.uv;
-        arrays[Mesh::ARRAY_COLOR] = kv.second.col;
-        si.mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
-        si.mesh->surface_set_material(nsurf++, sprite_material((uint32_t)(kv.first >> 16), v));
+        parts.push_back({ &kv.second, sprite_material((uint32_t)(kv.first >> 16), v) });
     }
+    AABB box = dyn_update(DYN_CANVAS, si.mesh, si.dyn, parts);
+    if (!parts.empty()) si.mi->set_custom_aabb(box.grow(1.0f));
     // world space, or the camera's (really close)
     si.mi->set_transform(cdraw.close ? gs->camera->get_transform() : Transform3D());
     si.frame = gs->frame;
@@ -3349,13 +3588,38 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     }
 
     preload_update();
+    if (winapi_debug && ((gs->frame % 1200) == 600))
+    {
+        static const char *const names[DYN_KINDS] = { "models", "particles", "lines", "poly grids", "canvases" };
+        char text[256];
+        int len = 0;
+        for (int k = 0; k < DYN_KINDS; k++)
+            len += snprintf(text + len, sizeof(text) - len, "%s%s %llu/%llu", k ? ", " : "", names[k], (unsigned long long)dyn_stats.in_place[k],
+                            (unsigned long long)dyn_stats.rebuilt[k]);
+        eprintf("render3d: dynamic meshes (updated in place / rebuilt): %s\n", text);
+        memset(&dyn_stats, 0, sizeof(dyn_stats));
+    }
     if (!gs->shown)
     {
         gs->root->set_visible(true);
         gs->picture->set_visible(true);
         gs->shown = 1;
     }
+    update_viewport_mode();
     return 1;
+}
+
+// host_godot.cpp's frame statistics: the 3D view's GPU time (an invalid RID until the scene is made)
+RID r3d_viewport_rid(void)
+{
+    return ((gs != NULL) && (gs->viewport != NULL)) ? gs->viewport->get_viewport_rid() : RID();
+}
+
+// the 3D view is drawn only while it's shown (or while the shaders are preloaded by drawing them: compatibility)
+static void update_viewport_mode(void)
+{
+    SubViewport::UpdateMode mode = (gs->shown || preload.pending) ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED;
+    if (gs->viewport->get_update_mode() != mode) gs->viewport->set_update_mode(mode);
 }
 
 extern "C" void r3d_end_frame(int drawn)
@@ -3369,4 +3633,5 @@ extern "C" void r3d_end_frame(int drawn)
         gs->picture->set_visible(false);
         gs->shown = 0;
     }
+    update_viewport_mode();
 }

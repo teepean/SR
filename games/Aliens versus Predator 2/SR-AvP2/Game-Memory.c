@@ -70,29 +70,57 @@
 
 #define HEAPBLOCK_BASE_SIZE (1024 * 1024)
 
-typedef struct _memblock_t
+
+/* The allocator: TLSF (two-level segregated fit - M. Masmano, I. Ripoll, A. Crespo, J. Real: "TLSF: a new dynamic
+ * memory allocator for real-time systems", ECRTS 2004) over pools in the 32-bit window (map_memory_32bit).
+ * malloc and free take constant time: the free blocks are in lists by size class (32 classes per power of two),
+ * and two bitmaps find a non-empty list big enough. (The allocator before it took the beginning of the largest free
+ * block and walked the free list to find the next largest one - ~20% of the CPU time in AvP2, whose engine
+ * allocates and frees thousands of small blocks every frame.)
+ * Blocks: 8-byte aligned, an 8-byte header (the size and flags) before the data; the previous block's address is
+ * kept in the last 8 bytes of a free block (for merging), free blocks keep their list links in their data. */
+
+typedef struct _tlsf_block_t
 {
-    union
-    {
-        int32_t inverted_value; // allocated block: inverted value of block size; top bit is one, bottom three bits are one
-        int32_t offset_next; // free block: offset (from start of heap block) to next free block; top bit is zero, bottom three bits are zero
-    } u;
-    int32_t block_size; // block size including header; top bit is zero, bottom three bits are zero
-} memblock_t;
+    struct _tlsf_block_t *prev_phys; // the previous block - only while it's free (its last 8 bytes)
+    uint64_t size; // data size (multiple of 8) | BLOCK_FREE | BLOCK_PREV_FREE | BLOCK_FIRST
+    struct _tlsf_block_t *next_free; // free blocks: the size class's list
+    struct _tlsf_block_t *prev_free;
+} tlsf_block_t;
 
-typedef struct _heapblock_t
+#define BLOCK_FREE 1u
+#define BLOCK_PREV_FREE 2u
+#define BLOCK_FIRST 4u // the first block of its pool
+#define BLOCK_FLAGS 7u
+#define BLOCK_OVERHEAD 8 // the size field (an allocated block's own memory overhead)
+#define BLOCK_START 16 // offset of the data from the block's header (prev_phys + size)
+#define BLOCK_SIZE_MIN 24 // free block: next_free, prev_free and the next block's prev_phys
+#define POOL_OVERHEAD 16 // the first block's size field and the end sentinel's
+
+#define TLSF_ALIGN_LOG2 3
+#define TLSF_ALIGN (1 << TLSF_ALIGN_LOG2)
+#define TLSF_SL_LOG2 5
+#define TLSF_SL_COUNT (1 << TLSF_SL_LOG2)
+#define TLSF_FL_SHIFT (TLSF_SL_LOG2 + TLSF_ALIGN_LOG2)
+#define TLSF_FL_MAX 32
+#define TLSF_FL_COUNT (TLSF_FL_MAX - TLSF_FL_SHIFT + 1)
+#define TLSF_SMALL_BLOCK (1 << TLSF_FL_SHIFT) // below it, the classes are 8 bytes apart
+
+#define POOL_SIZE (16 * 1024 * 1024) // address space; the pages are mapped when they are used
+#define MAX_POOLS 1024
+
+typedef struct
 {
-    uint8_t *address; // address of mapped memory
-    int32_t size; // size of mapped memory
-    int32_t offset_first_free; // offset (from start of heap block) to first free block
-    int32_t offset_largest_free; // offset (from start of heap block) to largest free block
-    int32_t offset_largest_free_prev; // offset (from start of heap block) to last free block before largest free block
-    struct _heapblock_t *prev_block; // previous heapblock
-} heapblock_t;
+    uint8_t *mem;
+    uint64_t bytes;
+} pool_t;
 
-
-static heapblock_t *last_heapblock = NULL;
-static heapblock_t *last_released_heapblock = NULL;
+static uint32_t fl_bitmap;
+static uint32_t sl_bitmap[TLSF_FL_COUNT];
+static tlsf_block_t *free_lists[TLSF_FL_COUNT][TLSF_SL_COUNT];
+static pool_t pools[MAX_POOLS];
+static int num_pools;
+static uintptr_t pools_low = UINTPTR_MAX, pools_high = 0;
 
 #ifdef _WIN32
 static CRITICAL_SECTION mutex;
@@ -168,258 +196,423 @@ void x86_deinit_malloc(void)
     #define UNLOCK_MUTEX pthread_mutex_unlock(&mutex);
 #endif
 
-static memblock_t *get_free_block(heapblock_t *heapblock, int32_t offset)
+static inline uint64_t block_size(const tlsf_block_t *block)
 {
-    memblock_t *freeblock;
-
-    freeblock = (memblock_t *)(heapblock->address + offset);
-
-    // check header integrity
-    if ((freeblock->u.offset_next & 0x80000007u) != 0 ||
-        (freeblock->block_size & 0x80000007u) != 0 ||
-        freeblock->block_size < (long)sizeof(memblock_t) ||
-        freeblock->block_size > heapblock->size - offset ||
-        freeblock->u.offset_next > heapblock->size ||
-        freeblock->u.offset_next < freeblock->block_size + offset
-       )
-    {
-        fprintf(stderr, "Corrupted memory header\n");
-        exit(1);
-    }
-
-    return freeblock;
+    return block->size & ~(uint64_t)BLOCK_FLAGS;
 }
 
-static void find_largest_free_block(heapblock_t *heapblock)
+static inline void block_set_size(tlsf_block_t *block, uint64_t size)
 {
-    memblock_t *freeblock;
-    int32_t largestsize, nextoffset, prevoffset;
-
-    heapblock->offset_largest_free = heapblock->offset_first_free;
-    heapblock->offset_largest_free_prev = -1;
-    if (heapblock->offset_first_free >= 0)
-    {
-        freeblock = get_free_block(heapblock, heapblock->offset_first_free);
-        largestsize = freeblock->block_size;
-
-        prevoffset = heapblock->offset_first_free;
-        nextoffset = freeblock->u.offset_next;
-        while (nextoffset < heapblock->size)
-        {
-            freeblock = get_free_block(heapblock, nextoffset);
-            if (freeblock->block_size > largestsize)
-            {
-                largestsize = freeblock->block_size;
-                heapblock->offset_largest_free = nextoffset;
-                heapblock->offset_largest_free_prev = prevoffset;
-            }
-            prevoffset = nextoffset;
-            nextoffset = freeblock->u.offset_next;
-        }
-    }
+    block->size = size | (block->size & BLOCK_FLAGS);
 }
 
-static heapblock_t *find_alloc_heap_block(memblock_t *allocblock)
+static inline int block_is_free(const tlsf_block_t *block)
 {
-    heapblock_t *heapblock;
-
-    for (heapblock = last_heapblock; heapblock != NULL; heapblock = heapblock->prev_block)
-    {
-        if ((uintptr_t)allocblock < (uintptr_t)heapblock->address) continue;
-        if ((uintptr_t)allocblock >= heapblock->size + (uintptr_t)heapblock->address) continue;
-
-        // check header integrity
-        if (allocblock->block_size != ~allocblock->u.inverted_value ||
-            (allocblock->block_size & 0x80000007u) != 0 ||
-            allocblock->block_size < (long)sizeof(memblock_t) ||
-            allocblock->block_size > (int32_t)((heapblock->size + (uintptr_t)heapblock->address) - ((uintptr_t)allocblock))
-           )
-        {
-            fprintf(stderr, "Corrupted memory header\n");
-            exit(1);
-        }
-
-        return heapblock;
-    }
-
-    fprintf(stderr, "Corrupted heap\n");
-    exit(1);
+    return (block->size & BLOCK_FREE) != 0;
 }
 
-static memblock_t *find_last_free_block_before(heapblock_t *heapblock, int32_t offset)
+static inline int block_is_prev_free(const tlsf_block_t *block)
 {
-    memblock_t *freeblock;
-    int32_t current_offset;
+    return (block->size & BLOCK_PREV_FREE) != 0;
+}
 
-    if (heapblock->offset_largest_free < offset)
+static inline int block_is_last(const tlsf_block_t *block)
+{
+    return block_size(block) == 0; // the pool's end sentinel
+}
+
+static inline void *block_to_ptr(const tlsf_block_t *block)
+{
+    return (void *)(BLOCK_START + (uint8_t *)block);
+}
+
+static inline tlsf_block_t *ptr_to_block(const void *ptr)
+{
+    return (tlsf_block_t *)(((uint8_t *)ptr) - BLOCK_START);
+}
+
+static inline tlsf_block_t *block_next(const tlsf_block_t *block)
+{
+    return (tlsf_block_t *)((block_size(block) - BLOCK_OVERHEAD) + (uint8_t *)block_to_ptr(block));
+}
+
+// links the next block back to this one (which is free); returns the next block
+static inline tlsf_block_t *block_link_next(tlsf_block_t *block)
+{
+    tlsf_block_t *next;
+
+    next = block_next(block);
+    next->prev_phys = block;
+    return next;
+}
+
+static inline void block_mark_free(tlsf_block_t *block)
+{
+    tlsf_block_t *next;
+
+    next = block_link_next(block);
+    next->size |= BLOCK_PREV_FREE;
+    block->size |= BLOCK_FREE;
+}
+
+static inline void block_mark_used(tlsf_block_t *block)
+{
+    tlsf_block_t *next;
+
+    next = block_next(block);
+    next->size &= ~(uint64_t)BLOCK_PREV_FREE;
+    block->size &= ~(uint64_t)BLOCK_FREE;
+}
+
+static inline int fls64(uint64_t value) // the highest set bit (value != 0)
+{
+    return 63 - __builtin_clzll(value);
+}
+
+static inline int ffs32(uint32_t value) // the lowest set bit (value != 0)
+{
+    return __builtin_ctz(value);
+}
+
+// the size class of a block of this size
+static void mapping_insert(uint64_t size, int *fli, int *sli)
+{
+    int fl, sl;
+
+    if (size < TLSF_SMALL_BLOCK)
     {
-        current_offset = heapblock->offset_largest_free;
-    }
-    else if (heapblock->offset_largest_free_prev < offset)
-    {
-        current_offset = heapblock->offset_largest_free_prev;
+        fl = 0;
+        sl = (int)size / (TLSF_SMALL_BLOCK / TLSF_SL_COUNT);
     }
     else
     {
-        current_offset = heapblock->offset_first_free;
+        fl = fls64(size);
+        sl = (int)(size >> (fl - TLSF_SL_LOG2)) ^ (1 << TLSF_SL_LOG2);
+        fl -= TLSF_FL_SHIFT - 1;
     }
 
-    do
+    *fli = fl;
+    *sli = sl;
+}
+
+// the first size class whose blocks are all at least this big
+static void mapping_search(uint64_t size, int *fli, int *sli)
+{
+    if (size >= TLSF_SMALL_BLOCK)
     {
-        freeblock = get_free_block(heapblock, current_offset);
-        if (freeblock->u.offset_next >= offset) return freeblock;
+        size += (UINT64_C(1) << (fls64(size) - TLSF_SL_LOG2)) - 1;
+    }
+    mapping_insert(size, fli, sli);
+}
 
-        current_offset = freeblock->u.offset_next;
-    } while (current_offset < heapblock->size);
+static tlsf_block_t *search_suitable_block(int *fli, int *sli)
+{
+    int fl, sl;
+    uint32_t sl_map, fl_map;
 
-    fprintf(stderr, "Corrupted heap\n");
-    exit(1);
+    fl = *fli;
+    sl = *sli;
+    if (fl >= TLSF_FL_COUNT) return NULL;
+
+    sl_map = sl_bitmap[fl] & (~0u << sl);
+    if (sl_map == 0)
+    {
+        // no block in this first level class: the next non-empty bigger one
+        fl_map = (fl + 1 < 32) ? (fl_bitmap & (~0u << (fl + 1))) : 0;
+        if (fl_map == 0) return NULL;
+
+        fl = ffs32(fl_map);
+        *fli = fl;
+        sl_map = sl_bitmap[fl];
+    }
+
+    sl = ffs32(sl_map);
+    *sli = sl;
+    return free_lists[fl][sl];
+}
+
+static void remove_free_block(tlsf_block_t *block, int fl, int sl)
+{
+    tlsf_block_t *prev, *next;
+
+    prev = block->prev_free;
+    next = block->next_free;
+    if (next != NULL) next->prev_free = prev;
+    if (prev != NULL)
+    {
+        prev->next_free = next;
+    }
+    else
+    {
+        free_lists[fl][sl] = next;
+        if (next == NULL)
+        {
+            sl_bitmap[fl] &= ~(1u << sl);
+            if (sl_bitmap[fl] == 0) fl_bitmap &= ~(1u << fl);
+        }
+    }
+}
+
+static void insert_free_block(tlsf_block_t *block, int fl, int sl)
+{
+    tlsf_block_t *current;
+
+    current = free_lists[fl][sl];
+    block->next_free = current;
+    block->prev_free = NULL;
+    if (current != NULL) current->prev_free = block;
+    free_lists[fl][sl] = block;
+    fl_bitmap |= 1u << fl;
+    sl_bitmap[fl] |= 1u << sl;
+}
+
+static void block_remove(tlsf_block_t *block)
+{
+    int fl, sl;
+
+    mapping_insert(block_size(block), &fl, &sl);
+    remove_free_block(block, fl, sl);
+}
+
+static void block_insert(tlsf_block_t *block)
+{
+    int fl, sl;
+
+    mapping_insert(block_size(block), &fl, &sl);
+    insert_free_block(block, fl, sl);
+}
+
+static inline int block_can_split(const tlsf_block_t *block, uint64_t size)
+{
+    return block_size(block) >= sizeof(tlsf_block_t) + size; // the rest: BLOCK_OVERHEAD + at least BLOCK_SIZE_MIN
+}
+
+// keeps size bytes in the block; returns the rest, marked free (not in a list; its BLOCK_PREV_FREE is clear)
+static tlsf_block_t *block_split(tlsf_block_t *block, uint64_t size)
+{
+    tlsf_block_t *rest;
+
+    rest = (tlsf_block_t *)((size - BLOCK_OVERHEAD) + (uint8_t *)block_to_ptr(block));
+    rest->size = block_size(block) - (size + BLOCK_OVERHEAD);
+    block_set_size(block, size);
+    block_mark_free(rest);
+    return rest;
+}
+
+// the block after prev joins it (prev keeps its flags)
+static tlsf_block_t *block_absorb(tlsf_block_t *prev, tlsf_block_t *block)
+{
+    prev->size += block_size(block) + BLOCK_OVERHEAD;
+    block_link_next(prev);
+    return prev;
+}
+
+static tlsf_block_t *block_merge_prev(tlsf_block_t *block)
+{
+    tlsf_block_t *prev;
+
+    if (block_is_prev_free(block))
+    {
+        prev = block->prev_phys;
+        block_remove(prev);
+        block = block_absorb(prev, block);
+    }
+    return block;
+}
+
+static tlsf_block_t *block_merge_next(tlsf_block_t *block)
+{
+    tlsf_block_t *next;
+
+    next = block_next(block);
+    if (block_is_free(next)) // the end sentinel is never free
+    {
+        block_remove(next);
+        block = block_absorb(block, next);
+    }
+    return block;
+}
+
+// a free block that is being allocated: its end goes back to the free lists
+static void block_trim_free(tlsf_block_t *block, uint64_t size)
+{
+    tlsf_block_t *rest;
+
+    if (block_can_split(block, size))
+    {
+        rest = block_split(block, size);
+        block_link_next(block);
+        rest->size |= BLOCK_PREV_FREE;
+        block_insert(rest);
+    }
+}
+
+// an allocated block that becomes smaller: its end goes back to the free lists
+static void block_trim_used(tlsf_block_t *block, uint64_t size)
+{
+    tlsf_block_t *rest;
+
+    if (block_can_split(block, size))
+    {
+        rest = block_split(block, size);
+        rest = block_merge_next(rest);
+        block_insert(rest);
+    }
+}
+
+static inline uint64_t adjust_size(unsigned int size)
+{
+    uint64_t adjusted;
+
+    adjusted = (size + (uint64_t)(TLSF_ALIGN - 1)) & ~(uint64_t)(TLSF_ALIGN - 1);
+    return (adjusted < BLOCK_SIZE_MIN) ? BLOCK_SIZE_MIN : adjusted;
+}
+
+static inline tlsf_block_t *pool_first_block(const pool_t *pool)
+{
+    return (tlsf_block_t *)(pool->mem - BLOCK_OVERHEAD);
+}
+
+static int pool_is_empty(const pool_t *pool)
+{
+    const tlsf_block_t *block;
+
+    block = pool_first_block(pool);
+    return block_is_free(block) && block_is_last(block_next(block));
+}
+
+// a new pool with room for a block of this size; returns 0 if there's no memory
+static int add_pool(uint64_t size)
+{
+    uint64_t bytes;
+    uint8_t *mem;
+    tlsf_block_t *block, *last;
+
+    if (num_pools >= MAX_POOLS) return 0;
+
+    // the size class search rounds up by up to 1/32
+    bytes = size + (size >> 5) + 64;
+    if (bytes <= POOL_SIZE)
+    {
+        bytes = POOL_SIZE;
+    }
+    else
+    {
+        bytes = (bytes + HEAPBLOCK_BASE_SIZE - 1) & ~(uint64_t)(HEAPBLOCK_BASE_SIZE - 1);
+        if (bytes >= UINT64_C(0x80000000)) return 0;
+    }
+
+    mem = (uint8_t *)map_memory_32bit((unsigned int)bytes, 0);
+    if (mem == NULL) return 0;
+
+#ifdef PR_SET_VMA_ANON_NAME
+    prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, mem, bytes, "heap32");
+#endif
+
+    pools[num_pools].mem = mem;
+    pools[num_pools].bytes = bytes;
+    num_pools++;
+    if ((uintptr_t)mem < pools_low) pools_low = (uintptr_t)mem;
+    if ((uintptr_t)mem + bytes > pools_high) pools_high = (uintptr_t)mem + bytes;
+
+    // one free block (its prev_phys field is before the pool: never used) and the end sentinel (size 0, used)
+    block = (tlsf_block_t *)(mem - BLOCK_OVERHEAD);
+    block->size = (bytes - POOL_OVERHEAD) | BLOCK_FREE | BLOCK_FIRST;
+    last = block_link_next(block);
+    last->size = BLOCK_PREV_FREE;
+    block_insert(block);
+    return 1;
+}
+
+// a pool's memory became free (block: all of it, not in the free lists): keeps one empty pool, releases the others
+static void pool_emptied(tlsf_block_t *block)
+{
+    int index, i, empty;
+
+    index = -1;
+    empty = 0;
+    for (i = 0; i < num_pools; i++)
+    {
+        if (pool_first_block(&pools[i]) == block) index = i;
+        else if (pool_is_empty(&pools[i])) empty++;
+    }
+
+    if (index < 0 || empty == 0)
+    {
+        block_insert(block);
+        return;
+    }
+
+    unmap_memory_32bit(pools[index].mem, (unsigned int)pools[index].bytes);
+    pools[index] = pools[num_pools - 1];
+    num_pools--;
+}
+
+// a block that x86_free/x86_realloc may use (cheap checks: the runtime only passes its own blocks)
+static int valid_used_block(const tlsf_block_t *block)
+{
+    uintptr_t ptr;
+
+    ptr = (uintptr_t)block_to_ptr(block);
+    if ((ptr & (TLSF_ALIGN - 1)) != 0 || ptr < pools_low || ptr >= pools_high) return 0;
+    if (block_is_free(block) || block_size(block) < BLOCK_SIZE_MIN || block_size(block) > pools_high - ptr) return 0;
+    if (block_is_prev_free(block_next(block))) return 0;
+    return 1;
+}
+
+static void invalid_block(const void *ptr, const char *function)
+{
+    static int reported;
+
+    if (reported < 10)
+    {
+        reported++;
+        fprintf(stderr, "%s: invalid block %p\n", function, ptr);
+    }
 }
 
 void *x86_malloc(unsigned int size)
 {
     if (sizeof(void *) > 4)
     {
-        heapblock_t *heapblock;
-        memblock_t *largestblock, *freeblock, *prevblock;
+        tlsf_block_t *block;
+        uint64_t adjusted;
+        int fl, sl;
 
-        if (size > 0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE))
+        if (size > 0x80000000u - (2 * BLOCK_OVERHEAD + HEAPBLOCK_BASE_SIZE))
         {
             errno = ENOMEM;
             return NULL;
         }
 
-        // round up allocated size and add header size
-        size = (size + 2 * sizeof(memblock_t) - 1) & ~(sizeof(memblock_t) - 1);
+        adjusted = adjust_size(size);
 
         LOCK_MUTEX
 
-        // try to find free memory in existing heapblocks
-        for (heapblock = last_heapblock; heapblock != NULL; heapblock = heapblock->prev_block)
+        mapping_search(adjusted, &fl, &sl);
+        block = search_suitable_block(&fl, &sl);
+        if (block == NULL)
         {
-            if (heapblock->offset_largest_free < 0) continue; // no free memory in heapblock
-            largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-            if (largestblock->block_size < (int)size) continue; // size of largest free block in heapblock is smaller than required
-
-            if (largestblock->block_size > (int)size)
+            if (add_pool(adjusted))
             {
-                // use the beginning of largest free block as allocated block and the rest as free block
-                freeblock = (memblock_t *)(size + (uint8_t *)largestblock);
-                freeblock->u.offset_next = largestblock->u.offset_next;
-                freeblock->block_size = largestblock->block_size - size;
-                largestblock->block_size = size;
-                largestblock->u.inverted_value = ~largestblock->block_size;
-
-                if (heapblock->offset_largest_free == heapblock->offset_first_free)
-                {
-                    heapblock->offset_first_free += size;
-                }
-                else
-                {
-                    prevblock = get_free_block(heapblock, heapblock->offset_largest_free_prev);
-                    prevblock->u.offset_next += size;
-                }
-
-                if (freeblock->block_size >= heapblock->size >> 1)
-                {
-                    heapblock->offset_largest_free += size;
-                }
-                else
-                {
-                    find_largest_free_block(heapblock);
-                }
+                mapping_search(adjusted, &fl, &sl);
+                block = search_suitable_block(&fl, &sl);
             }
-            else
+            if (block == NULL)
             {
-                // change largest free block into allocated block
-                if (heapblock->offset_largest_free == heapblock->offset_first_free)
-                {
-                    heapblock->offset_first_free = largestblock->u.offset_next;
-                    if (heapblock->offset_first_free >= heapblock->size)
-                    {
-                        heapblock->offset_first_free = -1;
-                    }
-                }
-                else
-                {
-                    prevblock = get_free_block(heapblock, heapblock->offset_largest_free_prev);
-                    prevblock->u.offset_next = largestblock->u.offset_next;
-                }
-
-                largestblock->u.inverted_value = ~largestblock->block_size;
-
-                find_largest_free_block(heapblock);
-            }
-
-            UNLOCK_MUTEX
-            errno = 0;
-            return (void *)(sizeof(memblock_t) + (uint8_t *)largestblock);
-        }
-
-        do
-        {
-            if (last_released_heapblock != NULL)
-            {
-                // reuse last released heapblock
-                heapblock = last_released_heapblock;
-                last_released_heapblock = NULL;
-
-                if (heapblock->size >= (int)((size + HEAPBLOCK_BASE_SIZE - 1) & ~(HEAPBLOCK_BASE_SIZE - 1))) break;
-
-                unmap_memory_32bit(heapblock->address, heapblock->size);
-            }
-            else
-            {
-                // allocate new heapblock header
-                heapblock = (heapblock_t *) malloc(sizeof(heapblock_t));
-                if (heapblock == NULL)
-                {
-                    UNLOCK_MUTEX
-                    errno = ENOMEM;
-                    return NULL;
-                }
-            }
-
-            // allocate heapblock memory
-            heapblock->size = (size + HEAPBLOCK_BASE_SIZE - 1) & ~(HEAPBLOCK_BASE_SIZE - 1);
-            heapblock->address = (uint8_t *)map_memory_32bit(heapblock->size, 0);
-            if (heapblock->address == NULL)
-            {
-                free(heapblock);
                 UNLOCK_MUTEX
                 errno = ENOMEM;
                 return NULL;
             }
-
-#ifdef PR_SET_VMA_ANON_NAME
-            prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME, heapblock->address, heapblock->size, "heap32");
-#endif
-        } while (0);
-
-        heapblock->prev_block = last_heapblock;
-        last_heapblock = heapblock;
-
-        // use the beginning of heapblock memory as allocated block
-        largestblock = (memblock_t *)heapblock->address;
-        largestblock->block_size = size;
-        largestblock->u.inverted_value = ~largestblock->block_size;
-
-        // use the rest of heapblock memory as free block
-        if ((int)size < heapblock->size)
-        {
-            heapblock->offset_first_free = size;
-            freeblock = (memblock_t *)(size + heapblock->address);
-            freeblock->block_size = heapblock->size - size;
-            freeblock->u.offset_next = heapblock->size;
         }
-        else heapblock->offset_first_free = -1;
 
-        heapblock->offset_largest_free = heapblock->offset_first_free;
-        heapblock->offset_largest_free_prev = -1;
+        remove_free_block(block, fl, sl);
+        block_trim_free(block, adjusted);
+        block_mark_used(block);
 
         UNLOCK_MUTEX
         errno = 0;
-        return (void *)(sizeof(memblock_t) + (uint8_t *)largestblock);
+        return block_to_ptr(block);
     }
     else
     {
@@ -427,23 +620,29 @@ void *x86_malloc(unsigned int size)
     }
 }
 
-// is ptr a block of this allocator? (the runtime's free with pointer offsets: the system's heap can be inside the
+// is ptr in this allocator's memory? (the runtime's free with pointer offsets: the system's heap can be inside the
 // game's window too)
 int x86_owns(const void *ptr)
 {
-    heapblock_t *heapblock;
-    int owns = 0;
+    uintptr_t address;
+    int owns, i;
 
     if (ptr == NULL || sizeof(void *) <= 4) return 0;
 
+    address = (uintptr_t)ptr;
+    owns = 0;
+
     LOCK_MUTEX
 
-    for (heapblock = last_heapblock; heapblock != NULL; heapblock = heapblock->prev_block)
+    if (address >= pools_low && address < pools_high)
     {
-        if (((uintptr_t)ptr >= (uintptr_t)heapblock->address) && ((uintptr_t)ptr < heapblock->size + (uintptr_t)heapblock->address))
+        for (i = 0; i < num_pools; i++)
         {
-            owns = 1;
-            break;
+            if (address - (uintptr_t)pools[i].mem < pools[i].bytes)
+            {
+                owns = 1;
+                break;
+            }
         }
     }
 
@@ -456,9 +655,7 @@ void x86_free(void *ptr)
 {
     if (sizeof(void *) > 4)
     {
-        memblock_t *allocblock, *freeblock, *largestblock, *prevblock, *oldblock;
-        heapblock_t *heapblock, *prevheapblock;
-        int32_t offsetalloc, offsetprev, offsetfree;
+        tlsf_block_t *block;
 
         if (ptr == NULL)
         {
@@ -466,257 +663,33 @@ void x86_free(void *ptr)
             return;
         }
 
-        allocblock = (memblock_t *)((uint8_t *)ptr - sizeof(memblock_t));
+        block = ptr_to_block(ptr);
 
         LOCK_MUTEX
 
-        heapblock = find_alloc_heap_block(allocblock);
-
-        offsetalloc = (int32_t)((uintptr_t)allocblock - (uintptr_t)heapblock->address);
-
-        if (heapblock->offset_first_free < 0)
+        if (!valid_used_block(block))
         {
-            // no free blocks in heapblock -> freed block will be the only free block
-            allocblock->u.offset_next = heapblock->size;
-            heapblock->offset_first_free = offsetalloc;
-            heapblock->offset_largest_free = offsetalloc;
+            invalid_block(ptr, "x86_free");
+            UNLOCK_MUTEX
+            errno = EINVAL;
+            return;
         }
-        else if (heapblock->offset_first_free > offsetalloc)
+
+        block_mark_free(block);
+        block = block_merge_prev(block);
+        block = block_merge_next(block);
+
+        if ((block->size & BLOCK_FIRST) && block_is_last(block_next(block)))
         {
-            // first free block in heapblock is after freed block -> freed block will be the first free block
-            freeblock = get_free_block(heapblock, heapblock->offset_first_free);
-
-            if (offsetalloc + allocblock->block_size == heapblock->offset_first_free)
-            {
-                // freed block is adjacent to first free block -> coalesce free blocks
-                allocblock->u.offset_next = freeblock->u.offset_next;
-                allocblock->block_size += freeblock->block_size;
-                freeblock->u.offset_next = 0;
-                freeblock->block_size = 0;
-                get_free_block(heapblock, offsetalloc);
-
-                if (heapblock->offset_first_free == heapblock->offset_largest_free)
-                {
-                    heapblock->offset_largest_free = offsetalloc;
-                }
-                else
-                {
-                    largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-
-                    if (allocblock->block_size >= largestblock->block_size)
-                    {
-                        heapblock->offset_largest_free = offsetalloc;
-                        heapblock->offset_largest_free_prev = -1;
-                    }
-                    else if (heapblock->offset_largest_free_prev == heapblock->offset_first_free)
-                    {
-                        heapblock->offset_largest_free_prev = offsetalloc;
-                    }
-                }
-            }
-            else
-            {
-                // freed block is not adjacent to first free block
-                allocblock->u.offset_next = heapblock->offset_first_free;
-                get_free_block(heapblock, offsetalloc);
-
-                if (heapblock->offset_first_free == heapblock->offset_largest_free)
-                {
-                    largestblock = freeblock;
-                }
-                else
-                {
-                    largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                }
-
-                if (allocblock->block_size >= largestblock->block_size)
-                {
-                    heapblock->offset_largest_free = offsetalloc;
-                    heapblock->offset_largest_free_prev = -1;
-                }
-                else if (heapblock->offset_largest_free == heapblock->offset_first_free)
-                {
-                    heapblock->offset_largest_free_prev = offsetalloc;
-                }
-            }
-
-            heapblock->offset_first_free = offsetalloc;
+            pool_emptied(block);
         }
         else
         {
-            // first free block in heapblock is before freed block
-            prevblock = find_last_free_block_before(heapblock, offsetalloc);
-
-            offsetprev = (int32_t)((uintptr_t)prevblock - (uintptr_t)heapblock->address);
-
-            if (offsetprev + prevblock->block_size == offsetalloc)
-            {
-                // previous free block is adjacent to freed block -> coalesce free blocks
-                prevblock->block_size += allocblock->block_size;
-                allocblock->u.offset_next = 0;
-                allocblock->block_size = 0;
-
-                if (offsetprev + prevblock->block_size == prevblock->u.offset_next && prevblock->u.offset_next < heapblock->size)
-                {
-                    // next free block is adjacent to freed block -> coalesce free blocks
-                    offsetfree = prevblock->u.offset_next;
-                    freeblock = get_free_block(heapblock, prevblock->u.offset_next);
-                    prevblock->block_size += freeblock->block_size;
-                    prevblock->u.offset_next = freeblock->u.offset_next;
-                    oldblock = freeblock;
-
-                    if (heapblock->offset_largest_free != offsetprev)
-                    {
-                        if (heapblock->offset_largest_free == offsetfree)
-                        {
-                            largestblock = freeblock;
-                        }
-                        else
-                        {
-                            largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                        }
-
-                        if (prevblock->block_size > largestblock->block_size)
-                        {
-                            freeblock = find_last_free_block_before(heapblock, offsetprev);
-
-                            heapblock->offset_largest_free = offsetprev;
-                            heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)freeblock - (uintptr_t)heapblock->address);
-                        }
-                        else if (heapblock->offset_largest_free_prev == offsetfree)
-                        {
-                            heapblock->offset_largest_free_prev = offsetprev;
-                        }
-                    }
-
-                    oldblock->u.offset_next = 0;
-                    oldblock->block_size = 0;
-                }
-                else
-                {
-                    // next free block is not adjacent to freed block
-
-                    if (heapblock->offset_largest_free != offsetprev)
-                    {
-                        largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                        if (prevblock->block_size > largestblock->block_size)
-                        {
-                            freeblock = find_last_free_block_before(heapblock, offsetprev);
-
-                            heapblock->offset_largest_free = offsetprev;
-                            heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)freeblock - (uintptr_t)heapblock->address);
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // previous free block is not adjacent to freed block
-                allocblock->u.offset_next = prevblock->u.offset_next;
-                get_free_block(heapblock, offsetalloc);
-                prevblock->u.offset_next = offsetalloc;
-
-                if (offsetalloc + allocblock->block_size == allocblock->u.offset_next && allocblock->u.offset_next < heapblock->size)
-                {
-                    // next free block is adjacent to freed block -> coalesce free blocks
-                    offsetfree = allocblock->u.offset_next;
-                    freeblock = get_free_block(heapblock, allocblock->u.offset_next);
-                    allocblock->block_size += freeblock->block_size;
-                    allocblock->u.offset_next = freeblock->u.offset_next;
-                    freeblock->u.offset_next = 0;
-                    freeblock->block_size = 0;
-
-                    if (heapblock->offset_largest_free == offsetfree)
-                    {
-                        heapblock->offset_largest_free = offsetalloc;
-                    }
-                    else
-                    {
-                        if (heapblock->offset_largest_free == offsetprev)
-                        {
-                            largestblock = prevblock;
-                        }
-                        else
-                        {
-                            largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                        }
-
-                        if (allocblock->block_size >= largestblock->block_size)
-                        {
-                            heapblock->offset_largest_free = offsetalloc;
-                            heapblock->offset_largest_free_prev = offsetprev;
-                        }
-                        else if (heapblock->offset_largest_free_prev == offsetfree)
-                        {
-                            heapblock->offset_largest_free_prev = offsetalloc;
-                        }
-                    }
-                }
-                else
-                {
-                    // next free block is not adjacent to freed block
-
-                    if (heapblock->offset_largest_free == offsetprev)
-                    {
-                        largestblock = prevblock;
-                    }
-                    else
-                    {
-                        largestblock = get_free_block(heapblock, heapblock->offset_largest_free);
-                    }
-
-                    if (allocblock->block_size >= largestblock->block_size)
-                    {
-                        heapblock->offset_largest_free = offsetalloc;
-                        heapblock->offset_largest_free_prev = offsetprev;
-                    }
-                    else if (heapblock->offset_largest_free_prev == offsetprev)
-                    {
-                        heapblock->offset_largest_free_prev = offsetalloc;
-                    }
-                }
-            }
-        }
-
-        if (heapblock == last_heapblock && heapblock->offset_largest_free == 0)
-        {
-            largestblock = (memblock_t *)heapblock->address;
-            if (largestblock->block_size == heapblock->size)
-            {
-                // last heapblock is empty -> unmap it
-                for (;;)
-                {
-                    prevheapblock = heapblock->prev_block;
-                    last_heapblock = prevheapblock;
-                    if (last_released_heapblock != NULL)
-                    {
-                        unmap_memory_32bit(last_released_heapblock->address, last_released_heapblock->size);
-                        free(last_released_heapblock);
-                    }
-                    if (prevheapblock == NULL)
-                    {
-                        last_released_heapblock = NULL;
-                        unmap_memory_32bit(heapblock->address, heapblock->size);
-                        free(heapblock);
-                        break;
-                    }
-                    else
-                    {
-                        last_released_heapblock = heapblock;
-                        heapblock->prev_block = NULL;
-                    }
-
-                    if (prevheapblock->offset_largest_free != 0) break;
-                    largestblock = get_free_block(prevheapblock, 0);
-                    if (largestblock->block_size != prevheapblock->size) break;
-                    heapblock = prevheapblock;
-                }
-            }
+            block_insert(block);
         }
 
         UNLOCK_MUTEX
         errno = 0;
-        return;
     }
     else
     {
@@ -732,7 +705,7 @@ void *x86_calloc(unsigned int nmemb, unsigned int size)
 
         if (size > 1)
         {
-            if ((0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE)) / size < nmemb)
+            if ((0x80000000u - (2 * BLOCK_OVERHEAD + HEAPBLOCK_BASE_SIZE)) / size < nmemb)
             {
                 errno = ENOMEM;
                 return NULL;
@@ -758,9 +731,8 @@ void *x86_realloc(void *ptr, unsigned int size)
 {
     if (sizeof(void *) > 4)
     {
-        memblock_t *allocblock, *adjacentblock, *freeblock, *prevblock;
-        heapblock_t *heapblock;
-        int32_t offsetalloc, offsetadjacent, allocsize, copysize;
+        tlsf_block_t *block, *next;
+        uint64_t current, adjusted;
         void *ptr2;
 
         if (ptr == NULL)
@@ -774,158 +746,58 @@ void *x86_realloc(void *ptr, unsigned int size)
             return NULL;
         }
 
-        if (size > 0x80000000u - (2 * sizeof(memblock_t) + HEAPBLOCK_BASE_SIZE))
+        if (size > 0x80000000u - (2 * BLOCK_OVERHEAD + HEAPBLOCK_BASE_SIZE))
         {
             errno = ENOMEM;
             return NULL;
         }
 
-        // round up allocated size and add header size
-        allocsize = (size + 2 * sizeof(memblock_t) - 1) & ~(sizeof(memblock_t) - 1);
-
-        allocblock = (memblock_t *)((uint8_t *)ptr - sizeof(memblock_t));
+        adjusted = adjust_size(size);
+        block = ptr_to_block(ptr);
 
         LOCK_MUTEX
 
-        heapblock = find_alloc_heap_block(allocblock);
-
-        if (allocblock->block_size == allocsize)
+        if (!valid_used_block(block))
         {
-            // existing block size is the same as new size -> do nothing
+            invalid_block(ptr, "x86_realloc");
             UNLOCK_MUTEX
-            errno = 0;
-            return ptr;
-        }
-        else if (allocblock->block_size > allocsize)
-        {
-            // existing block size is larger than new size -> split block into two and free the second one
-            freeblock = (memblock_t *)(allocsize + (uint8_t *)allocblock);
-            freeblock->block_size = allocblock->block_size - allocsize;
-            freeblock->u.inverted_value = ~freeblock->block_size;
-            allocblock->block_size = allocsize;
-            allocblock->u.inverted_value = ~allocblock->block_size;
-
-            x86_free((void *)(sizeof(memblock_t) + (uint8_t *)freeblock));
-            UNLOCK_MUTEX
-            errno = 0;
-            return ptr;
-        }
-        else
-        {
-            // existing block size is smaller than new size -> check if adjacent block is large enough free block
-
-            offsetalloc = (int32_t)((uintptr_t)allocblock - (uintptr_t)heapblock->address);
-            if (offsetalloc + allocblock->block_size < heapblock->size)
-            {
-                adjacentblock = (memblock_t *)(allocblock->block_size + (uint8_t *)allocblock);
-                if (adjacentblock->u.inverted_value >= 0 && adjacentblock->block_size >= allocsize - allocblock->block_size)
-                {
-                    offsetadjacent = offsetalloc + allocblock->block_size;
-                    adjacentblock = get_free_block(heapblock, offsetadjacent);
-
-                    if (adjacentblock->block_size > allocsize - allocblock->block_size)
-                    {
-                        // append beginning of the free block to existing block
-                        freeblock = (memblock_t *)(allocsize + (uint8_t *)allocblock);
-                        freeblock->u.offset_next = adjacentblock->u.offset_next;
-                        freeblock->block_size = allocblock->block_size + adjacentblock->block_size - allocsize;
-                        allocblock->block_size = allocsize;
-                        allocblock->u.inverted_value = ~allocblock->block_size;
-                        adjacentblock->u.offset_next = 0;
-                        adjacentblock->block_size = 0;
-
-                        if (heapblock->offset_first_free == offsetadjacent)
-                        {
-                            heapblock->offset_first_free = offsetalloc + allocsize;
-                        }
-                        else
-                        {
-                            prevblock = find_last_free_block_before(heapblock, offsetalloc);
-                            prevblock->u.offset_next = offsetalloc + allocsize;
-                        }
-
-                        if (heapblock->offset_largest_free == offsetadjacent)
-                        {
-                            if (freeblock->block_size >= heapblock->size >> 1)
-                            {
-                                heapblock->offset_largest_free = offsetalloc + allocsize;
-                            }
-                            else
-                            {
-                                find_largest_free_block(heapblock);
-                            }
-                        }
-                        else if (heapblock->offset_largest_free_prev == offsetadjacent)
-                        {
-                            heapblock->offset_largest_free_prev = offsetalloc + allocsize;
-                        }
-                    }
-                    else
-                    {
-                        // append whole free block to existing block
-                        allocblock->block_size += adjacentblock->block_size;
-                        allocblock->u.inverted_value = ~allocblock->block_size;
-
-                        prevblock = NULL; // silence compiler warning
-
-                        if (heapblock->offset_first_free == offsetadjacent)
-                        {
-                            heapblock->offset_first_free = adjacentblock->u.offset_next;
-                            if (heapblock->offset_first_free >= heapblock->size)
-                            {
-                                heapblock->offset_first_free = -1;
-                            }
-                        }
-                        else
-                        {
-                            prevblock = find_last_free_block_before(heapblock, offsetalloc);
-                            prevblock->u.offset_next = adjacentblock->u.offset_next;
-                        }
-
-                        adjacentblock->u.offset_next = 0;
-                        adjacentblock->block_size = 0;
-
-                        if (heapblock->offset_largest_free == offsetadjacent)
-                        {
-                            find_largest_free_block(heapblock);
-                        }
-                        else if (heapblock->offset_largest_free_prev == offsetadjacent)
-                        {
-                            if (heapblock->offset_largest_free == heapblock->offset_first_free)
-                            {
-                                heapblock->offset_largest_free_prev = -1;
-                            }
-                            else
-                            {
-                                // if execution gets here, then the same statement was executed above, so it doesn't need to be executed again
-                                //prevblock = find_last_free_block_before(heapblock, offsetalloc);
-                                heapblock->offset_largest_free_prev = (int32_t)((uintptr_t)prevblock - (uintptr_t)heapblock->address);
-                            }
-                        }
-                    }
-
-                    UNLOCK_MUTEX
-                    errno = 0;
-                    return ptr;
-                }
-            }
-        }
-
-        copysize = allocblock->block_size - sizeof(memblock_t);
-
-        ptr2 = x86_malloc(size);
-        if (ptr2 == NULL)
-        {
-            UNLOCK_MUTEX
-            errno = ENOMEM;
+            errno = EINVAL;
             return NULL;
         }
 
-        memcpy(ptr2, ptr, copysize);
-        x86_free(ptr);
+        current = block_size(block);
+        if (adjusted > current)
+        {
+            next = block_next(block);
+            if (!block_is_free(next) || adjusted > current + block_size(next) + BLOCK_OVERHEAD)
+            {
+                // a new block
+                ptr2 = x86_malloc(size);
+                if (ptr2 == NULL)
+                {
+                    UNLOCK_MUTEX
+                    errno = ENOMEM;
+                    return NULL;
+                }
+
+                memcpy(ptr2, ptr, current);
+                x86_free(ptr);
+                UNLOCK_MUTEX
+                errno = 0;
+                return ptr2;
+            }
+
+            // grow into the next block, which is free
+            block_remove(next);
+            block_absorb(block, next);
+            block_mark_used(block);
+        }
+
+        block_trim_used(block, adjusted);
+
         UNLOCK_MUTEX
         errno = 0;
-        return ptr2;
+        return ptr;
     }
     else
     {

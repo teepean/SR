@@ -32,6 +32,8 @@ int ghost_poll_event(SDL_Event *ev);
 const uint8_t *ghost_keyboard_state(void);
 uint32_t ghost_mouse_state(int *x, int *y);
 void ghost_window_size(int *w, int *h);
+int ghost_aspect_mode(void);
+void ghost_frame_rect(int game_w, int game_h, int ww, int wh, float r[4]);
 void ghost_warp_mouse(int wx, int wy);
 void ghost_set_relative_mouse(int on);
 void ghost_show_cursor(int show);
@@ -171,6 +173,20 @@ uint32_t host_mouse_state(int *x, int *y)
 {
     GODOT_RET(ghost_mouse_state(x, y));
     return SDL_GetMouseState(x, y);
+}
+
+void host_frame_rect(int game_w, int game_h, float r[4])
+{
+    int ww = 0, wh = 0;
+    host_window_size(&ww, &wh);
+    GODOT(ghost_frame_rect(game_w, game_h, ww, wh, r); return);
+    r[0] = 0.0f; r[1] = 0.0f; r[2] = (float)ww; r[3] = (float)wh;    // SDL: stretched
+}
+
+int host_aspect_mode(void)
+{
+    GODOT_RET(ghost_aspect_mode());
+    return HOST_ASPECT_STRETCH;
 }
 
 void host_window_size(int *w, int *h)

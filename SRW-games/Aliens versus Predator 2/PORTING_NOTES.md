@@ -594,3 +594,33 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   only Xcode's clang. The kit mechanism is tested on Linux with an x86-64 kit (TRIPLE=...). The kit's 734 undefined
   symbols are all defined by the runtime. On macOS the window may start inside __PAGEZERO when the program's slide
   leaves less than 1 MB below it (its first MB is never used). Not built on a Mac yet (no SDK here).
+
+### 2026-11-08 — the allocator, 2D blits, dynamic meshes, settings, wide-screen (step 1)
+- Game-Memory.c's allocator is TLSF (two-level segregated fit: free blocks in lists by size class, two bitmaps find
+  one, merging through boundary tags) over 16 MB pools in the 32-bit window: malloc/free in constant time. The old
+  one took the largest free block and walked the free list for the next largest (22% of the CPU in m1s1). Checked by
+  a stress test against a model (3M random malloc/free/realloc, the heap's structure walked, ASan/UBSan) and a
+  benchmark (26x faster on a fragmented heap); it no longer shows in a profile. The smoke test (all 50 AvP2 and 19
+  Primal Hunt worlds) passes with it.
+- ren_BlitToScreen_c (the HUD, ~465 blits / 120k pixels a frame): clipped once, a column map instead of a 64-bit
+  division per pixel, one loop per blend mode whose store is unconditional (the colour key selects the old pixel), so
+  the compilers vectorize it. Bit-identical to the old version on 200k random blits.
+- Dynamic meshes (models, particle and line systems, poly grids, canvases): the surfaces are rebuilt only when their
+  layout changes (arrays, counts, indices, material); otherwise the vertices are written into Godot's buffers
+  (mesh_surface_update_vertex_region / _attribute_region). Our encoding of the layout (RenderingServer's offsets and
+  strides) is compared with Godot's own once per array combination (mesh_get_surface) and the surfaces are rebuilt if
+  it differs; the instances get custom AABBs (an in-place update doesn't recompute the mesh's). Particle systems and
+  canvas batches are padded to a power-of-two room with empty, transparent triangles. In m1s1: models 12040 in place
+  / 0 rebuilt per 1200 frames, particles 4800/0, canvases ~95% in place; p1s1/a6s1/exp1s1 poly grids all in place.
+- AVP2_FRAMESTATS / show_fps also show draw calls, objects, primitives and GPU time (the 3D view, the window): m1s1
+  ~340 draw calls, 28k primitives, GPU 1.0 + 0.3 ms. The 3D SubViewport isn't updated while it's hidden (menus); the
+  2D frame is uploaded only when it changed, without the copy-on-write copy of the shared Image; the mouse's
+  sub-pixel motion is kept; per-frame shader parameter names are StringNames made once.
+- Settings (SR-AvP2.cfg / AVP2_<KEY>): vsync (Godot's modes), max_fps, msaa, render_scale + upscaler (bilinear, fsr,
+  fsr2, nearest, metalfx_*), anisotropy, window_size (e.g. 1280x720), aspect.
+- Wide-screen step 1 (aspect = wide, the default): in a window that isn't 4:3 the game's 2D frame (HUD, menus,
+  movies) keeps its aspect, centred (host ghost_frame_rect; the mouse is mapped through it), and a scene as wide as
+  the game's screen spans the window - Hor+: the same vertical field of view, the tangent widened with the width
+  (render3d post_update). aspect = 4:3 puts the 3D view in the 4:3 frame too (bars), stretch is the old behaviour.
+  The HUD, the vision overlays and the engine's own projection (target brackets) stay in the 4:3 middle; step 2
+  (16:9 render modes, engine-side Hor+) is open.

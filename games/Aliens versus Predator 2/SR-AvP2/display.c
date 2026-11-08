@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <unistd.h>
 #include <SDL.h>
 #include "sysmem.h"
@@ -147,14 +148,17 @@ void display_present(int force)
     dirty = 0;
 }
 
+// window pixels -> the game's (through the frame's rectangle in the window: host_frame_rect; clamped to the frame)
 void display_window_to_client(int wx, int wy, int *cx, int *cy)
 {
-    int ww, wh;
+    float r[4];
 
     if (!created) { *cx = wx; *cy = wy; return; }
-    host_window_size(&ww, &wh);
-    *cx = (ww > 0) ? wx * display_width / ww : wx;
-    *cy = (wh > 0) ? wy * display_height / wh : wy;
+    host_frame_rect(display_width, display_height, r);
+    *cx = (r[2] > 0.0f) ? (int)floorf((wx - r[0]) * display_width / r[2]) : wx;
+    *cy = (r[3] > 0.0f) ? (int)floorf((wy - r[1]) * display_height / r[3]) : wy;
+    if (*cx < 0) *cx = 0; else if ((display_width > 0) && (*cx >= display_width)) *cx = display_width - 1;
+    if (*cy < 0) *cy = 0; else if ((display_height > 0) && (*cy >= display_height)) *cy = display_height - 1;
 }
 
 void display_warp_window(int wx, int wy)
@@ -164,11 +168,11 @@ void display_warp_window(int wx, int wy)
 
 void display_warp_mouse(int cx, int cy)
 {
-    int ww, wh;
+    float r[4];
 
     if (!created || (display_width <= 0) || (display_height <= 0)) return;
-    host_window_size(&ww, &wh);
-    host_warp_mouse(cx * ww / display_width, cy * wh / display_height);
+    host_frame_rect(display_width, display_height, r);
+    host_warp_mouse((int)(r[0] + cx * r[2] / display_width), (int)(r[1] + cy * r[3] / display_height));
 }
 
 EXTERN_C_END

@@ -6,7 +6,8 @@
  *
  *  libgodot is loaded with dlopen(RTLD_LOCAL | RTLD_DEEPBIND): it exports its bundled third-party libraries
  *  (FreeType, zlib, ...), which must neither replace the system ones the runtime uses nor be replaced by them.
- *  (RTLD_DEEPBIND is glibc's; macOS keeps each library's symbols apart anyway: two-level namespaces.)
+ *  (RTLD_DEEPBIND is glibc's; macOS keeps each library's symbols apart anyway: two-level namespaces; Windows DLLs
+ *  too - LoadLibrary through SDL_LoadObject there.)
  *  godot-cpp (linked in) talks to it only through the GDExtension interface it hands to host_init.
  *
  *  Picture: the game's framebuffer (XRGB8888, CPU-drawn 2D) is a texture on a canvas item covering the window;
@@ -21,7 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 #include <pthread.h>
 #include <limits.h>
 #include <vector>
@@ -51,6 +54,7 @@
 #include <SDL.h>
 
 #include "config.h"
+#include "host.h"
 
 using namespace godot;
 
@@ -77,7 +81,6 @@ static int quitting;
 struct godot_state
 {
     RID canvas, canvas_item, texture, shader, material;
-    Ref<Image> frame_image;
     PackedByteArray frame_bytes;
 };
 static godot_state *gs;
@@ -246,13 +249,19 @@ public:
         if (mm.is_valid())
         {
             Vector2 pos = mm->get_position(), rel = mm->get_screen_relative();
+            // the relative motion in whole pixels (DirectInput's deltas); the fractions (HiDPI, Wayland, macOS:
+            // sub-pixel motion) are kept for the next event instead of lost
+            static float rem_x, rem_y;
+            float rx = rel.x + rem_x, ry = rel.y + rem_y;
             mouse_x = (int)pos.x;
             mouse_y = (int)pos.y;
             ev.type = SDL_MOUSEMOTION;
             ev.motion.x = mouse_x;
             ev.motion.y = mouse_y;
-            ev.motion.xrel = (int)rel.x;
-            ev.motion.yrel = (int)rel.y;
+            ev.motion.xrel = (int)rx;
+            ev.motion.yrel = (int)ry;
+            rem_x = rx - (float)ev.motion.xrel;
+            rem_y = ry - (float)ev.motion.yrel;
             ev.motion.state = mouse_buttons;
             push_event(ev);
             return;
@@ -358,9 +367,32 @@ static std::string exe_dir(void)
 #else
 #define LIBGODOT_NAME "libgodot.so"
 #endif
-#ifndef RTLD_DEEPBIND
+#if !defined(_WIN32) && !defined(RTLD_DEEPBIND)
 #define RTLD_DEEPBIND 0
 #endif
+
+// the library loader: dlopen (Linux: RTLD_DEEPBIND), LoadLibrary on Windows (SDL_LoadObject: no <windows.h> next to
+// godot-cpp)
+static void *lib_open(const char *path, std::string &error)
+{
+#ifdef _WIN32
+    void *h = SDL_LoadObject(path);
+    if (h == NULL) error = SDL_GetError();
+#else
+    void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+    if (h == NULL) error = dlerror();
+#endif
+    return h;
+}
+
+static void *lib_symbol(void *h, const char *name)
+{
+#ifdef _WIN32
+    return SDL_LoadFunction(h, name);
+#else
+    return dlsym(h, name);
+#endif
+}
 
 static std::string find_file(const char *env, const char *cfg, const std::vector<std::string> &candidates)
 {
@@ -390,14 +422,15 @@ extern "C" int ghost_load(void)
     }
     if ((project.size() > 14) && (project.compare(project.size() - 14, 14, "/project.godot") == 0)) project.resize(project.size() - 14);
 
-    libgodot = dlopen(lib.c_str(), RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
+    std::string error;
+    libgodot = lib_open(lib.c_str(), error);
     if (libgodot == NULL)
     {
-        eprintf("host: %s\n", dlerror());
+        eprintf("host: %s\n", error.c_str());
         return 0;
     }
-    create_instance = (create_instance_fn)dlsym(libgodot, "libgodot_create_godot_instance");
-    destroy_instance = (destroy_instance_fn)dlsym(libgodot, "libgodot_destroy_godot_instance");
+    create_instance = (create_instance_fn)lib_symbol(libgodot, "libgodot_create_godot_instance");
+    destroy_instance = (destroy_instance_fn)lib_symbol(libgodot, "libgodot_destroy_godot_instance");
     if (create_instance == NULL)
     {
         eprintf("host: %s has no libgodot_create_godot_instance\n", lib.c_str());
@@ -444,6 +477,12 @@ extern "C" int ghost_load(void)
     Window *root = tree->get_root();
     root->add_child(memnew(AvP2Host));
     frame_stats_init(root);
+
+    // SR-AvP2.cfg: vertical sync (Godot's modes), the frame rate limit
+    int vsync = config_get_int("vsync", 1);
+    if ((vsync >= 0) && (vsync <= 3)) DisplayServer::get_singleton()->window_set_vsync_mode((DisplayServer::VSyncMode)vsync);
+    int max_fps = config_get_int("max_fps", 0);
+    if (max_fps > 0) Engine::get_singleton()->set_max_fps(max_fps);
 
     RenderingServer *rs = RenderingServer::get_singleton();
     gs = new godot_state;
@@ -516,6 +555,7 @@ extern "C" void ghost_resize(int w, int h)
 }
 
 static void present_frame(const uint32_t *pixels, int w, int h);
+extern "C" void ghost_frame_rect(int game_w, int game_h, int ww, int wh, float r[4]);
 
 extern "C" void ghost_present(const uint32_t *pixels, int w, int h)
 {
@@ -569,8 +609,15 @@ static struct
     uint64_t prev_start, prev_end, window_start;
     std::vector<float> interval, game, upload, godot;
     uint64_t pc_prev[PC_N], pc_window[PC_N];
+    // Godot's last drawn frame (RenderingServer): draw calls, objects, primitives; GPU time of the window (2D + the
+    // 3D picture's passes) and of the 3D view (SubViewport) - summed over the stats window
+    // (pointers: godot-cpp's types can't be static - their constructors call Godot, which isn't loaded yet)
+    double draws, objects, primitives, gpu_root, gpu_3d;
+    RID *root_viewport, *view_3d;
     Label *label;
 } fst;
+
+godot::RID r3d_viewport_rid(void);
 
 static double perf_ms(uint64_t a, uint64_t b) { return (double)(b - a) * 1000.0 / (double)SDL_GetPerformanceFrequency(); }
 
@@ -587,6 +634,12 @@ static void frame_stats_init(Window *root)
 {
     fst.log = (getenv("AVP2_FRAMESTATS") != NULL) && (atoi(getenv("AVP2_FRAMESTATS")) != 0);
     fst.show = getenv("AVP2_SHOW_FPS") ? (atoi(getenv("AVP2_SHOW_FPS")) != 0) : (config_get_int("show_fps", 0) != 0);
+    if (fst.log || fst.show)
+    {
+        fst.root_viewport = new RID(root->get_viewport_rid());
+        fst.view_3d = new RID();
+        RenderingServer::get_singleton()->viewport_set_measure_render_time(*fst.root_viewport, true);
+    }
     if (!fst.show) return;
     CanvasLayer *layer = memnew(CanvasLayer);
     layer->set_layer(100);
@@ -605,6 +658,18 @@ static void frame_stats_add(uint64_t start, uint64_t uploaded, uint64_t end)
     if (!fst.log && !fst.show) return;
     uint64_t pc[PC_N];
     pipeline_counts(pc);
+    RenderingServer *rs = RenderingServer::get_singleton();
+    if (!fst.view_3d->is_valid())
+    {
+        // render3d makes its viewport with the first 3D scene
+        *fst.view_3d = r3d_viewport_rid();
+        if (fst.view_3d->is_valid()) rs->viewport_set_measure_render_time(*fst.view_3d, true);
+    }
+    fst.draws += (double)rs->get_rendering_info(RenderingServer::RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME);
+    fst.objects += (double)rs->get_rendering_info(RenderingServer::RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME);
+    fst.primitives += (double)rs->get_rendering_info(RenderingServer::RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME);
+    fst.gpu_root += rs->viewport_get_measured_render_time_gpu(*fst.root_viewport);
+    if (fst.view_3d->is_valid()) fst.gpu_3d += rs->viewport_get_measured_render_time_gpu(*fst.view_3d);
     if (fst.prev_start != 0)
     {
         fst.interval.push_back((float)perf_ms(fst.prev_start, start));
@@ -644,15 +709,19 @@ static void frame_stats_add(uint64_t start, uint64_t uploaded, uint64_t end)
     if (fst.log)
         eprintf("frames: %.1f fps, interval avg %.2f p50 %.2f p95 %.2f p99 %.2f max %.2f ms, >25 ms %d, >50 ms %d; "
                 "avg game %.2f upload %.2f godot %.2f; worst: game %.2f upload %.2f godot %.2f; pipelines draw +%d surface +%d "
-                "specialization +%d (total draw %d surface %d)\n",
+                "specialization +%d (total draw %d surface %d); per frame: %.0f draw calls, %.0f objects, %.0f primitives, "
+                "GPU 3D %.2f window %.2f ms\n",
                 fps, sum / n, p50, p95, p99, sorted[n - 1], over25, over50, gsum / n, usum / n, osum / n,
                 fst.game[worst], fst.upload[worst], fst.godot[worst], (int)(pc[PC_DRAW] - fst.pc_window[PC_DRAW]),
-                (int)(pc[PC_SURFACE] - fst.pc_window[PC_SURFACE]), (int)(pc[PC_SPEC] - fst.pc_window[PC_SPEC]), (int)pc[PC_DRAW], (int)pc[PC_SURFACE]);
+                (int)(pc[PC_SURFACE] - fst.pc_window[PC_SURFACE]), (int)(pc[PC_SPEC] - fst.pc_window[PC_SPEC]), (int)pc[PC_DRAW], (int)pc[PC_SURFACE],
+                fst.draws / n, fst.objects / n, fst.primitives / n, fst.gpu_3d / n, fst.gpu_root / n);
     if (fst.label != NULL)
     {
         char text[256];
-        snprintf(text, sizeof(text), "%.0f fps  %.1f ms (p99 %.1f, max %.1f)  hitches %d\ngame %.1f  upload %.1f  godot %.1f ms",
-                 fps, sum / n, p99, sorted[n - 1], over25, gsum / n, usum / n, osum / n);
+        snprintf(text, sizeof(text), "%.0f fps  %.1f ms (p99 %.1f, max %.1f)  hitches %d\ngame %.1f  upload %.1f  godot %.1f ms\n"
+                 "GPU %.1f ms (3D %.1f)  %.0f draw calls",
+                 fps, sum / n, p99, sorted[n - 1], over25, gsum / n, usum / n, osum / n, (fst.gpu_root + fst.gpu_3d) / n, fst.gpu_3d / n,
+                 fst.draws / n);
         fst.label->set_text(text);
         // top centre: between the HUD's health (left) and ammunition (right)
         Vector2 ms = fst.label->get_minimum_size();
@@ -660,6 +729,7 @@ static void frame_stats_add(uint64_t start, uint64_t uploaded, uint64_t end)
         fst.label->set_position(Vector2(floorf((ws.x - ms.x) * 0.5f), 2));
     }
     fst.interval.clear(); fst.game.clear(); fst.upload.clear(); fst.godot.clear();
+    fst.draws = fst.objects = fst.primitives = fst.gpu_root = fst.gpu_3d = 0;
     fst.window_start = end;
     memcpy(fst.pc_window, pc, sizeof(pc));
 }
@@ -669,25 +739,39 @@ static void present_frame(const uint32_t *pixels, int w, int h)
     RenderingServer *rs = RenderingServer::get_singleton();
     uint64_t t_start = SDL_GetPerformanceCounter();
 
-    if (gs->frame_bytes.size() != (int64_t)w * h * 4) gs->frame_bytes.resize((int64_t)w * h * 4);
-    memcpy(gs->frame_bytes.ptrw(), pixels, (size_t)w * h * 4);
-    if (gs->frame_image.is_null()) gs->frame_image.instantiate();
-    gs->frame_image->set_data(w, h, false, Image::FORMAT_RGBA8, gs->frame_bytes);
-    if (!gs->texture.is_valid() || (w != tex_w) || (h != tex_h))
+    // the 2D frame: uploaded when it changed (the menus' frames are often the same); the Image shares frame_bytes
+    // only during the upload, so that the next frame's copy doesn't copy the array first (copy on write)
+    int64_t bytes = (int64_t)w * h * 4;
+    int new_texture = !gs->texture.is_valid() || (w != tex_w) || (h != tex_h);
+    if (new_texture || (gs->frame_bytes.size() != bytes) || (memcmp(gs->frame_bytes.ptr(), pixels, (size_t)bytes) != 0))
     {
-        if (gs->texture.is_valid()) rs->free_rid(gs->texture);
-        gs->texture = rs->texture_2d_create(gs->frame_image);
-        tex_w = w;
-        tex_h = h;
-    }
-    else
-    {
-        rs->texture_2d_update(gs->texture, gs->frame_image, 0);
+        if (gs->frame_bytes.size() != bytes) gs->frame_bytes.resize(bytes);
+        memcpy(gs->frame_bytes.ptrw(), pixels, (size_t)bytes);
+        Ref<Image> image = Image::create_from_data(w, h, false, Image::FORMAT_RGBA8, gs->frame_bytes);
+        if (new_texture)
+        {
+            if (gs->texture.is_valid()) rs->free_rid(gs->texture);
+            gs->texture = rs->texture_2d_create(image);
+            tex_w = w;
+            tex_h = h;
+        }
+        else
+        {
+            rs->texture_2d_update(gs->texture, image, 0);
+        }
     }
 
+    // the canvas item: again when the window's size or the texture changed (the frame in its rectangle: ghost_frame_rect)
+    static Vector2i drawn_size;
     Vector2i size = DisplayServer::get_singleton()->window_get_size();
-    rs->canvas_item_clear(gs->canvas_item);
-    rs->canvas_item_add_texture_rect(gs->canvas_item, Rect2(0, 0, size.x, size.y), gs->texture);
+    if (new_texture || (size != drawn_size))
+    {
+        float fr[4];
+        ghost_frame_rect(w, h, size.x, size.y, fr);
+        rs->canvas_item_clear(gs->canvas_item);
+        rs->canvas_item_add_texture_rect(gs->canvas_item, Rect2(fr[0], fr[1], fr[2], fr[3]), gs->texture);
+        drawn_size = size;
+    }
 
     uint64_t t_uploaded = SDL_GetPerformanceCounter();
     run_iteration();
@@ -743,6 +827,40 @@ extern "C" uint32_t ghost_mouse_state(int *x, int *y)
     if (x != NULL) *x = mouse_x;
     if (y != NULL) *y = mouse_y;
     return mouse_buttons;
+}
+
+// Where the game's 2D frame (game_w x game_h) is in the window - SR-AvP2.cfg aspect: "stretch" over the whole
+// window (the original look on a 4:3 screen), or with its own aspect, centred (side or top/bottom bars): "4:3" draws
+// the 3D view in that rectangle too, "wide" (default) widens the 3D view to the window (Hor+: the vertical field of
+// view stays, the horizontal one grows; the HUD and the menus stay in the 4:3 frame).
+extern "C" int ghost_aspect_mode(void)
+{
+    static int mode = -1;
+    if (mode < 0)
+    {
+        const char *a = config_get("aspect");
+        mode = HOST_ASPECT_WIDE;
+        if ((a != NULL) && (strcasecmp(a, "stretch") == 0)) mode = HOST_ASPECT_STRETCH;
+        else if ((a != NULL) && (strcmp(a, "4:3") == 0)) mode = HOST_ASPECT_KEEP;
+    }
+    return mode;
+}
+
+extern "C" void ghost_frame_rect(int game_w, int game_h, int ww, int wh, float r[4])
+{
+    r[0] = 0.0f; r[1] = 0.0f; r[2] = (float)ww; r[3] = (float)wh;
+    if ((ghost_aspect_mode() == HOST_ASPECT_STRETCH) || (game_w <= 0) || (game_h <= 0) || (ww <= 0) || (wh <= 0)) return;
+    if ((int64_t)ww * game_h > (int64_t)wh * game_w)
+    {
+        // wider than the game: bars at the sides
+        r[2] = floorf((float)wh * game_w / game_h + 0.5f);
+        r[0] = floorf((ww - r[2]) * 0.5f);
+    }
+    else
+    {
+        r[3] = floorf((float)ww * game_h / game_w + 0.5f);
+        r[1] = floorf((wh - r[3]) * 0.5f);
+    }
 }
 
 extern "C" void ghost_window_size(int *w, int *h)
@@ -905,6 +1023,14 @@ static void apply_wanted(void)
             if (scale < 1) scale = 1;
             req_w = w.size_w * scale;
             req_h = w.size_h * scale;
+            // or a size of its own (window_size = 1280x720: a wide window, see aspect)
+            const char *ws = config_get("window_size");
+            int fw = 0, fh = 0;
+            if ((ws != NULL) && (sscanf(ws, "%dx%d", &fw, &fh) == 2) && (fw >= 160) && (fh >= 120) && (fw <= 16384) && (fh <= 16384))
+            {
+                req_w = fw;
+                req_h = fh;
+            }
             req_time = SDL_GetTicks();
             ds->window_set_size(Vector2i(req_w, req_h));
         }
