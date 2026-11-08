@@ -477,3 +477,22 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - Also portable now: the fault handler (macOS register names, SIGBUS), fixed mappings without MAP_FIXED_NOREPLACE
   (sys_map_fixed; ranges reserved in a constructor, sys_reserve_fixed), the recursive mutex initializer, the
   program's directory (SDL_GetBasePath), libgodot.dylib without RTLD_DEEPBIND; `rendering_method` setting.
+
+### 2026-11-08 — shader preloading
+- Godot 4.7 (Forward+) parses a shader when it's set, compiles it for the GPU in worker threads and makes the first
+  draw with it wait; the pipelines are compiled when an object is added and waited for when it's drawn. With cold
+  caches (the first run, a new Godot or driver; measured with XDG_DATA_HOME and __GL_SHADER_DISK_CACHE_PATH pointing
+  to new directories) m1s1's first frame took 117-144 ms in Godot and each new sprite variant stalled its frame by
+  33-73 ms (the first shots: muzzle flash, smoke, shells). With warm caches none of that showed.
+- Now every shader is made once when the renderer starts (r3d_init from ren_Init) and kept for the whole run (the
+  world's were remade for each level), and drawn with each vertex format it's used with in the next Godot frames:
+  zero-area, transparent triangles in front of the camera (custom AABB), so nothing shows but the draws compile the
+  shaders and pipelines. The set is small and fixed: 11 world kinds (world, models, really close, sky), 6 sprite
+  shaders (blending x depth test: the rest of the old ~160 variants - placement, glow, bias, really close, fog - is
+  the material's `flags` uniform), 2 line shaders; 46 pipelines. The light scales (lightmap 2x, vertex colour 2x
+  with Saturate) became the global uniform lt_scales (set with the fog), so no shader depends on console variables.
+- Cold caches, same run: the 46 pipelines are compiled in the game's first frame (341 ms, once), m1s1's first frame
+  takes 3.5 ms in Godot, no slow frame and no pipeline compilation after the start (also Primal Hunt, blob mode).
+- AVP2_FRAMESTATS=1 also logs Godot's pipeline compilations (per second; while drawing = stutter) and each slow
+  frame (> 25 ms in Godot or > 50 ms in the game) with its compilations; AVP2_DEBUG logs every shader made (" late"
+  after the preload).

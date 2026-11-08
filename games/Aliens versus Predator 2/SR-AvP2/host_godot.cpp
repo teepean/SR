@@ -557,15 +557,31 @@ static int present_pending(void)
 // buffer swap). Per second: frames, interval average / percentiles / worst and hitches (> 25 ms, > 50 ms), with
 // the worst frame's split. AVP2_FRAMESTATS=1 logs it, show_fps=1 (or AVP2_SHOW_FPS=1) shows it on screen.
 // SDL's performance counter (portable).
+// Godot's pipeline compilations (RenderingServer totals): the ones made while drawing block the frame (a shader or
+// vertex format used for the first time: stutter), the surface ones are started when an object is added and waited
+// for when it's drawn in the same frame, specializations are in the background. Logged per second and with each slow
+// frame (> 25 ms in Godot or > 50 ms in the game).
+enum { PC_CANVAS, PC_MESH, PC_SURFACE, PC_DRAW, PC_SPEC, PC_N };
+
 static struct
 {
     int log, show;
     uint64_t prev_start, prev_end, window_start;
     std::vector<float> interval, game, upload, godot;
+    uint64_t pc_prev[PC_N], pc_window[PC_N];
     Label *label;
 } fst;
 
 static double perf_ms(uint64_t a, uint64_t b) { return (double)(b - a) * 1000.0 / (double)SDL_GetPerformanceFrequency(); }
+
+static void pipeline_counts(uint64_t c[PC_N])
+{
+    static const RenderingServer::RenderingInfo info[PC_N] = { RenderingServer::RENDERING_INFO_PIPELINE_COMPILATIONS_CANVAS,
+        RenderingServer::RENDERING_INFO_PIPELINE_COMPILATIONS_MESH, RenderingServer::RENDERING_INFO_PIPELINE_COMPILATIONS_SURFACE,
+        RenderingServer::RENDERING_INFO_PIPELINE_COMPILATIONS_DRAW, RenderingServer::RENDERING_INFO_PIPELINE_COMPILATIONS_SPECIALIZATION };
+    RenderingServer *rs = RenderingServer::get_singleton();
+    for (int i = 0; i < PC_N; i++) c[i] = rs->get_rendering_info(info[i]);
+}
 
 static void frame_stats_init(Window *root)
 {
@@ -587,14 +603,25 @@ static void frame_stats_init(Window *root)
 static void frame_stats_add(uint64_t start, uint64_t uploaded, uint64_t end)
 {
     if (!fst.log && !fst.show) return;
+    uint64_t pc[PC_N];
+    pipeline_counts(pc);
     if (fst.prev_start != 0)
     {
         fst.interval.push_back((float)perf_ms(fst.prev_start, start));
         fst.game.push_back((float)perf_ms(fst.prev_end, start));
         fst.upload.push_back((float)perf_ms(start, uploaded));
         fst.godot.push_back((float)perf_ms(uploaded, end));
+        if (fst.log && ((fst.godot.back() > 25.0f) || (fst.game.back() > 50.0f)))
+            eprintf("frames: slow frame: game %.1f upload %.1f godot %.1f ms; pipelines draw +%d surface +%d mesh +%d specialization +%d canvas +%d\n",
+                    fst.game.back(), fst.upload.back(), fst.godot.back(), (int)(pc[PC_DRAW] - fst.pc_prev[PC_DRAW]), (int)(pc[PC_SURFACE] - fst.pc_prev[PC_SURFACE]),
+                    (int)(pc[PC_MESH] - fst.pc_prev[PC_MESH]), (int)(pc[PC_SPEC] - fst.pc_prev[PC_SPEC]), (int)(pc[PC_CANVAS] - fst.pc_prev[PC_CANVAS]));
     }
-    else fst.window_start = start;
+    else
+    {
+        fst.window_start = start;
+        memcpy(fst.pc_window, pc, sizeof(pc));
+    }
+    memcpy(fst.pc_prev, pc, sizeof(pc));
     fst.prev_start = start;
     fst.prev_end = end;
     double window = perf_ms(fst.window_start, end);
@@ -616,9 +643,11 @@ static void frame_stats_add(uint64_t start, uint64_t uploaded, uint64_t end)
     double fps = n * 1000.0 / window;
     if (fst.log)
         eprintf("frames: %.1f fps, interval avg %.2f p50 %.2f p95 %.2f p99 %.2f max %.2f ms, >25 ms %d, >50 ms %d; "
-                "avg game %.2f upload %.2f godot %.2f; worst: game %.2f upload %.2f godot %.2f\n",
+                "avg game %.2f upload %.2f godot %.2f; worst: game %.2f upload %.2f godot %.2f; pipelines draw +%d surface +%d "
+                "specialization +%d (total draw %d surface %d)\n",
                 fps, sum / n, p50, p95, p99, sorted[n - 1], over25, over50, gsum / n, usum / n, osum / n,
-                fst.game[worst], fst.upload[worst], fst.godot[worst]);
+                fst.game[worst], fst.upload[worst], fst.godot[worst], (int)(pc[PC_DRAW] - fst.pc_window[PC_DRAW]),
+                (int)(pc[PC_SURFACE] - fst.pc_window[PC_SURFACE]), (int)(pc[PC_SPEC] - fst.pc_window[PC_SPEC]), (int)pc[PC_DRAW], (int)pc[PC_SURFACE]);
     if (fst.label != NULL)
     {
         char text[256];
@@ -632,6 +661,7 @@ static void frame_stats_add(uint64_t start, uint64_t uploaded, uint64_t end)
     }
     fst.interval.clear(); fst.game.clear(); fst.upload.clear(); fst.godot.clear();
     fst.window_start = end;
+    memcpy(fst.pc_window, pc, sizeof(pc));
 }
 
 static void present_frame(const uint32_t *pixels, int w, int h)

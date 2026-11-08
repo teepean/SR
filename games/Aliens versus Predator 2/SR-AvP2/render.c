@@ -225,6 +225,7 @@ int32_t CCALL ren_Init_c(RenderStructInit32 *pInit)
     }
     display_resize(screen_w, screen_h);
     r3d_set_screen_size(screen_w, screen_h);
+    r3d_init();
     screen = display_pixels;
     // the device in use goes back into the mode (the engine's current mode: the Graphics page compares it
     // with the listed modes to select the current one)
@@ -521,6 +522,7 @@ int r3d_render_scene(uint8_t *scene) { return 0; }
 void r3d_end_frame(int drawn) {}
 void r3d_unbind_texture(void *texture) {}
 void r3d_set_screen_size(int w, int h) {}
+void r3d_init(void) {}
 // x64/canvas-asm.asm's targets (canvases are drawn by render3d.cpp)
 uint32_t canvas_DrawPrimitive_c(uint32_t self, uint32_t verts, uint32_t n, uint32_t flags) { return 1; }
 uint32_t canvas_SetState_c(uint32_t self, uint32_t state, uint32_t val) { return 1; }

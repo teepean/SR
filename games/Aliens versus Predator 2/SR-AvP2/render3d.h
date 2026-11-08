@@ -27,6 +27,8 @@ void r3d_end_frame(int drawn);
 void r3d_unbind_texture(void *texture);
 // the game's screen (render mode) size: the scene rectangle (SceneDesc m_Rect) is in its pixels
 void r3d_set_screen_size(int w, int h);
+// the renderer starts (after the window): the shaders are made and compiled now (shader preloading)
+void r3d_init(void);
 
 #ifdef __cplusplus
 }

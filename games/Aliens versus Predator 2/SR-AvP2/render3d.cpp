@@ -31,6 +31,8 @@
  *  Canvases: the game's draw functions get an ILTCustomDraw whose methods are native (x64/canvas-asm.asm).
  *  Detail textures and environment maps on world surfaces (d3d.ren's texel sizes: 2^UIMipmapOffset / mip 0),
  *  sprite-animated surfaces (SURF_SPRITEANIMATE).
+ *  Shader preloading: a small fixed set of shaders (variants as uniforms) made and drawn once when the renderer starts
+ *  (preload_shaders), so that Godot doesn't compile them when an effect first appears.
  *  To do: the state changes' blend modes, multi-frame light animations, shadow-map light animations,
  *  vertical fog, model environment maps, model LODs and static lights for models.
  *
@@ -68,6 +70,7 @@
 #include <godot_cpp/classes/canvas_layer.hpp>
 #include <godot_cpp/classes/texture_rect.hpp>
 #include <godot_cpp/classes/viewport_texture.hpp>
+#include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
@@ -260,6 +263,7 @@ struct godot_scene
 static godot_scene *gs;
 
 static void fog_init(void);
+static void preload_shaders(void);
 
 static int ready(void)
 {
@@ -313,6 +317,7 @@ static int ready(void)
         RenderingServer::get_singleton()->set_default_clear_color(Color(0, 0, 0));
         fog_init();
         gs->root->set_visible(false);
+        preload_shaders();
     }
     return 1;
 }
@@ -322,6 +327,12 @@ static int r3d_screen_w = 640, r3d_screen_h = 480;
 extern "C" void r3d_set_screen_size(int w, int h)
 {
     if ((w > 0) && (h > 0)) { r3d_screen_w = w; r3d_screen_h = h; }
+}
+
+// the renderer starts (ren_Init): the scene and the shaders (preload_shaders) before the game's first frame
+extern "C" void r3d_init(void)
+{
+    ready();
 }
 
 extern "C" void r3d_set_render_struct(uint8_t *rs)
@@ -499,6 +510,7 @@ static void fog_init(void)
     rs->global_shader_parameter_add("lt_fog_color", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(1, 1, 1, 1));
     rs->global_shader_parameter_add("lt_sky_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 2000, 0, 0));
     rs->global_shader_parameter_add("lt_misc", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 0, 0));     // LMFullBright
+    rs->global_shader_parameter_add("lt_scales", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(2, 2, 0, 0));    // light scales
     dl_image = Image::create_empty(DL_MAX, 2, false, Image::FORMAT_RGBAF);
     dl_texture = ImageTexture::create_from_image(dl_image);
     rs->global_shader_parameter_add("lt_lights", RenderingServer::GLOBAL_VAR_TYPE_SAMPLER2D, dl_texture);
@@ -517,6 +529,10 @@ static void fog_update(void)
     rs->global_shader_parameter_set("lt_fog", Vector4(on ? 1.0f : 0.0f, cvar("FogNearZ", 0), cvar("FogFarZ", 2000), 0));
     rs->global_shader_parameter_set("lt_fog_color", Vector4(cvar("FogR", 255) / 255.0f, cvar("FogG", 255) / 255.0f, cvar("FogB", 255) / 255.0f, 1));
     rs->global_shader_parameter_set("lt_sky_fog", Vector4(cvar("SkyFogNearZ", 0), cvar("SkyFogFarZ", 2000), 0, 0));
+    // the light scales (shader_code): lightmaps 2x, vertex colours 2x with Saturate
+    float lm = getenv("AVP2_R3D_LMSCALE") ? (float)atof(getenv("AVP2_R3D_LMSCALE")) : 2.0f;
+    float vc = getenv("AVP2_R3D_VCSCALE") ? (float)atof(getenv("AVP2_R3D_VCSCALE")) : ((cvar("Saturate", 0) != 0.0f) ? 2.0f : 1.0f);
+    rs->global_shader_parameter_set("lt_scales", Vector4(lm, vc, 0, 0));
 }
 
 // the scene's last passes (d3d_DrawLightScalePoly with InvertHack, d3d_DrawLightAddPoly), DrawSky, LMFullBright
@@ -572,6 +588,20 @@ static void post_update(uint32_t sd)
     gs->sky_root->set_visible(cv_drawsky != 0);
 }
 
+// a shader from its code. Godot parses it here and compiles it for the GPU in its worker threads; the first draw
+// with it waits for that (and for its pipelines): AVP2_DEBUG logs each shader and the parse time
+static int shaders_preloaded;
+
+static Ref<Shader> make_shader(const char *what, int variant, const std::string &code)
+{
+    uint64_t t0 = Time::get_singleton()->get_ticks_usec();
+    Ref<Shader> sh;
+    sh.instantiate();
+    sh->set_code(code.c_str());
+    if (winapi_debug) eprintf("render3d: shader %s %d (%.1f ms)%s\n", what, variant, (Time::get_singleton()->get_ticks_usec() - t0) / 1000.0, shaders_preloaded ? " late" : "");
+    return sh;
+}
+
 static const char *shader_code(int kind)
 {
     static std::string code[MAT_KINDS];
@@ -586,10 +616,8 @@ static const char *shader_code(int kind)
         // d3d.ren draws the light (lightmap or gouraud colour) first and the texture over it with SRCBLEND
         // DESTCOLOR + DESTBLEND SRCCOLOR = 2 x texture x light (ZERO + SRCCOLOR = 1x without Saturate). m1s1's
         // vertex lit ground matches the Wine reference with 2x. The result is converted for Godot (linear).
-        char scales[160];
-        float vc_default = (cvar("Saturate", 0) != 0.0f) ? 2.0f : 1.0f;
-        snprintf(scales, sizeof(scales), "const float LM_SCALE = %.3f;\nconst float VC_SCALE = %.3f;\n",
-                 getenv("AVP2_R3D_LMSCALE") ? atof(getenv("AVP2_R3D_LMSCALE")) : 2.0, getenv("AVP2_R3D_VCSCALE") ? atof(getenv("AVP2_R3D_VCSCALE")) : vc_default);
+        // The scales are a global uniform (lt_scales: lightmap, vertex colour; fog_update), not in the code: the
+        // shaders are made before the console variables are known (preload_shaders).
         std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
             "uniform sampler2D albedo : filter_linear_mipmap_anisotropic, repeat_enable;\n"
             "uniform sampler2D lightmap : filter_linear, repeat_disable;\n"
@@ -597,7 +625,7 @@ static const char *shader_code(int kind)
             "uniform sampler2D detail_tex : filter_linear_mipmap, repeat_enable;\n"
             "uniform float use_detail = 0.0;\nuniform vec4 detail_m = vec4(1.0, 0.0, 0.0, 1.0);\nuniform float detail_add = 1.0;\n"
             "uniform float env_scale = 1.0;\n"
-            + std::string(scales) + FOG_UNIFORMS + DL_UNIFORMS + STATE_UNIFORMS +
+            "global uniform vec4 lt_scales;\n" FOG_UNIFORMS DL_UNIFORMS STATE_UNIFORMS
             "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
             "varying vec4 v_anim;\nvarying vec4 v_lm;\nvarying vec3 v_c0;\nvarying vec3 v_c1;\n";
         c += "void vertex() {\n";
@@ -634,7 +662,7 @@ static const char *shader_code(int kind)
             "  }\n"
             "  vec3 light;\n";
         if (kind & MAT_SKY)
-            c += "  light = (use_lightmap > 0.5) ? texture(lightmap, UV2).rgb * LM_SCALE : COLOR.rgb * VC_SCALE;\n";
+            c += "  light = (use_lightmap > 0.5) ? texture(lightmap, UV2).rgb * lt_scales.x : COLOR.rgb * lt_scales.y;\n";
         else
             // the changing light animation layers at their current state (lt_anims: blend, on): lightmapped polies'
             // layers are next to the base in the page, the first one that's on is taken as is unless it comes after
@@ -652,7 +680,7 @@ static const char *shader_code(int kind)
                  "      first = false;\n"
                  "      light += texture(lightmap, UV2 + vec2(v_lm.x * float(k + 1), 0.0)).rgb * w;\n"
                  "    }\n"
-                 "    light = (lt_misc.x > 0.5) ? vec3(1.0) : min(light, vec3(1.0)) * LM_SCALE;\n"
+                 "    light = (lt_misc.x > 0.5) ? vec3(1.0) : min(light, vec3(1.0)) * lt_scales.x;\n"
                  "  } else {\n"
                  "    light = COLOR.rgb;\n"
                  "    for (int k = 0; k < 2; k++) {\n"
@@ -660,7 +688,7 @@ static const char *shader_code(int kind)
                  "      if (a < 0) break;\n"
                  "      if (texelFetch(lt_anims, ivec2(a % 1024, a / 1024), 0).y > 0.5) light += (k == 0) ? v_c0 : v_c1;\n"
                  "    }\n"
-                 "    light = min(light, vec3(1.0)) * VC_SCALE;\n"
+                 "    light = min(light, vec3(1.0)) * lt_scales.y;\n"
                  "  }\n";
         c += "  vec3 add = vec3(0.0);\n";
         // dynamic lights (not on the sky): on lightmapped polies d3d.ren adds a texture of the light (LMDynamic,
@@ -714,6 +742,15 @@ static const char *shader_code(int kind)
     return code[kind].c_str();
 }
 
+// the world's shaders (world, world models, models, the sky), by kind: made once (preload_shaders) and kept for the
+// whole run (on the heap: never destroyed, Godot is gone before static destructors run)
+static Ref<Shader> world_shader(int kind)
+{
+    static Ref<Shader> *shaders = new Ref<Shader>[MAT_KINDS];
+    if (shaders[kind].is_null()) shaders[kind] = make_shader("world", kind, shader_code(kind));
+    return shaders[kind];
+}
+
 struct lm_page
 {
     int size;
@@ -732,7 +769,6 @@ struct animated_surface
 
 struct world_materials
 {
-    Ref<Shader> shaders[MAT_KINDS];
     std::map<uint64_t, Ref<ShaderMaterial>> materials;
     std::map<uint64_t, Ref<ShaderMaterial>> sky_materials;
     std::map<uint64_t, Ref<ShaderMaterial>> surface_materials;     // by batch key (SPRITE_KEY)
@@ -877,14 +913,9 @@ static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page, int
     auto it = wm->materials.find(key);
     if (it != wm->materials.end()) return it->second;
 
-    if (wm->shaders[kind].is_null())
-    {
-        wm->shaders[kind].instantiate();
-        wm->shaders[kind]->set_code(shader_code(kind));
-    }
     Ref<ShaderMaterial> m;
     m.instantiate();
-    m->set_shader(wm->shaders[kind]);
+    m->set_shader(world_shader(kind));
     texture_entry &t = get_texture(shared);
     if (t.texture.is_valid()) m->set_shader_parameter("albedo", t.texture);
     if ((page >= 0) && (page < (int)wm->pages.size()))
@@ -2209,64 +2240,75 @@ enum
     SPR_MESH = 512,                 // a mesh as it is (poly grids)
 };
 
+// the sprite shaders: one per blending (alpha, add, multiply) and depth test (render modes); the rest of a variant
+// (SPR_*: how the quad is placed, glow, bias, really close, fog) is the material's flags uniform, so that there are
+// only 6 shaders to compile (preload_shaders) - not one per combination
+#define SPR_SHADERS 6
+static int sprite_shader_index(int v)
+{
+    return ((v & SPR_ADD) ? 1 : (v & SPR_MUL) ? 2 : 0) + ((v & SPR_NOZ) ? 3 : 0);
+}
+
 static Ref<Shader> sprite_shader(int v)
 {
-    static std::map<int, Ref<Shader>> shaders;
-    auto it = shaders.find(v);
-    if (it != shaders.end()) return it->second;
+    static Ref<Shader> *shaders = new Ref<Shader>[SPR_SHADERS];
+    int index = sprite_shader_index(v);
+    if (shaders[index].is_valid()) return shaders[index];
+    auto flag = [](int f) { return "((flags & " + std::to_string(f) + ") != 0)"; };
     std::string modes = "unshaded, cull_disabled, depth_draw_never";
     if (v & SPR_ADD) modes += ", blend_add";
     else if (v & SPR_MUL) modes += ", blend_mul";
     if (v & SPR_NOZ) modes += ", depth_test_disabled";
     std::string c = "shader_type spatial;\nrender_mode " + modes + ";\n"
         "uniform sampler2D albedo : filter_linear_mipmap, repeat_disable;\n"
+        "uniform int flags = 0;\n"
         "instance uniform vec4 color = vec4(1.0);\n"
         "instance uniform vec2 half_size = vec2(1.0);\n" FOG_UNIFORMS STATE_UNIFORMS
         "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
-        "void vertex() {\n";
-    if (v & SPR_MESH)
-        c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
-             "  vec3 p = ctr;\n";
-    else if (v & SPR_PARTICLES)
-        c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
-             "  vec3 p = ctr + vec3(UV2, 0.0);\n";
-    else if (v & SPR_ROTATABLE)
-        c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
-             "  vec3 p = (MODELVIEW_MATRIX * vec4(VERTEX.xy * half_size, 0.0, 1.0)).xyz;\n";
-    else
-    {
-        c += "  vec3 ctr = (MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
-             "  vec2 h = half_size;\n";
-        if (v & SPR_GLOW) c += "  h *= 0.1 + 1.9 * clamp((-ctr.z - 10.0) / 490.0, 0.0, 1.0);\n";
-        c += "  vec3 p = ctr + vec3(VERTEX.xy * h, 0.0);\n";
-    }
-    c += "  POSITION = PROJECTION_MATRIX * vec4(p, 1.0);\n";
-    if (v & SPR_BIAS)
-        c += "  vec3 pb = p;\n  pb.z = -max(-ctr.z - 20.0, 1.0) + (p.z - ctr.z);\n"
-             "  vec4 q = PROJECTION_MATRIX * vec4(pb, 1.0);\n  POSITION.z = q.z / q.w * POSITION.w;\n";
-    if (v & SPR_CLOSE) c += "  POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n";
-    c += "}\n"
+        "void vertex() {\n"
+        "  vec3 ctr;\n"
+        "  vec3 p;\n";
+    // a mesh as it is; a particle system (each quad's centre in its vertices, the corner offset in UV2); a quad
+    // placed by the object's rotation; a quad facing the camera (a glow sprite smaller when near)
+    c += "  if (" + flag(SPR_MESH) + ") {\n"
+         "    ctr = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
+         "    p = ctr;\n"
+         "  } else if (" + flag(SPR_PARTICLES) + ") {\n"
+         "    ctr = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
+         "    p = ctr + vec3(UV2, 0.0);\n"
+         "  } else if (" + flag(SPR_ROTATABLE) + ") {\n"
+         "    ctr = (MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
+         "    p = (MODELVIEW_MATRIX * vec4(VERTEX.xy * half_size, 0.0, 1.0)).xyz;\n"
+         "  } else {\n"
+         "    ctr = (MODELVIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
+         "    vec2 h = half_size;\n"
+         "    if (" + flag(SPR_GLOW) + ") h *= 0.1 + 1.9 * clamp((-ctr.z - 10.0) / 490.0, 0.0, 1.0);\n"
+         "    p = ctr + vec3(VERTEX.xy * h, 0.0);\n"
+         "  }\n"
+         "  POSITION = PROJECTION_MATRIX * vec4(p, 1.0);\n"
+         "  if (" + flag(SPR_BIAS) + ") {\n"
+         "    vec3 pb = p;\n    pb.z = -max(-ctr.z - 20.0, 1.0) + (p.z - ctr.z);\n"
+         "    vec4 q = PROJECTION_MATRIX * vec4(pb, 1.0);\n    POSITION.z = q.z / q.w * POSITION.w;\n"
+         "  }\n"
+         "  if (" + flag(SPR_CLOSE) + ") POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n"
+         "}\n"
          "void fragment() {\n"
          "  vec4 t = texture(albedo, UV) * color * COLOR;\n"
          "  vec3 col = clamp(t.rgb, 0.0, 1.0);\n";
-    if (!(v & SPR_NOFOG))
-    {
-        // fog: additive fades to black, multiplied to white (d3d_DrawSprite's fog colours)
-        c += "  float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n"
-             "  vec3 fc = lt_fog_color.rgb;\n"
-             "  if (st_fog.x > 2.5) { f = clamp((-VERTEX.z - st_fog.y) / max(st_fog.z - st_fog.y, 0.001), 0.0, 1.0); fc = st_fog_color; }\n"
-             "  else if (st_fog.x > 1.5) { f = 1.0; fc = st_fog_color; }\n"
-             "  else if (st_fog.x > 0.5) f = 0.0;\n";
-        c += (v & SPR_ADD) ? "  col *= 1.0 - f;\n" : (v & SPR_MUL) ? "  col = mix(col, vec3(1.0), f);\n" : "  col = mix(col, fc, f);\n";
-    }
-    c += "  ALBEDO = to_linear(col);\n"
+    // fog: additive fades to black, multiplied to white (d3d_DrawSprite's fog colours)
+    c += "  if (!" + flag(SPR_NOFOG) + ") {\n"
+         "    float f = lt_fog.x * clamp((length(VERTEX) - lt_fog.y) / max(lt_fog.z - lt_fog.y, 0.001), 0.0, 1.0);\n"
+         "    vec3 fc = lt_fog_color.rgb;\n"
+         "    if (st_fog.x > 2.5) { f = clamp((-VERTEX.z - st_fog.y) / max(st_fog.z - st_fog.y, 0.001), 0.0, 1.0); fc = st_fog_color; }\n"
+         "    else if (st_fog.x > 1.5) { f = 1.0; fc = st_fog_color; }\n"
+         "    else if (st_fog.x > 0.5) f = 0.0;\n";
+    c += (v & SPR_ADD) ? "    col *= 1.0 - f;\n" : (v & SPR_MUL) ? "    col = mix(col, vec3(1.0), f);\n" : "    col = mix(col, fc, f);\n";
+    c += "  }\n"
+         "  ALBEDO = to_linear(col);\n"
          "  ALPHA = t.a;\n"
          "}\n";
-    Ref<Shader> sh;
-    sh.instantiate();
-    sh->set_code(c.c_str());
-    shaders[v] = sh;
-    return sh;
+    shaders[index] = make_shader("sprite", index, c);
+    return shaders[index];
 }
 
 static Ref<ShaderMaterial> sprite_material(uint32_t tex, int v)
@@ -2277,6 +2319,7 @@ static Ref<ShaderMaterial> sprite_material(uint32_t tex, int v)
     Ref<ShaderMaterial> m;
     m.instantiate();
     m->set_shader(sprite_shader(v));
+    m->set_shader_parameter("flags", v);
     texture_entry &t = get_texture(tex);
     if (t.texture.is_valid()) m->set_shader_parameter("albedo", t.texture);
     gs->sprite_materials[key] = m;
@@ -2619,11 +2662,9 @@ static void update_sky(uint32_t mw, uint32_t sd)
 
 static Ref<ShaderMaterial> line_material(int close)
 {
-    static Ref<ShaderMaterial> m[2];
+    static Ref<ShaderMaterial> *m = new Ref<ShaderMaterial>[2];     // never destroyed (see world_shader)
     if (m[close].is_null())
     {
-        Ref<Shader> sh;
-        sh.instantiate();
         std::string c = "shader_type spatial;\nrender_mode unshaded, cull_disabled, depth_draw_never;\n"
                          "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n";
         if (close)
@@ -2632,9 +2673,8 @@ static Ref<ShaderMaterial> line_material(int close)
                  "  POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n"
                  "}\n";
         c += "void fragment() {\n  ALBEDO = to_linear(COLOR.rgb);\n  ALPHA = COLOR.a;\n}\n";
-        sh->set_code(c.c_str());
         m[close].instantiate();
-        m[close]->set_shader(sh);
+        m[close]->set_shader(make_shader("line", close, c));
     }
     return m[close];
 }
@@ -3023,6 +3063,142 @@ extern "C" void r3d_delete_context(uint32_t context)
 }
 
 /* ------------------------------------------------------------------ */
+/* shader preloading                                                   */
+
+// Every shader is made when the renderer starts (r3d_init: ren_Init, before the game's first frame) and drawn with
+// each vertex format it's used with in the next few Godot frames, as zero-area triangles in front of the camera
+// (nothing is drawn, but the draws need the shaders and their pipelines), so that Godot compiles them then.
+// Otherwise the first object with a new shader waits for its compilation: with a cold cache (the first run, a new
+// Godot or driver) that stalled the frame 30-70 ms for each (m1s1's first shots). Godot keeps them in its caches
+// (user://shader_cache, the Vulkan pipeline cache).
+enum { WU_UV = 1, WU_UV2 = 2, WU_COLOR = 4, WU_CUSTOM = 8, WU_LINES = 16 };
+#define WARMUP_FRAMES 3
+
+static struct
+{
+    Node3D *node;
+    uint64_t frame;             // Godot's frame count when it was made
+    uint64_t start_us;
+} warmup;
+
+// a surface with the arrays of the objects' meshes (world: UV, UV2, colour, 4 x custom; models, poly grids,
+// canvases: UV, colour; sprites: UV; particles: UV, UV2, colour; lines: colour): one triangle (line) with all its
+// vertices at the origin and transparent - no pixels (the instance's custom AABB keeps it from being culled)
+static void warmup_surface(const Ref<ArrayMesh> &mesh, int format, const Ref<Material> &m)
+{
+    static const int64_t custom_shift[4] = { Mesh::ARRAY_FORMAT_CUSTOM0_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM1_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM2_SHIFT, Mesh::ARRAY_FORMAT_CUSTOM3_SHIFT };
+    int n = (format & WU_LINES) ? 2 : 3;
+    PackedVector3Array v;
+    PackedVector2Array uv;
+    PackedColorArray col;
+    PackedFloat32Array custom;
+    for (int i = 0; i < n; i++)
+    {
+        v.push_back(Vector3(0, 0, 0));
+        uv.push_back(Vector2(0, 0));
+        col.push_back(Color(0, 0, 0, 0));
+        for (int k = 0; k < 4; k++) custom.push_back(0.0f);
+    }
+    Array arrays;
+    arrays.resize(Mesh::ARRAY_MAX);
+    arrays[Mesh::ARRAY_VERTEX] = v;
+    if (format & WU_UV) arrays[Mesh::ARRAY_TEX_UV] = uv;
+    if (format & WU_UV2) arrays[Mesh::ARRAY_TEX_UV2] = uv;
+    if (format & WU_COLOR) arrays[Mesh::ARRAY_COLOR] = col;
+    int64_t fmt = 0;
+    if (format & WU_CUSTOM)
+        for (int k = 0; k < 4; k++)
+        {
+            arrays[Mesh::ARRAY_CUSTOM0 + k] = custom;
+            fmt |= (int64_t)Mesh::ARRAY_CUSTOM_RGBA_FLOAT << custom_shift[k];
+        }
+    mesh->add_surface_from_arrays((format & WU_LINES) ? Mesh::PRIMITIVE_LINES : Mesh::PRIMITIVE_TRIANGLES, arrays, Array(), Dictionary(), (BitField<Mesh::ArrayFormat>)fmt);
+    mesh->surface_set_material(mesh->get_surface_count() - 1, m);
+}
+
+static MeshInstance3D *warmup_instance(const Ref<ArrayMesh> &mesh, float transparency = 0.0f)
+{
+    MeshInstance3D *mi = memnew(MeshInstance3D);
+    mi->set_mesh(mesh);
+    mi->set_custom_aabb(AABB(Vector3(-1, -1, -1), Vector3(2, 2, 2)));
+    if (transparency > 0.0f) mi->set_transparency(transparency);
+    warmup.node->add_child(mi);
+    return mi;
+}
+
+static Ref<ShaderMaterial> warmup_material(const Ref<Shader> &sh, int flags = -1)
+{
+    Ref<ShaderMaterial> m;
+    m.instantiate();
+    m->set_shader(sh);
+    if (flags >= 0) m->set_shader_parameter("flags", flags);
+    return m;
+}
+
+static void preload_shaders(void)
+{
+    // the world kinds in use: the world and world models (blendings), models (also really close), the sky (not
+    // alpha tested: sky_material)
+    static const int world_kinds[] = { MAT_OPAQUE, MAT_ALPHA_TEST, MAT_BLEND, MAT_ADD };
+    static const int sky_kinds[] = { MAT_SKY | MAT_OPAQUE, MAT_SKY | MAT_BLEND, MAT_SKY | MAT_ADD };
+    warmup.start_us = Time::get_singleton()->get_ticks_usec();
+    warmup.frame = Engine::get_singleton()->get_frames_drawn();
+    // in front of the camera (warmup_update keeps it there; not under the scene's root: that's hidden until the
+    // first scene)
+    warmup.node = memnew(Node3D);
+    warmup.node->set_transform(gs->camera->get_transform() * Transform3D(Basis(), Vector3(0, 0, -10)));
+    gs->viewport->add_child(warmup.node);
+
+    Ref<ArrayMesh> world, faded, sky, model, quad, particles, lines;
+    world.instantiate(); faded.instantiate(); sky.instantiate(); model.instantiate(); quad.instantiate(); particles.instantiate(); lines.instantiate();
+    const int W = WU_UV | WU_UV2 | WU_COLOR | WU_CUSTOM, M = WU_UV | WU_COLOR;
+    for (int k : world_kinds)
+    {
+        warmup_surface(world, W, warmup_material(world_shader(k)));
+        warmup_surface(faded, W, warmup_material(world_shader(k)));         // world models fading out
+        warmup_surface(model, M, warmup_material(world_shader(k)));
+        warmup_surface(model, M, warmup_material(world_shader(k | MAT_REALLYCLOSE)));
+    }
+    for (int k : sky_kinds) warmup_surface(sky, W, warmup_material(world_shader(k)));
+    // the sprite shaders: quads, meshes (poly grids, canvases), particle systems (no depth test off)
+    static const int blends[3] = { 0, SPR_ADD, SPR_MUL };
+    for (int b : blends)
+        for (int noz = 0; noz < 2; noz++)
+        {
+            int v = b | (noz ? SPR_NOZ : 0);
+            warmup_surface(quad, WU_UV, warmup_material(sprite_shader(v), v));
+            warmup_surface(model, M, warmup_material(sprite_shader(v), v | SPR_MESH));
+            if (!noz) warmup_surface(particles, WU_UV | WU_UV2 | WU_COLOR, warmup_material(sprite_shader(v), v | SPR_PARTICLES));
+        }
+    for (int close = 0; close < 2; close++) warmup_surface(lines, WU_COLOR | WU_LINES, line_material(close));
+    warmup_instance(world);
+    warmup_instance(faded, 0.5f);
+    warmup_instance(sky);
+    warmup_instance(model);
+    warmup_instance(quad);
+    warmup_instance(particles);
+    warmup_instance(lines);
+    shaders_preloaded = 1;
+    if (winapi_debug) eprintf("render3d: preloading shaders (%.1f ms)\n", (Time::get_singleton()->get_ticks_usec() - warmup.start_us) / 1000.0);
+}
+
+// the warm-up objects follow the camera and go after WARMUP_FRAMES Godot frames
+static void warmup_update(void)
+{
+    if (warmup.node == NULL) return;
+    uint64_t drawn = Engine::get_singleton()->get_frames_drawn() - warmup.frame;
+    if (drawn < WARMUP_FRAMES)
+    {
+        warmup.node->set_transform(gs->camera->get_transform() * Transform3D(Basis(), Vector3(0, 0, -10)));
+        return;
+    }
+    warmup.node->set_visible(false);
+    warmup.node->queue_free();
+    warmup.node = NULL;
+    if (winapi_debug) eprintf("render3d: shaders preloaded (%u frames, %.1f ms)\n", (unsigned)drawn, (Time::get_singleton()->get_ticks_usec() - warmup.start_us) / 1000.0);
+}
+
+/* ------------------------------------------------------------------ */
 /* the scene                                                           */
 
 extern "C" int r3d_render_scene(uint8_t *scene)
@@ -3161,6 +3337,7 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         update_canvases(ctx->world);
     }
 
+    warmup_update();
     if (!gs->shown)
     {
         gs->root->set_visible(true);
@@ -3172,7 +3349,9 @@ extern "C" int r3d_render_scene(uint8_t *scene)
 
 extern "C" void r3d_end_frame(int drawn)
 {
-    if ((gs == NULL) || !ghost_ready()) return;
+    // from the game's first frame on: the scene is made (and the shaders preloaded) while Godot draws the 2D frames
+    if (!ready()) return;
+    warmup_update();
     if (!drawn && gs->shown)
     {
         gs->root->set_visible(false);
