@@ -24,6 +24,8 @@ static const char *const avp2_rez[] = { "AVP2.REZ", "SOUNDS.REZ", "ALIEN.REZ", "
     "#host = godot\n" \
     "# Godot's rendering driver (vulkan, opengl3)\n" \
     "#rendering_driver = vulkan\n" \
+    "# frame rate and frame times on screen (1 = on)\n" \
+    "#show_fps = 0\n" \
     "# LibGodot and the embedded Godot project (default: next to the program)\n" \
     "#libgodot = libgodot.so\n" \
     "#godot_project = godot/project.godot\n" \

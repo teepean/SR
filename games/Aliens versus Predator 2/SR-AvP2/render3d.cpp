@@ -2996,6 +2996,16 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     Quaternion q(-qx, -qy, qz, qw);
     if (q.length_squared() < 1e-6f) q = Quaternion();
     gs->camera->set_transform(Transform3D(Basis(q.normalized()), pos));
+    // debugging: AVP2_R3D_CAMLOG=1 logs the camera each frame (motion smoothness: position steps vs frame times)
+    static int camlog = -1;
+    if (camlog < 0) camlog = (getenv("AVP2_R3D_CAMLOG") != NULL);
+    if (camlog)
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        eprintf("cam %llu %.3f %.3f %.3f %.5f %.5f %.5f %.5f\n", (unsigned long long)ts.tv_sec * 1000000ull + ts.tv_nsec / 1000,
+                pos.x, pos.y, pos.z, qx, qy, qz, qw);
+    }
     // debugging: a fixed camera "x y z yaw pitch" (LithTech coordinates, degrees; yaw 0 looks along +z, 90 along +x,
     // pitch up)
     if (getenv("AVP2_R3D_CAMERA"))

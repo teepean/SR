@@ -25,6 +25,7 @@
 #include <limits.h>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 #include <godot_cpp/godot.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -42,6 +43,8 @@
 #include <godot_cpp/classes/input_event_mouse_motion.hpp>
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/viewport_texture.hpp>
+#include <godot_cpp/classes/canvas_layer.hpp>
+#include <godot_cpp/classes/label.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 
 #include <SDL.h>
@@ -302,6 +305,9 @@ public:
                 break;
             case NOTIFICATION_APPLICATION_FOCUS_IN:
             case NOTIFICATION_APPLICATION_FOCUS_OUT:
+                // tests: AVP2_KEEP_ACTIVE=1 keeps the game active without the focus (it pauses and stops drawing
+                // otherwise, which spoils automated runs when something else on the desktop takes the focus)
+                if (getenv("AVP2_KEEP_ACTIVE") && atoi(getenv("AVP2_KEEP_ACTIVE"))) break;
                 ev.type = SDL_WINDOWEVENT;
                 ev.window.event = (p_what == NOTIFICATION_APPLICATION_FOCUS_IN) ? SDL_WINDOWEVENT_FOCUS_GAINED : SDL_WINDOWEVENT_FOCUS_LOST;
                 if (p_what == NOTIFICATION_APPLICATION_FOCUS_OUT)
@@ -357,6 +363,8 @@ static std::string find_file(const char *env, const char *cfg, const std::vector
     }
     return "";
 }
+
+static void frame_stats_init(Window *root);
 
 extern "C" int ghost_load(void)
 {
@@ -421,6 +429,7 @@ extern "C" int ghost_load(void)
     tree->set_auto_accept_quit(false);
     Window *root = tree->get_root();
     root->add_child(memnew(AvP2Host));
+    frame_stats_init(root);
 
     RenderingServer *rs = RenderingServer::get_singleton();
     gs = new godot_state;
@@ -526,9 +535,95 @@ static int present_pending(void)
     return 1;
 }
 
+/* ------------------------------------------------------------------ */
+/* frame timing                                                        */
+
+// Every presented game frame: the interval since the previous one, split into the game's own work (from the end
+// of the previous present to this one), the 2D frame's upload and the Godot frame (iteration: 3D + 2D drawing,
+// buffer swap). Per second: frames, interval average / percentiles / worst and hitches (> 25 ms, > 50 ms), with
+// the worst frame's split. AVP2_FRAMESTATS=1 logs it, show_fps=1 (or AVP2_SHOW_FPS=1) shows it on screen.
+// SDL's performance counter (portable).
+static struct
+{
+    int log, show;
+    uint64_t prev_start, prev_end, window_start;
+    std::vector<float> interval, game, upload, godot;
+    Label *label;
+} fst;
+
+static double perf_ms(uint64_t a, uint64_t b) { return (double)(b - a) * 1000.0 / (double)SDL_GetPerformanceFrequency(); }
+
+static void frame_stats_init(Window *root)
+{
+    fst.log = (getenv("AVP2_FRAMESTATS") != NULL) && (atoi(getenv("AVP2_FRAMESTATS")) != 0);
+    fst.show = getenv("AVP2_SHOW_FPS") ? (atoi(getenv("AVP2_SHOW_FPS")) != 0) : (config_get_int("show_fps", 0) != 0);
+    if (!fst.show) return;
+    CanvasLayer *layer = memnew(CanvasLayer);
+    layer->set_layer(100);
+    fst.label = memnew(Label);
+    fst.label->add_theme_color_override("font_color", Color(1.0f, 1.0f, 0.4f));
+    fst.label->add_theme_color_override("font_outline_color", Color(0, 0, 0));
+    fst.label->add_theme_constant_override("outline_size", 4);
+    fst.label->add_theme_font_size_override("font_size", 14);
+    fst.label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+    layer->add_child(fst.label);
+    root->add_child(layer);
+}
+
+static void frame_stats_add(uint64_t start, uint64_t uploaded, uint64_t end)
+{
+    if (!fst.log && !fst.show) return;
+    if (fst.prev_start != 0)
+    {
+        fst.interval.push_back((float)perf_ms(fst.prev_start, start));
+        fst.game.push_back((float)perf_ms(fst.prev_end, start));
+        fst.upload.push_back((float)perf_ms(start, uploaded));
+        fst.godot.push_back((float)perf_ms(uploaded, end));
+    }
+    else fst.window_start = start;
+    fst.prev_start = start;
+    fst.prev_end = end;
+    double window = perf_ms(fst.window_start, end);
+    if ((window < 1000.0) || fst.interval.empty()) return;
+
+    size_t n = fst.interval.size(), worst = 0;
+    double sum = 0, gsum = 0, usum = 0, osum = 0;
+    int over25 = 0, over50 = 0;
+    for (size_t i = 0; i < n; i++)
+    {
+        sum += fst.interval[i]; gsum += fst.game[i]; usum += fst.upload[i]; osum += fst.godot[i];
+        if (fst.interval[i] > fst.interval[worst]) worst = i;
+        if (fst.interval[i] > 25.0f) over25++;
+        if (fst.interval[i] > 50.0f) over50++;
+    }
+    std::vector<float> sorted = fst.interval;
+    std::sort(sorted.begin(), sorted.end());
+    float p50 = sorted[n / 2], p95 = sorted[std::min(n - 1, n * 95 / 100)], p99 = sorted[std::min(n - 1, n * 99 / 100)];
+    double fps = n * 1000.0 / window;
+    if (fst.log)
+        eprintf("frames: %.1f fps, interval avg %.2f p50 %.2f p95 %.2f p99 %.2f max %.2f ms, >25 ms %d, >50 ms %d; "
+                "avg game %.2f upload %.2f godot %.2f; worst: game %.2f upload %.2f godot %.2f\n",
+                fps, sum / n, p50, p95, p99, sorted[n - 1], over25, over50, gsum / n, usum / n, osum / n,
+                fst.game[worst], fst.upload[worst], fst.godot[worst]);
+    if (fst.label != NULL)
+    {
+        char text[256];
+        snprintf(text, sizeof(text), "%.0f fps  %.1f ms (p99 %.1f, max %.1f)  hitches %d\ngame %.1f  upload %.1f  godot %.1f ms",
+                 fps, sum / n, p99, sorted[n - 1], over25, gsum / n, usum / n, osum / n);
+        fst.label->set_text(text);
+        // top centre: between the HUD's health (left) and ammunition (right)
+        Vector2 ms = fst.label->get_minimum_size();
+        Vector2i ws = DisplayServer::get_singleton()->window_get_size();
+        fst.label->set_position(Vector2(floorf((ws.x - ms.x) * 0.5f), 2));
+    }
+    fst.interval.clear(); fst.game.clear(); fst.upload.clear(); fst.godot.clear();
+    fst.window_start = end;
+}
+
 static void present_frame(const uint32_t *pixels, int w, int h)
 {
     RenderingServer *rs = RenderingServer::get_singleton();
+    uint64_t t_start = SDL_GetPerformanceCounter();
 
     if (gs->frame_bytes.size() != (int64_t)w * h * 4) gs->frame_bytes.resize((int64_t)w * h * 4);
     memcpy(gs->frame_bytes.ptrw(), pixels, (size_t)w * h * 4);
@@ -550,7 +645,9 @@ static void present_frame(const uint32_t *pixels, int w, int h)
     rs->canvas_item_clear(gs->canvas_item);
     rs->canvas_item_add_texture_rect(gs->canvas_item, Rect2(0, 0, size.x, size.y), gs->texture);
 
+    uint64_t t_uploaded = SDL_GetPerformanceCounter();
     run_iteration();
+    frame_stats_add(t_start, t_uploaded, SDL_GetPerformanceCounter());
 
     // debugging: AVP2_DUMP_GODOT=<existing dir> saves what Godot drew (read back from the GPU) every 2 seconds
     static uint32_t last_dump;

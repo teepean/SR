@@ -419,3 +419,20 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   1x: m1s1's ground was half as bright as the Wine reference; now within ~5%).
 - AVP2-Reconstructed (lemiur) reconstructs d3d.ren too (src/d3dren, 53% matched): the first place to look for
   renderer behaviour. The NOLF2 modernizer has no engine/renderer source (SDK + game code only).
+
+### 2026-11-08 — frame times, the engine clock
+- Frame timing (host_godot.cpp): per presented frame the interval, split into the game's own work (engine +
+  render3d's scene update), the 2D frame's upload and the Godot frame; per second the average, p50/p95/p99, worst
+  and hitches (> 25 / > 50 ms). AVP2_FRAMESTATS=1 logs it; show_fps = 1 (AVP2_SHOW_FPS=1) shows it at the top.
+  m1s1 while turning and walking (RTX 3090, 180 Hz display, vsync on): a steady 5.56 ms, p99 < 8 ms, no hitches
+  (game ~1.3 ms, upload 0.1 ms, Godot ~4.2 ms). The 2-second hitches seen first were the tests' own screenshots
+  (AVP2_DUMP_GODOT reads the frame back and writes a PNG).
+- Uneven motion: the frames were even but the player moved 1.50 units most frames and 1.80 every ~10th
+  (AVP2_R3D_CAMLOG=1 logs the camera per frame). LithTech's clock is time_GetTime() = (timeGetTime() - base) *
+  0.001 (Jupiter's kernel/src/sys/win/timemgr.cpp; AvP2 0x49EF10, PH 0x4A6530, time_Init 0x49EF00 / 0x4A6520): in
+  whole milliseconds a 5.56 ms frame is 5 or 6 ms, 20% steps (16/17 ms = 6% at 60 Hz). instruction_replacements.sci
+  makes time_Init / time_GetTime call x64/time-asm.asm's stubs: SDL's performance counter, the time as a double
+  written into time_GetTime's own stack scratch (thread safe) and loaded with fld. Speed variation per frame
+  4.9% -> 1.2%, the average unchanged.
+- AVP2_KEEP_ACTIVE=1 (tests): the game stays active without the window focus (it pauses and stops drawing
+  otherwise; something else on the desktop taking the focus spoiled automated runs).
