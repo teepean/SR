@@ -683,3 +683,17 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   m2s1 turns it on (y -2000 .. -1500, density 1). Sprites: by pixel.
 - GPU times vary with other GPU users (a vLLM engine shares this GPU): a1s1's cutscene measured 1 ms and 5.6 ms
   with the same code; m1s1 0.2-1 ms.
+
+### 2026-11-08 — multi-frame and shadow-map light animations
+- d3d.ren (UpdatePolyAnimatedLightmap and its builders): a plain animation's layer is its two current frames
+  (m_iFrames[2] +0x34) mixed by m_PercentBetween (+0x3c, 0-255); a shadow-map animation's frames are coverage masks
+  (runs alternating 0 / 255), mixed the same way, then every lightmap texel is lit by the animation's point light
+  (+0x44 position, +0x50 colour, +0x5c radius): the falloff table (1 - d^2 / r^2 in 64 steps, x LightSaturate) x the
+  mask x (2c - 255) per channel - so a light with a colour below 128 adds nothing. Layers after the first are scaled
+  by m_fBlendPercent (+0x40).
+- We baked multi-frame animations as they were when the world was built and left shadow maps out. Now every animation
+  but LightAnim_BASE is a changing layer (up to 4 per poly, 40 blocks): its frames (or masks) are blocks next to the
+  base in the lightmap page, the vertex attributes give each layer its animation, first block and kind, and the
+  shader picks / mixes the current frames from lt_anims (blend, on, frames, mix) and lights the shadow maps from
+  lt_anim_lights (by pixel; d3d.ren by texel). No lightmap uploads while the level runs. m6s1, m7s1, m4_open, a3s1,
+  A2s2, a7s1, p4s1 and exp1s1 run without errors; not compared with a reference.

@@ -34,8 +34,9 @@
  *  Shader preloading as Godot's documentation recommends: a small fixed set of shaders (variants as uniforms) made
  *  when the renderer starts, with a hidden instance of each in the scene (preload_shaders), so that Godot compiles
  *  their pipelines then and not when an effect first appears.
- *  To do: the state changes' blend modes, multi-frame light animations, shadow-map light animations,
- *  vertical fog, model environment maps, model LODs and static lights for models.
+ *  Multi-frame and shadow-map light animations: their frames (or coverage masks) are blocks next to the poly's base
+ *  lightmap; the shader mixes the current two (and lights a shadow map with the animation's point light).
+ *  To do: model environment maps, model LODs and static lights for models.
  *
  *  Debugging: AVP2_R3D_FULLBRIGHT=1 (textures only), AVP2_R3D_LMSCALE / AVP2_R3D_VCSCALE (light scales),
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
@@ -585,7 +586,7 @@ enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
 #define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n" VFOG_GLSL
 // the dynamic lights that light the world: a 32 x 2 float texture (position (Godot), radius; colour 0-255), count
 #define DL_MAX 32
-#define DL_UNIFORMS "global uniform sampler2D lt_lights;\nglobal uniform vec4 lt_light_count;\nglobal uniform sampler2D lt_anims;\n"
+#define DL_UNIFORMS "global uniform sampler2D lt_lights;\nglobal uniform vec4 lt_light_count;\nglobal uniform sampler2D lt_anims;\nglobal uniform sampler2D lt_anim_lights;\n"
 
 static Ref<Image> dl_image;
 static Ref<ImageTexture> dl_texture;
@@ -593,6 +594,8 @@ static Ref<ImageTexture> dl_texture;
 #define ANIM_TEX_W 1024
 #define ANIM_TEX_H 4
 static Ref<Image> anim_image;
+static Ref<Image> alight_image;
+static Ref<ImageTexture> alight_texture;
 static Ref<ImageTexture> anim_texture;
 
 
@@ -613,6 +616,10 @@ static void fog_init(void)
     anim_image = Image::create_empty(ANIM_TEX_W, ANIM_TEX_H, false, Image::FORMAT_RGBAF);
     anim_texture = ImageTexture::create_from_image(anim_image);
     rs->global_shader_parameter_add("lt_anims", RenderingServer::GLOBAL_VAR_TYPE_SAMPLER2D, anim_texture);
+    // shadow-map light animations' lights: rows 0-3 (position (Godot), radius), rows 4-7 (colour 0-255), by animation
+    alight_image = Image::create_empty(ANIM_TEX_W, ANIM_TEX_H * 2, false, Image::FORMAT_RGBAF);
+    alight_texture = ImageTexture::create_from_image(alight_image);
+    rs->global_shader_parameter_add("lt_anim_lights", RenderingServer::GLOBAL_VAR_TYPE_SAMPLER2D, alight_texture);
 }
 
 static void fog_update(void)
@@ -639,7 +646,7 @@ static void fog_update(void)
     // the light scales (shader_code): lightmaps 2x, vertex colours 2x with Saturate
     float lm = getenv("AVP2_R3D_LMSCALE") ? (float)atof(getenv("AVP2_R3D_LMSCALE")) : 2.0f;
     float vc = getenv("AVP2_R3D_VCSCALE") ? (float)atof(getenv("AVP2_R3D_VCSCALE")) : ((cvar("Saturate", 0) != 0.0f) ? 2.0f : 1.0f);
-    rs->global_shader_parameter_set("lt_scales", Vector4(lm, vc, 0, 0));
+    rs->global_shader_parameter_set("lt_scales", Vector4(lm, vc, cvar("LightSaturate", 1), 0));
 }
 
 // the scene's last passes (d3d_DrawLightScalePoly with InvertHack, d3d_DrawLightAddPoly), DrawSky, LMFullBright
@@ -795,13 +802,31 @@ static const char *shader_code(int kind)
                  "    bool first = v_lm.z < 0.5;\n"
                  "    int after = int(v_lm.y + 0.5);\n"
                  "    for (int k = 0; k < 4; k++) {\n"
-                 "      int a = int(v_anim[k] + 0.5) - 1;\n"
+                 // layer k: (animation + 1) + 8192 x its first block + 524288 x its kind (single, multi-frame, shadow map);
+                 // lt_anims: blend, on, frames (frame 0 x 256 + frame 1), the mix of the two (PercentBetween)
+                 "      int e = int(v_anim[k] + 0.5);\n"
+                 "      int a = (e % 8192) - 1;\n"
                  "      if (a < 0) break;\n"
+                 "      int b0 = (e / 8192) % 64, lk = e / 524288;\n"
                  "      vec4 st = texelFetch(lt_anims, ivec2(a % 1024, a / 1024), 0);\n"
                  "      if (st.y < 0.5) continue;\n"
                  "      float w = (first && ((after >> k) & 1) == 0) ? 1.0 : st.x;\n"
                  "      first = false;\n"
-                 "      light += texture(lightmap, UV2 + vec2(v_lm.x * float(k + 1), 0.0)).rgb * w;\n"
+                 "      int fr = (lk == 0) ? 0 : int(st.z + 0.5);\n"
+                 "      int f0 = fr / 256, f1 = fr % 256;\n"
+                 "      vec3 c = texture(lightmap, UV2 + vec2(v_lm.x * float(1 + b0 + f0), 0.0)).rgb;\n"
+                 "      if ((f1 != f0) && (st.w > 0.0)) c = mix(c, texture(lightmap, UV2 + vec2(v_lm.x * float(1 + b0 + f1), 0.0)).rgb, st.w);\n"
+                 // a shadow map: the coverage times the animation's point light (d3d.ren BuildShadowMappedLightAnimTexels:
+                 // the falloff table (1 - d^2 / r^2) in 64 steps x LightSaturate, the colour as (2c - 255))
+                 "      if (lk == 2) {\n"
+                 "        vec4 lp = texelFetch(lt_anim_lights, ivec2(a % 1024, a / 1024), 0);\n"
+                 "        vec3 lc = texelFetch(lt_anim_lights, ivec2(a % 1024, 4 + a / 1024), 0).rgb;\n"
+                 "        vec3 dd = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz - lp.xyz;\n"
+                 "        float d2 = dot(dd, dd), r2 = max(lp.w * lp.w, 0.001);\n"
+                 "        float fo = (d2 < r2) ? min(floor((1.0 - d2 / r2) * 63.0) / 63.0 * lt_scales.z, 1.0) : 0.0;\n"
+                 "        c = clamp(fo * c.r * (2.0 * lc - 255.0) / 255.0, 0.0, 1.0);\n"
+                 "      }\n"
+                 "      light += c * w;\n"
                  "    }\n"
                  "    light = (lt_misc.x > 0.5) ? vec3(1.0) : min(light, vec3(1.0)) * lt_scales.x;\n"
                  "  } else {\n"
@@ -1303,10 +1328,18 @@ static uint32_t anim_frame(uint32_t mw, uint32_t ref, uint32_t *anim_out)
 #define MAX_LAYERS 4
 #define MAX_VLAYERS 2
 
+// lightmap layers' kinds: a single frame; multi-frame (all frames are blocks, the shader mixes the current two);
+// shadow-map (the frames are coverage masks, the shader lights them with the animation's point light)
+enum { LK_SINGLE = 0, LK_MULTI = 1, LK_SHADOW = 2 };
+#define MAX_BLOCKS 40               // the layers' blocks of a poly (its lightmap row: (w + 2) x (1 + blocks) <= the page)
+
 struct poly_layers
 {
     int n;                      // layers
     uint32_t anim[MAX_LAYERS];  // their light animations' indices
+    int kind[MAX_LAYERS];       // LK_* (lightmapped polies)
+    int start[MAX_LAYERS];      // their first block (the blocks after the base; lightmapped polies)
+    int nblocks;
     int after_base;             // bit k: layer k comes after a base layer that's on (d3d.ren: then it's scaled by its blend)
     int has_base;
 };
@@ -1314,6 +1347,31 @@ struct poly_layers
 static int anim_is_dynamic(uint32_t anim)
 {
     return (strncmp((const char *)G2H(anim), "LightAnim_BASE", 32) != 0) && !g32(anim + LA_SHADOWMAP) && (g8(anim + LA_NFRAMES) == 1);
+}
+
+// a lightmapped poly's layer kind for an animation: -1 baked into the base (LightAnim_BASE)
+static int anim_layer_kind(uint32_t anim)
+{
+    if (strncmp((const char *)G2H(anim), "LightAnim_BASE", 32) == 0) return -1;
+    if (g32(anim + LA_SHADOWMAP)) return LK_SHADOW;
+    return (g8(anim + LA_NFRAMES) > 1) ? LK_MULTI : LK_SINGLE;
+}
+
+// a shadow-map frame's coverage mask (d3d.ren DecompressLightmapMaskRuns: alternating runs of 0 and 255, from 0) as
+// grey texels
+static int decompress_mask(uint32_t in, uint32_t nruns, uint32_t *out, uint32_t max)
+{
+    const uint8_t *p = (const uint8_t *)G2H(in);
+    uint32_t n = 0, value = 0;
+    if (p == NULL) return 0;
+    for (uint32_t r = 0; r < nruns; r++)
+    {
+        uint32_t run = p[r];
+        if (n + run > max) return 0;
+        for (uint32_t i = 0; i < run; i++) out[n++] = value ? 0x00ffffffu : 0;
+        value = !value;
+    }
+    return 1;
 }
 
 // a light animation's frame for a poly whatever its state (its current frame, or the first one)
@@ -1346,13 +1404,16 @@ static void lm_add_scaled(uint32_t *texels, const uint32_t *layer, int n, uint32
 }
 
 // the poly's lightmap (texels 0x00RRGGBB): the base - its animations as they are now, the first one as is, the
-// others added at their intensity (UpdatePolyAnimatedLightmap) - and the changing layers
-static int poly_lightmap(uint32_t mw, uint32_t poly, uint32_t *texels, uint32_t (*layers)[0x400], poly_layers *pl, int *w, int *h)
+// others added at their intensity (UpdatePolyAnimatedLightmap) - and the changing layers: up to MAX_LAYERS
+// animations other than LightAnim_BASE, each with its blocks (a single frame; every frame of a multi-frame one;
+// the masks of a shadow-map one) in blocks (MAX_BLOCKS), drawn by the shader at their current state
+static int poly_lightmap(uint32_t mw, uint32_t poly, uint32_t *texels, uint32_t (*blocks)[0x400], poly_layers *pl, int *w, int *h)
 {
     static uint32_t layer[0x400];
     *w = g8(poly + WP_LMWIDTH);
     *h = g8(poly + WP_LMHEIGHT);
     pl->n = 0;
+    pl->nblocks = 0;
     pl->after_base = 0;
     pl->has_base = 0;
     int n = *w * *h;
@@ -1360,23 +1421,42 @@ static int poly_lightmap(uint32_t mw, uint32_t poly, uint32_t *texels, uint32_t 
     uint32_t refs = g32(poly + WP_LMANIMREFS), nrefs = g32(poly + WP_NLMANIMREFS);
     if ((refs == 0) || (nrefs == 0) || (nrefs > 64)) return 0;
     memset(texels, 0, (size_t)n * 4);
+    int max_blocks = LM_PAGE_SIZE / (*w + 2) - 1;
+    if (max_blocks > MAX_BLOCKS) max_blocks = MAX_BLOCKS;
     int on = 0;     // layers that are on, in order (the first is taken as is)
     for (uint32_t r = 0; r < nrefs; r++)
     {
         uint32_t ia, anim, lf = anim_any_frame(mw, refs + 4 * r, &ia);
         if (lf == 0) continue;
         anim = g32(mw + MW_LIGHTANIMS + 4) + ia * LA_SIZE;
-        if (g32(anim + LA_SHADOWMAP)) continue;
-        uint32_t data = g32(lf), len = g16(lf + 4);
-        if ((data == 0) || (len == 0)) continue;
-        if (anim_is_dynamic(anim) && (pl->n < MAX_LAYERS))
+        int kind = anim_layer_kind(anim);
+        uint32_t nframes = g8(anim + LA_NFRAMES), ip = g16(refs + 4 * r + 2), frames = g32(anim + LA_FRAMES);
+        int need = (kind == LK_SINGLE) ? 1 : (int)nframes;
+        if ((kind >= 0) && (pl->n < MAX_LAYERS) && (pl->nblocks + need <= max_blocks) && (frames != 0))
         {
-            memset(layers[pl->n], 0, (size_t)n * 4);
-            if (!decompress_lm(data, len, layers[pl->n], (uint32_t)n)) continue;
+            // a changing layer: its blocks (the frames' lightmaps, or masks)
+            int start = pl->nblocks, ok = 1;
+            for (int f = 0; f < need; f++)
+            {
+                uint32_t frame = (kind == LK_SINGLE) ? lf : g32(frames + 4 * f) + ip * LF_SIZE;
+                uint32_t *b = blocks[start + f];
+                memset(b, 0, (size_t)n * 4);
+                uint32_t data = g32(frame), len = g16(frame + 4);
+                if ((data == 0) || (len == 0)) continue;   // an empty frame: black / no coverage
+                if (!((kind == LK_SHADOW) ? decompress_mask(data, len, b, (uint32_t)n) : decompress_lm(data, len, b, (uint32_t)n))) { ok = 0; break; }
+            }
+            if (!ok) continue;
             if (pl->has_base) pl->after_base |= 1 << pl->n;
-            pl->anim[pl->n++] = ia;
+            pl->anim[pl->n] = ia;
+            pl->kind[pl->n] = kind;
+            pl->start[pl->n] = start;
+            pl->n++;
+            pl->nblocks += need;
             continue;
         }
+        if (g32(anim + LA_SHADOWMAP)) continue;     // (no room: left out)
+        uint32_t data = g32(lf), len = g16(lf + 4);
+        if ((data == 0) || (len == 0)) continue;
         uint32_t dummy;
         if (anim_frame(mw, refs + 4 * r, &dummy) == 0) continue;    // off now
         memset(layer, 0, (size_t)n * 4);
@@ -1384,7 +1464,7 @@ static int poly_lightmap(uint32_t mw, uint32_t poly, uint32_t *texels, uint32_t 
         if (on == 0) memcpy(texels, layer, (size_t)n * 4);
         else lm_add_scaled(texels, layer, n, (uint32_t)(gf(anim + LA_BLEND) * 255.0f));
         on++;
-        if (!anim_is_dynamic(anim)) pl->has_base = 1;
+        pl->has_base = 1;
     }
     return (on > 0) || (pl->n > 0);
 }
@@ -1428,30 +1508,53 @@ static void poly_vertex_light(uint32_t mw, uint32_t poly, uint32_t n, uint8_t (*
     }
 }
 
-// the light animations' current state for the shader: per animation (blend, on)
+// the light animations' current state for the shader: per animation (blend, on, frames, mix); the shadow-map ones'
+// lights (position, radius, colour)
 static std::vector<float> anim_state;
+#define LA_PERCENT 0x3c
+#define LA_LIGHTPOS 0x44
+#define LA_LIGHTCOLOR 0x50
+#define LA_LIGHTRADIUS 0x5c
 
 static void update_anims(uint32_t mw)
 {
     if (anim_image.is_null()) return;
     uint32_t anims = g32(mw + MW_LIGHTANIMS + 4), n = g32(mw + MW_LIGHTANIMS + 8);
     if (n > ANIM_TEX_W * ANIM_TEX_H) n = ANIM_TEX_W * ANIM_TEX_H;
-    int changed = 0;
-    if (anim_state.size() != (size_t)n * 2) { anim_state.assign((size_t)n * 2, -1.0f); changed = 1; }
+    int changed = 0, lights_changed = 0;
+    if (anim_state.size() != (size_t)n * 11) { anim_state.assign((size_t)n * 11, -1.0f); changed = 1; }
     for (uint32_t a = 0; a < n; a++)
     {
         uint32_t la = anims + a * LA_SIZE;
         float blend = gf(la + LA_BLEND);
-        float on = ((g32(la + LA_IFRAMES) != 0xffffffffu) && (blend >= 0.02f)) ? 1.0f : 0.0f;
-        if ((anim_state[a * 2] != blend) || (anim_state[a * 2 + 1] != on))
+        uint32_t f0 = g32(la + LA_IFRAMES), f1 = g32(la + LA_IFRAMES + 4), nf = g8(la + LA_NFRAMES);
+        float on = ((f0 != 0xffffffffu) && (blend >= 0.02f)) ? 1.0f : 0.0f;
+        if (f0 >= nf) f0 = 0;
+        if ((f1 >= nf) || (f1 > 255)) f1 = f0;
+        uint32_t pct = g32(la + LA_PERCENT);
+        float st[4] = { blend, on, (float)(f0 * 256 + f1), (float)((pct > 255) ? 255 : pct) / 255.0f };
+        float *cur = &anim_state[(size_t)a * 11];
+        if ((cur[0] != st[0]) || (cur[1] != st[1]) || (cur[2] != st[2]) || (cur[3] != st[3]))
         {
-            anim_state[a * 2] = blend;
-            anim_state[a * 2 + 1] = on;
-            anim_image->set_pixel(a % ANIM_TEX_W, a / ANIM_TEX_W, Color(blend, on, 0, 0));
+            memcpy(cur, st, sizeof(st));
+            anim_image->set_pixel(a % ANIM_TEX_W, a / ANIM_TEX_W, Color(st[0], st[1], st[2], st[3]));
             changed = 1;
+        }
+        if (g32(la + LA_SHADOWMAP))
+        {
+            float l[7] = { gf(la + LA_LIGHTPOS), gf(la + LA_LIGHTPOS + 4), -gf(la + LA_LIGHTPOS + 8), gf(la + LA_LIGHTRADIUS),
+                           gf(la + LA_LIGHTCOLOR), gf(la + LA_LIGHTCOLOR + 4), gf(la + LA_LIGHTCOLOR + 8) };
+            if (memcmp(cur + 4, l, sizeof(l)) != 0)
+            {
+                memcpy(cur + 4, l, sizeof(l));
+                alight_image->set_pixel(a % ANIM_TEX_W, a / ANIM_TEX_W, Color(l[0], l[1], l[2], l[3]));
+                alight_image->set_pixel(a % ANIM_TEX_W, 4 + a / ANIM_TEX_W, Color(l[4], l[5], l[6], 0));
+                lights_changed = 1;
+            }
         }
     }
     if (changed) anim_texture->update(anim_image);
+    if (lights_changed) alight_texture->update(alight_image);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1603,7 +1706,7 @@ static void clear_world(void)
 // a BSP's polygons into batches, in the BSP's own coordinates (where it was placed in the level)
 static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, build_stats &st)
 {
-    static uint32_t texels[0x400], layers[MAX_LAYERS][0x400];
+    static uint32_t texels[0x400], layers[MAX_BLOCKS][0x400];
     static uint8_t vlight[1024][3], vlayers[MAX_VLAYERS][1024][3];
     uint32_t polies = g32(bsp + WB_POLIES), npolies = g32(bsp + WB_NPOLIES);
     if ((polies == 0) || (npolies > 1000000)) return;
@@ -1663,11 +1766,13 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
         int lw = 0, lh = 0, page = -1, lx = 0, ly = 0;
         float right[3] = { 0, 0, 0 }, up[3] = { 0, 0, 0 }, org[3] = { 0, 0, 0 };
         poly_layers pl;
-        pl.n = 0; pl.after_base = 0; pl.has_base = 0;
+        pl.n = 0; pl.nblocks = 0; pl.after_base = 0; pl.has_base = 0;
         if (!(sflags & SURF_BRIGHT) && poly_lightmap(mw, poly, texels, layers, &pl, &lw, &lh))
         {
-            const uint32_t *blocks[1 + MAX_LAYERS] = { texels, layers[0], layers[1], layers[2], layers[3] };
-            page = lm_place(blocks, 1 + pl.n, lw, lh, &lx, &ly);
+            const uint32_t *blocks[1 + MAX_BLOCKS];
+            blocks[0] = texels;
+            for (int q = 0; q < pl.nblocks; q++) blocks[1 + q] = layers[q];
+            page = lm_place(blocks, 1 + pl.nblocks, lw, lh, &lx, &ly);
             lm_axes(poly, right, up);
             org[0] = gf(poly + WP_LMORIGIN); org[1] = gf(poly + WP_LMORIGIN + 4); org[2] = gf(poly + WP_LMORIGIN + 8);
             st.lightmapped++;
@@ -1680,7 +1785,8 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
             else poly_vertex_light(mw, poly, n, vlight, vlayers, &pl);
         }
         float lc0[4] = { 0, 0, 0, 0 }, lc1[4] = { (float)(lw + 2) / LM_PAGE_SIZE, (float)pl.after_base, (float)pl.has_base, 0 };
-        for (int k = 0; k < pl.n; k++) lc0[k] = (float)(pl.anim[k] + 1);
+        for (int k = 0; k < pl.n; k++)
+            lc0[k] = (float)(pl.anim[k] + 1) + ((page >= 0) ? 8192.0f * (float)pl.start[k] + 524288.0f * (float)pl.kind[k] : 0.0f);
         for (k = 1; k + 1 < n; k++)
         {
             uint32_t idx[3] = { 0, k + 1, k };     // the z flip mirrors the winding
