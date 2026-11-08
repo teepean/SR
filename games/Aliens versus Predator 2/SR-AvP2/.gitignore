@@ -13,3 +13,14 @@ x64/*/*.inc
 libgodot.so
 # Godot's cache in the embedded project
 godot/.godot/
+# blob mode / macOS: the recompiled-code images and their link tables (generated from the game: never commit)
+blob/
+*.blob
+mac-kit/
+SR-AvP2-x64-blob
+SR-AvP2PH-x64-blob
+*.pie.o64
+*.mac.o
+/SR-AvP2
+/SR-AvP2PH
+libgodot.dylib

@@ -35,6 +35,8 @@
 #include "game.h"
 #include "rezfs.h"
 #include "music.h"
+#include "asmsyms.h"
+#include "blob.h"
 
 EXTERN_C_BEGIN
 
@@ -48,7 +50,6 @@ extern "C" {
 #endif
 
 /* recompiled lithtech.exe: the C runtime's entry point (called through call_game) */
-extern char lithtech_start[];
 
 void CCALL Raw_UnexpectedHandler(int which);
 
@@ -189,10 +190,15 @@ int main(int argc, char *argv[])
         if (freopen(getenv("AVP2_LOG"), "w", stderr) != NULL) setvbuf(stderr, NULL, _IONBF, 0);
     }
     sys_install_crash_handler();
+#ifdef SR_BLOB
+    // the recompiled code: its image at its fixed address, before anything else takes low memory
+    if (blob_load()) return 1;
+#endif
     // everything the recompiled code can see must be below 2 GB
     if (x86_init_malloc())
     {
         eprintf("Error: can't initialize the low memory allocator\n");
+        sys_dump_low_map();
         return 1;
     }
     if (sizeof(PTR32(void)) != 4)
@@ -217,6 +223,7 @@ int main(int argc, char *argv[])
     if (pe_image_load("lithtech.exe", 1) != (uint8_t *)(uintptr_t)0x400000)
     {
         eprintf("Error: can't map lithtech.exe at 0x400000 - start the game in its directory\n");
+        sys_dump_low_map();
         return 1;
     }
 

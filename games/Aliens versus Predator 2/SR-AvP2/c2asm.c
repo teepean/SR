@@ -10,13 +10,12 @@
 #include "winapi.h"
 #if defined(__x86_64__)
 #include "x64/x64_stack.h"
+#include "asmsyms.h"
 EXTERNC _stack *x86_initialize_stack(void);
 #endif
 
 EXTERN_C_BEGIN
 
-uint32_t c_call_asm_n(void *stack, uint32_t func, uint32_t nargs, const uint32_t *args);
-uint32_t c_call_asm_this(void *stack, uint32_t func, uint32_t nargs, const uint32_t *args);
 
 uint32_t call_game(uint32_t func, uint32_t nargs, const uint32_t *args)
 {

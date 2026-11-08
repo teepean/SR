@@ -90,13 +90,21 @@ typedef struct {
     int32_t char_extra;     // SetTextCharacterExtra
 } gdi_dc;
 
-static gdi_bitmap screen_bitmap;
-static gdi_bitmap default_bitmap;
-static gdi_palette default_palette;
+// the stock objects (the game sees their addresses: below 2 GB, LOW_OBJ)
+static gdi_bitmap screen_bitmap_init;
+static gdi_bitmap default_bitmap_init;
+static gdi_palette default_palette_init;
 static gdi_palette *system_palette;     // last palette realized on the display
-static gdi_font default_font;
-static gdi_brush stock_brushes[6];      // WHITE, LTGRAY, GRAY, DKGRAY, BLACK, NULL
-static gdi_brush stock_pens[3];         // WHITE, BLACK, NULL
+static gdi_font default_font_init;
+static gdi_brush stock_brushes_init[6]; // WHITE, LTGRAY, GRAY, DKGRAY, BLACK, NULL
+static gdi_brush stock_pens_init[3];    // WHITE, BLACK, NULL
+LOW_SLOT(screen_bitmap) LOW_SLOT(default_bitmap) LOW_SLOT(default_palette) LOW_SLOT(default_font) LOW_SLOT(stock_brushes) LOW_SLOT(stock_pens)
+#define screen_bitmap LOW_OBJ(screen_bitmap)
+#define default_bitmap LOW_OBJ(default_bitmap)
+#define default_palette LOW_OBJ(default_palette)
+#define default_font LOW_OBJ(default_font)
+#define stock_brushes LOW_OBJ(stock_brushes)
+#define stock_pens LOW_OBJ(stock_pens)
 
 static uint32_t obj_type(const void *h)
 {

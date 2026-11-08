@@ -335,7 +335,9 @@ typedef struct ail_sample
 } ail_sample;
 
 static ail_sample *samples;     // every allocated sample and stream
-static ail_sample listener;     // the 3D listener (position and orientation)
+static ail_sample listener_init;    // the 3D listener (position and orientation; the game sees it: LOW_OBJ)
+LOW_SLOT(listener)
+#define listener LOW_OBJ(listener)
 static mixer_source source;
 
 static uint32_t frame_bytes(const ail_sample *s) { return (uint32_t)(s->channels * (s->bits / 8)); }

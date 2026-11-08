@@ -7,7 +7,9 @@
 #if !defined(_WINAPI_H_INCLUDED_)
 #define _WINAPI_H_INCLUDED_
 
+#include <stddef.h>
 #include <stdint.h>
+#include "lowobj.h"
 
 #ifdef __cplusplus
 extern "C" {

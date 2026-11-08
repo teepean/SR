@@ -372,18 +372,20 @@ uint32_t CCALL ws2_32_inet_addr_c(const char *cp)
 
 char * CCALL ws2_32_inet_ntoa_c(uint32_t in)
 {
-    static char buf[16];    // static: below 2 GB like all runtime globals
+    static char buf_init[16];   // the game reads it: below 2 GB (LOW_OBJ)
+    LOW_SLOT(buf)
+#define buf LOW_OBJ(buf)
     snprintf(buf, sizeof(buf), "%u.%u.%u.%u", in & 0xFF, (in >> 8) & 0xFF, (in >> 16) & 0xFF, in >> 24);
     return buf;
+#undef buf
 }
 
 ws_hostent * CCALL ws2_32_gethostbyname_c(const char *name)
 {
-    static char h_name[256];
-    static uint32_t address;
-    static PTR32(char) addr_list[2];
-    static PTR32(char) aliases[1];
-    static ws_hostent h;
+    // the game reads all of it: below 2 GB (LOW_OBJ)
+    static struct { ws_hostent h; char name[256]; uint32_t address; PTR32(char) addr_list[2]; PTR32(char) aliases[1]; } hostent_init;
+    LOW_SLOT(hostent)
+    __typeof__(hostent_init) *he = &LOW_OBJ(hostent);
     uint32_t ip;
 
     if ((name == NULL) || !hn_resolve(name, &ip))
@@ -392,18 +394,18 @@ ws_hostent * CCALL ws2_32_gethostbyname_c(const char *name)
         wsa_error = 11001;  // WSAHOST_NOT_FOUND
         return NULL;
     }
-    snprintf(h_name, sizeof(h_name), "%s", name);
-    address = ip;
-    addr_list[0] = (char *)&address;
-    addr_list[1] = NULL;
-    aliases[0] = NULL;
-    h.h_name = h_name;
-    h.h_aliases = aliases;
-    h.h_addrtype = WS_AF_INET;
-    h.h_length = 4;
-    h.h_addr_list = addr_list;
+    snprintf(he->name, sizeof(he->name), "%s", name);
+    he->address = ip;
+    he->addr_list[0] = (char *)&he->address;
+    he->addr_list[1] = NULL;
+    he->aliases[0] = NULL;
+    he->h.h_name = he->name;
+    he->h.h_aliases = he->aliases;
+    he->h.h_addrtype = WS_AF_INET;
+    he->h.h_length = 4;
+    he->h.h_addr_list = he->addr_list;
     if (winapi_debug) eprintf("gethostbyname: %s -> %u.%u.%u.%u\n", name, ip & 0xFF, (ip >> 8) & 0xFF, (ip >> 16) & 0xFF, ip >> 24);
-    return &h;
+    return &he->h;
 }
 
 /* ------------------------------------------------------------------ */

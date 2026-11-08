@@ -18,13 +18,13 @@
 #include "winapi.h"
 #include "dinput.h"
 #include "host.h"
+#include "asmsyms.h"
 
 EXTERN_C_BEGIN
 
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
-extern uint32_t IDirectInputAVtbl_asm2c;
-extern uint32_t IDirectInputDevice2AVtbl_asm2c;
+// IDirectInputAVtbl_asm2c, IDirectInputDevice2AVtbl_asm2c: x64/com-asm.asm (asmsyms.h)
 
 #define DI_OK 0
 #define DI_BUFFEROVERFLOW 1
@@ -293,7 +293,7 @@ uint32_t CCALL DirectInputCreateA_c(void *hinst, uint32_t dwVersion, PTR32(di_ob
     di_object_root *di;
     if (ppDI == NULL) return DIERR_INVALIDPARAM;
     di = (di_object_root *)game_calloc(1, sizeof(di_object_root));
-    di->lpVtbl = &IDirectInputAVtbl_asm2c;
+    di->lpVtbl = IDirectInputAVtbl_asm2c;
     di->refs = 1;
     *ppDI = di;
     if (winapi_debug) eprintf("DirectInputCreateA: version 0x%x\n", dwVersion);
@@ -362,7 +362,7 @@ uint32_t CCALL IDirectInputA_CreateDevice_c(di_object_root *lpThis, const guid32
     if ((rguid == NULL) || (ppDevice == NULL)) return DIERR_INVALIDPARAM;
     *ppDevice = NULL;
     d = (di_device *)game_calloc(1, sizeof(di_device));
-    d->lpVtbl = &IDirectInputDevice2AVtbl_asm2c;
+    d->lpVtbl = IDirectInputDevice2AVtbl_asm2c;
     d->refs = 1;
     if (guid_eq(rguid, &GUID_SysKeyboard))
     {

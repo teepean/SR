@@ -6,6 +6,7 @@
  *
  *  libgodot is loaded with dlopen(RTLD_LOCAL | RTLD_DEEPBIND): it exports its bundled third-party libraries
  *  (FreeType, zlib, ...), which must neither replace the system ones the runtime uses nor be replaced by them.
+ *  (RTLD_DEEPBIND is glibc's; macOS keeps each library's symbols apart anyway: two-level namespaces.)
  *  godot-cpp (linked in) talks to it only through the GDExtension interface it hands to host_init.
  *
  *  Picture: the game's framebuffer (XRGB8888, CPU-drawn 2D) is a texture on a canvas item covering the window;
@@ -342,14 +343,24 @@ extern "C" GDExtensionBool avp2_godot_init(GDExtensionInterfaceGetProcAddress gp
 
 static std::string exe_dir(void)
 {
-    char buf[PATH_MAX];
-    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-    if (n <= 0) return ".";
-    buf[n] = 0;
-    char *slash = strrchr(buf, '/');
-    if (slash != NULL) *slash = 0;
-    return buf;
+    char *base = SDL_GetBasePath();     // the program's directory, with a separator at the end (any platform)
+    if (base == NULL) return ".";
+    std::string d = base;
+    SDL_free(base);
+    if ((d.size() > 1) && ((d.back() == '/') || (d.back() == '\\'))) d.pop_back();
+    return d;
 }
+
+#if defined(__APPLE__)
+#define LIBGODOT_NAME "libgodot.dylib"
+#elif defined(_WIN32)
+#define LIBGODOT_NAME "libgodot.dll"
+#else
+#define LIBGODOT_NAME "libgodot.so"
+#endif
+#ifndef RTLD_DEEPBIND
+#define RTLD_DEEPBIND 0
+#endif
 
 static std::string find_file(const char *env, const char *cfg, const std::vector<std::string> &candidates)
 {
@@ -369,12 +380,12 @@ static void frame_stats_init(Window *root);
 extern "C" int ghost_load(void)
 {
     std::string dir = exe_dir();
-    std::string lib = find_file("AVP2_LIBGODOT", "libgodot", { dir + "/libgodot.so", "libgodot.so" });
+    std::string lib = find_file("AVP2_LIBGODOT", "libgodot", { dir + "/" LIBGODOT_NAME, LIBGODOT_NAME });
     std::string project = find_file("AVP2_GODOT_PROJECT", "godot_project", { dir + "/godot/project.godot", "godot/project.godot" });
 
     if (lib.empty() || project.empty())
     {
-        if (winapi_debug) eprintf("host: no %s\n", lib.empty() ? "libgodot.so" : "Godot project (godot/project.godot)");
+        if (winapi_debug) eprintf("host: no %s\n", lib.empty() ? LIBGODOT_NAME : "Godot project (godot/project.godot)");
         return 0;
     }
     if ((project.size() > 14) && (project.compare(project.size() - 14, 14, "/project.godot") == 0)) project.resize(project.size() - 14);
@@ -397,6 +408,9 @@ extern "C" int ghost_load(void)
     std::vector<std::string> args = { "sr-avp2", "--path", project, "--resolution", res, "--audio-driver", "Dummy", "--disable-crash-handler" };
     const char *driver = config_get("rendering_driver");
     if (driver != NULL) { args.push_back("--rendering-driver"); args.push_back(driver); }
+    // forward_plus (the project's), mobile or gl_compatibility (needed with the opengl3 driver)
+    const char *method = config_get("rendering_method");
+    if (method != NULL) { args.push_back("--rendering-method"); args.push_back(method); }
     if (winapi_debug >= 3) args.push_back("--verbose");
     static std::vector<std::string> keep;
     keep = args;

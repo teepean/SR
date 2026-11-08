@@ -29,6 +29,7 @@
 #include "config.h"
 #include "host.h"
 #include "render3d.h"
+#include "asmsyms.h"
 
 EXTERN_C_BEGIN
 
@@ -38,16 +39,7 @@ EXTERN_C_BEGIN
 #define RENDER_OK 0
 #define RENDER_ERROR 1
 
-// asm2c stubs of the slot functions (gen_imports.py, imports.spec "render")
-#define STUB(name) extern char ren_##name##_asm2c[];
-STUB(Init) STUB(Term) STUB(BindTexture) STUB(UnbindTexture) STUB(RebindLightmaps) STUB(CreateContext) STUB(DeleteContext)
-STUB(Clear) STUB(Start3D) STUB(End3D) STUB(IsIn3D) STUB(StartOptimized2D) STUB(EndOptimized2D) STUB(IsInOptimized2D)
-STUB(SetOptimized2DBlend) STUB(GetOptimized2DBlend) STUB(SetOptimized2DColor) STUB(GetOptimized2DColor) STUB(RenderScene)
-STUB(RenderCommand) STUB(GetHook) STUB(SwapBuffers) STUB(GetInfoFlags) STUB(GetScreenFormat) STUB(CreateSurface)
-STUB(DeleteSurface) STUB(GetSurfaceInfo) STUB(LockSurface) STUB(UnlockSurface) STUB(OptimizeSurface) STUB(UnoptimizeSurface)
-STUB(LockScreen) STUB(UnlockScreen) STUB(BlitToScreen) STUB(WarpToScreen) STUB(MakeScreenShot) STUB(ReadConsoleVariables)
-STUB(BlitFromScreen)
-#undef STUB
+// the slot functions' asm2c stubs (gen_imports.py, imports.spec "render"): ren_<name>_asm2c, asmsyms.h
 
 /* ------------------------------------------------------------------ */
 /* the engine's structures (32-bit)                                    */
@@ -260,7 +252,7 @@ uint32_t CCALL ren_GetInfoFlags_c(void) { return 0; }
 /* through GetHook, creates an offscreen surface for the movie, locks it for BinkCopyToBuffer and blits it to    */
 /* the back buffer (stretched or centred, colour-filled borders). Only what it uses is implemented (com.spec).   */
 
-extern uint32_t IDirectDraw7Vtbl_asm2c, IDirectDrawSurface7Vtbl_asm2c;
+// IDirectDraw7Vtbl_asm2c, IDirectDrawSurface7Vtbl_asm2c: x64/com-asm.asm (asmsyms.h)
 
 #define DD_OK 0
 #define DDERR_INVALIDPARAMS 0x80070057
@@ -345,7 +337,7 @@ uint32_t CCALL IDirectDraw7_CreateSurface_c(void *self, uint32_t *ddsd, uint32_t
     if ((w <= 0) || (h <= 0) || (w > 4096) || (h > 4096)) return DDERR_INVALIDPARAMS;
     s = (dd_surface *)game_calloc(1, sizeof(dd_surface));
     if (s == NULL) return DDERR_INVALIDPARAMS;
-    s->lpVtbl = (uint32_t)(uintptr_t)&IDirectDrawSurface7Vtbl_asm2c;
+    s->lpVtbl = (uint32_t)(uintptr_t)IDirectDrawSurface7Vtbl_asm2c;
     s->magic = DD_SURFACE_MAGIC;
     s->refs = 1;
     s->width = w;
@@ -476,14 +468,14 @@ void * CCALL ren_GetHook_c(const char *pName)
         if (dd_object == NULL)
         {
             dd_object = (uint32_t *)game_calloc(1, 4);
-            if (dd_object != NULL) dd_object[0] = (uint32_t)(uintptr_t)&IDirectDraw7Vtbl_asm2c;
+            if (dd_object != NULL) dd_object[0] = (uint32_t)(uintptr_t)IDirectDraw7Vtbl_asm2c;
         }
         if (dd_back == NULL)
         {
             dd_back = (dd_surface *)game_calloc(1, sizeof(dd_surface));
             if (dd_back != NULL)
             {
-                dd_back->lpVtbl = (uint32_t)(uintptr_t)&IDirectDrawSurface7Vtbl_asm2c;
+                dd_back->lpVtbl = (uint32_t)(uintptr_t)IDirectDrawSurface7Vtbl_asm2c;
                 dd_back->magic = DD_SURFACE_MAGIC;
                 dd_back->refs = 1;
                 dd_back->backbuffer = 1;
@@ -523,7 +515,7 @@ uint32_t CCALL ren_GetScreenFormat_c(uint8_t *pFormat)
 
 #ifndef HAVE_GODOT
 void r3d_set_render_struct(uint8_t *p) {}
-uint32_t r3d_create_context(uint32_t world) { static uint32_t dummy[4]; return (uint32_t)(uintptr_t)dummy; }
+uint32_t r3d_create_context(uint32_t world) { static uint32_t dummy_init[4]; LOW_SLOT(dummy) return (uint32_t)(uintptr_t)LOW_OBJ(dummy); }
 void r3d_delete_context(uint32_t context) {}
 int r3d_render_scene(uint8_t *scene) { return 0; }
 void r3d_end_frame(int drawn) {}

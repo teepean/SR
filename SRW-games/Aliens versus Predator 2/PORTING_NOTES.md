@@ -456,3 +456,24 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - Wide-screen and multi-platform research done (local notes): Hor+ plan (pillarboxed 2D first; then wide modes,
   the menu's 4:3 filter, engine-side Hor+ so Get3DCameraPt agrees); Windows via MinGW on I76's base, macOS via
   Rosetta needs NASM Mach-O relocations for 32-bit absolute addresses, native arm64 means SRW's OUT_LLASM.
+
+### 2026-11-08 — macOS (Apple Silicon through Rosetta 2): the recompiled code as an image
+- The recompiled code addresses everything with 32 bits; on Linux it is linked into the program at 0x10000000. A
+  64-bit Mach-O program is position independent and above 4 GB, and Mach-O has no 32-bit absolute relocations
+  (nasm -fmacho64 refuses them; ~18,600 in lithtech alone). Instead the recompiled code (the modules and the
+  runtime's asm stubs) is one image at 0x20000000, linked with GNU ld on Linux (tools/mkblob.py): every symbol it
+  needs from outside is a C function (688; checked), reached through thunks (jmp [slot]) whose slots the program
+  fills when it loads the image (blob.c, before anything else takes low memory). The program finds the 101 image
+  symbols it uses (asmsyms.h: the asm2c stubs, entry points, vtables) in a constant table generated per game
+  (blob_link_<program>.cpp). The image's code calls C with System V's convention - the same on Linux and macOS.
+- With the program above 4 GB, everything the game sees must still be below 2 GB: the runtime's own malloc/calloc/
+  realloc/strdup/free go to the low allocator (lowalloc.h, force-included into the runtime's C files; free() of
+  a system pointer goes to the system), and the statics whose addresses reach the game (pseudo handles, the process
+  heap, command line, environment, modules, GDI stock objects, Miles' listener, winsock's hostent, errno, cvar and
+  ray query buffers, the canvas interface) are copies in low memory (lowobj.h: <name>_init + LOW_OBJ).
+- `scons blob=1` builds that on Linux (SR-AvP2-x64-blob, position independent): m1s1, p1s1, a1s1, a6s1, the menus
+  with the movies and Primal Hunt's exp1s1 run. `scons device=pc64-macos` is the macOS build (clang, x86-64,
+  __PAGEZERO 64 KB, the images from a kit made on Linux: tools/mkmackit.sh); BUILDING-macOS.md. Not yet run on a Mac.
+- Also portable now: the fault handler (macOS register names, SIGBUS), fixed mappings without MAP_FIXED_NOREPLACE
+  (sys_map_fixed; ranges reserved in a constructor, sys_reserve_fixed), the recursive mutex initializer, the
+  program's directory (SDL_GetBasePath), libgodot.dylib without RTLD_DEEPBIND; `rendering_method` setting.

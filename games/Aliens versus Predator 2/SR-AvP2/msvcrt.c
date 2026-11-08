@@ -1162,7 +1162,9 @@ int32_t CCALL _strcmpi_c(const char *s1, const char *s2)
 /* process                                                             */
 
 // errno is thread-local (high memory in the 64-bit build): the game gets a low copy
-static int32_t ms_errno;
+static int32_t ms_errno_init;      // the game writes it through _errno: LOW_OBJ
+LOW_SLOT(ms_errno)
+#define ms_errno LOW_OBJ(ms_errno)
 int32_t * CCALL _errno_c(void) { ms_errno = errno; return &ms_errno; }
 
 void CCALL exit_c(int32_t status)

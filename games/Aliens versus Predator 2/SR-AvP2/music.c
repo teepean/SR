@@ -38,6 +38,7 @@
 #include "rezfs.h"
 #include "config.h"
 #include "music.h"
+#include "asmsyms.h"
 
 #ifdef HAVE_DMUSIC
 #include <dmusic.h>
@@ -337,14 +338,7 @@ void term_level(void)
 
 EXTERN_C_BEGIN
 
-extern char music_Init_asm2c[], music_Term_asm2c[], music_InitLevel_asm2c[], music_TermLevel_asm2c[], music_Play_asm2c[],
-            music_Stop_asm2c[], music_Pause_asm2c[], music_UnPause_asm2c[], music_SetVolume_asm2c[],
-            music_ChangeIntensity_asm2c[], music_PlaySecondary_asm2c[], music_StopSecondary_asm2c[],
-            music_PlayMotif3_asm2c[], music_StopMotif3_asm2c[], music_GetCurIntensity_asm2c[],
-            music_StringToEnactType_asm2c[], music_EnactTypeToString_asm2c[], music_GetNumIntensities_asm2c[],
-            music_GetInitialIntensity_asm2c[], music_GetInitialVolume_asm2c[], music_GetVolumeOffset_asm2c[],
-            music_PlayMotif2_asm2c[], music_StopMotif2_asm2c[];
-extern uint32_t lithtech_DirectMusicMgr_vtbl[];
+// music_<method>_asm2c: x64/music-asm.asm; lithtech_DirectMusicMgr_vtbl: the engine's vtable (asmsyms.h)
 
 // the engine's CLTDirectMusicMgr vtable -> ours (it's in the recompiled engine's read-only data)
 void music_install(void)
@@ -368,7 +362,7 @@ void music_install(void)
     uintptr_t first = start & ~(page - 1), last = (end + page - 1) & ~(page - 1);
     if (mprotect((void *)first, last - first, PROT_READ | PROT_WRITE) != 0) return;
 #endif
-    for (unsigned i = 0; i < sizeof(methods) / sizeof(methods[0]); i++) lithtech_DirectMusicMgr_vtbl[i] = (uint32_t)(uintptr_t)methods[i];
+    for (unsigned i = 0; i < sizeof(methods) / sizeof(methods[0]); i++) ((uint32_t *)lithtech_DirectMusicMgr_vtbl)[i] = (uint32_t)(uintptr_t)methods[i];
 #ifdef _WIN32
     VirtualProtect((void *)start, end - start, old, &old);
 #else

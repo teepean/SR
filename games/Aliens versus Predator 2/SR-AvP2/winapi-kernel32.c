@@ -29,6 +29,7 @@
 #include "sysmem.h"
 #include "peimage.h"
 #include "printf_x86.h"
+#include "asmsyms.h"
 #include <pthread.h>
 
 EXTERN_C_BEGIN
@@ -82,8 +83,12 @@ typedef struct {
     int writable;
 } mapping_handle;
 
-static uint32_t process_handle_obj = HT_PROCESS;
-static uint32_t thread_handle_obj = HT_THREAD;
+// the pseudo handles (the game sees their addresses: below 2 GB, LOW_OBJ)
+static uint32_t process_handle_obj_init = HT_PROCESS;
+static uint32_t thread_handle_obj_init = HT_THREAD;
+LOW_SLOT(process_handle_obj) LOW_SLOT(thread_handle_obj)
+#define process_handle_obj LOW_OBJ(process_handle_obj)
+#define thread_handle_obj LOW_OBJ(thread_handle_obj)
 
 static uint32_t handle_type(void *h)
 {
@@ -644,10 +649,16 @@ typedef struct heap_obj {
 } heap_obj;
 
 // the heap functions are called from several threads (the engine's sound, music and file threads)
+#if defined(PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP)
 static pthread_mutex_t heap_mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+#else
+static pthread_mutex_t heap_mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;     // macOS
+#endif
 struct heap_lock { heap_lock() { pthread_mutex_lock(&heap_mutex); } ~heap_lock() { pthread_mutex_unlock(&heap_mutex); } };
 
-static heap_obj process_heap = { HT_HEAP, NULL };
+static heap_obj process_heap_init = { HT_HEAP, NULL };
+LOW_SLOT(process_heap)
+#define process_heap LOW_OBJ(process_heap)
 
 /* Heap robustness and diagnostics
  * - the slack after every block is filled with a check pattern; overruns (the game writing past a block) are
@@ -987,6 +998,17 @@ void * CCALL GlobalFree_c(void *hMem)
  * (quarantine after free, overrun detection, AVP2_HEAPGUARD) - in the 32-bit build x86_malloc is glibc's malloc,
  * and stray game writes into freed runtime memory corrupted glibc (crashes noticed later in the GL driver). */
 static heap_obj runtime_heap = { HT_HEAP, NULL };
+
+void *low_object(void **slot, const void *init, size_t size)
+{
+    if (*slot == NULL)
+    {
+        void *p = game_malloc((uint32_t) size);
+        memcpy(p, init, size);
+        *slot = p;
+    }
+    return *slot;
+}
 
 void *game_malloc(uint32_t size) { return HeapAlloc_c(&runtime_heap, 0, size); }     // HeapAlloc zeroes
 void *game_calloc(uint32_t n, uint32_t size) { return HeapAlloc_c(&runtime_heap, 0, n * size); }
@@ -1363,7 +1385,6 @@ typedef struct {
 } module_info;
 
 // recompiled game DLLs (stand-ins until the native builds from Monolith's source replace them)
-extern char cshell_DllMainCRTStartup[], cshell_GetClientShellFunctions[], cshell_GetClientShellVersion[], cshell_SetInstanceHandle[];
 
 static const module_export cshell_exports[] = {
     { "GetClientShellFunctions", (void *) cshell_GetClientShellFunctions },
@@ -1372,7 +1393,6 @@ static const module_export cshell_exports[] = {
     { NULL, NULL }
 };
 
-extern char object_DllMainCRTStartup[], object_GetServerShellFunctions[], object_GetServerShellVersion[], object_ObjectDLLSetup[], object_SetInstanceHandle[];
 
 static const module_export object_exports[] = {
     { "GetServerShellFunctions", (void *) object_GetServerShellFunctions },
@@ -1383,7 +1403,6 @@ static const module_export object_exports[] = {
 };
 
 // the engine's server (recompiled; lithtech.exe loads it for local and hosted games)
-extern char server_DllMainCRTStartup[], server_CreateServer[], server_DeleteServer[];
 
 static const module_export server_exports[] = {
     { "CreateServer", (void *) server_CreateServer },
@@ -1392,7 +1411,6 @@ static const module_export server_exports[] = {
 };
 
 // the renderer (render.c): native, replaces d3d.ren
-extern char RenderDLLSetup_asm2c[], GetSupportedModes_asm2c[], FreeModeList_asm2c[];
 
 static const module_export render_exports[] = {
     { "RenderDLLSetup", (void *) RenderDLLSetup_asm2c },
@@ -1401,9 +1419,6 @@ static const module_export render_exports[] = {
     { NULL, NULL }
 };
 
-extern char BinkOpen_asm2c[], BinkClose_asm2c[], BinkWait_asm2c[], BinkCopyToBuffer_asm2c[], BinkDoFrame_asm2c[],
-            BinkNextFrame_asm2c[], BinkSetSoundSystem_asm2c[], BinkOpenMiles_asm2c[], BinkOpenDirectSound_asm2c[],
-            BinkSetSoundTrack_asm2c[], BinkIsSoftwareCursor_asm2c[], BinkCheckCursor_asm2c[], BinkRestoreCursor_asm2c[];
 
 // binkw32.dll (bink.c): the engine's BinkVideoMgr asks for these by their decorated names
 static const module_export bink_exports[] = {
@@ -1424,13 +1439,17 @@ static const module_export bink_exports[] = {
 };
 
 // AvP2's modules: the engine loads the game DLLs from temporary copies (any path, matched by name)
-static module_info modules[] = {
+// the game sees the modules' addresses (HMODULE): LOW_OBJ
+static module_info modules_init[] = {
     { 0, "cshell.dll", cshell_exports, (void *) cshell_DllMainCRTStartup, 0, NULL },
     { 0, "object.lto", object_exports, (void *) object_DllMainCRTStartup, 0, NULL },
     { 0, "server.dll", server_exports, (void *) server_DllMainCRTStartup, 0, NULL },
     { 0, "d3d.ren", render_exports, NULL, 0, NULL },
     { 0, "binkw32.dll", bink_exports, NULL, 0, NULL },
 };
+
+LOW_SLOT(modules)
+#define modules LOW_OBJ(modules)
 
 static module_info *find_module(const char *name)
 {
@@ -1526,7 +1545,9 @@ uint32_t CCALL FreeLibrary_c(void *hLibModule)
 /* ------------------------------------------------------------------ */
 /* command line                                                        */
 
-static char command_line[1024];
+static char command_line_init[1024];
+LOW_SLOT(command_line)
+#define command_line LOW_OBJ(command_line)
 
 void winapi_set_command_line(const char *cmdline)
 {
@@ -1590,8 +1611,11 @@ void CCALL GetStartupInfoA_c(STARTUPINFOA_32 *si)
 uint32_t CCALL SetHandleCount_c(uint32_t uNumber) { return uNumber; }
 
 // an empty environment block (two terminators)
-static char env_block[4];
-static uint16_t env_block_w[4];
+static char env_block_init[4];
+static uint16_t env_block_w_init[4];
+LOW_SLOT(env_block) LOW_SLOT(env_block_w)
+#define env_block LOW_OBJ(env_block)
+#define env_block_w LOW_OBJ(env_block_w)
 char * CCALL GetEnvironmentStrings_c(void) { return env_block; }
 uint16_t * CCALL GetEnvironmentStringsW_c(void) { return env_block_w; }
 uint32_t CCALL FreeEnvironmentStringsA_c(char *p) { return 1; }

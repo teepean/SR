@@ -76,6 +76,8 @@
 
 #include "render3d.h"
 #include "game.h"
+#include "asmsyms.h"
+#include "lowobj.h"
 
 using namespace godot;
 
@@ -337,9 +339,11 @@ extern "C" void r3d_set_render_struct(uint8_t *rs)
 
 static float cvar(const char *name, float def)
 {
-    static char buf[64];    // in 32-bit memory for the engine
+    static char buf_init[64];   // the engine reads it: below 2 GB (LOW_OBJ)
+    LOW_SLOT(buf)
+    char *buf = LOW_OBJ(buf);
     if (render_struct == NULL) return def;
-    strncpy(buf, name, sizeof(buf) - 1);
+    strncpy(buf, name, sizeof(buf_init) - 1);
     uint32_t args[1] = { (uint32_t)(uintptr_t)buf };
     uint32_t h = call_game(*(uint32_t *)(render_struct + RS_GETPARAMETER), 1, args);
     if (h == 0) return def;
@@ -1758,7 +1762,6 @@ static Transform3D lt_object_transform(uint32_t o)
 struct model_light { float pos[3], dir[3], radius2, color[3]; };
 
 // the engine's i_IntersectSegment (cdecl: IntersectQuery*, IntersectInfo*, WorldTree*, bServer), recompiled
-extern "C" void lithtech_i_IntersectSegment(void);
 #define MW_WORLDTREE 0x6c
 #define WT_ROOT 0x0c
 #define WTN_RADIUS 0x40
@@ -1766,14 +1769,16 @@ extern "C" void lithtech_i_IntersectSegment(void);
 // CastRayAtSky: does the segment from p along d end on a sky poly? (the query and its result in 32-bit memory)
 static int ray_at_sky(uint32_t mw, const float p[3], const float d[3])
 {
-    static uint32_t query[16], info[16];
+    static uint32_t query_init[16], info_init[16];  // the engine's: below 2 GB (LOW_OBJ)
+    LOW_SLOT(query) LOW_SLOT(info)
+    uint32_t *query = LOW_OBJ(query), *info = LOW_OBJ(info);
     float *q = (float *)query;
-    memset(query, 0, sizeof(query));
-    memset(info, 0, sizeof(info));
+    memset(query, 0, sizeof(query_init));
+    memset(info, 0, sizeof(info_init));
     for (int i = 0; i < 3; i++) { q[i] = p[i]; q[3 + i] = p[i] + d[i]; }
     query[9] = 4;       // INTERSECT_HPOLY
     uint32_t args[4] = { (uint32_t)(uintptr_t)query, (uint32_t)(uintptr_t)info, mw + MW_WORLDTREE, 0 };
-    if (!call_game((uint32_t)(uintptr_t)&lithtech_i_IntersectSegment, 4, args)) return 0;
+    if (!call_game((uint32_t)(uintptr_t)lithtech_i_IntersectSegment, 4, args)) return 0;
     uint32_t hpoly = info[8];
     uint32_t models = g32(mw + MW_WORLDMODELS + 4), nmodels = g32(mw + MW_WORLDMODELS + 8);
     if ((hpoly >> 16) >= nmodels) return 0;
@@ -2831,11 +2836,6 @@ enum { LTRSTATE_ALPHABLENDENABLE = 0, LTRSTATE_ZREADENABLE, LTRSTATE_ZWRITEENABL
 #define LTBLEND_ONE 2
 #define LTBLEND_SRCCOLOR 3
 
-extern "C" void canvas_DrawPrimitive_asm2c(void);
-extern "C" void canvas_SetState_asm2c(void);
-extern "C" void canvas_GetState_asm2c(void);
-extern "C" void canvas_SetTexture_asm2c(void);
-extern "C" void canvas_GetTexelSize_asm2c(void);
 
 struct canvas_batch
 {
@@ -2844,10 +2844,12 @@ struct canvas_batch
     PackedColorArray col;
 };
 
+// the ILTCustomDraw the game gets (its vtable pointer) and the vtable: below 2 GB (LOW_OBJ)
+static struct { uint32_t object[4]; uint32_t vtable[5]; } canvas_iface_init;
+LOW_SLOT(canvas_iface)
+
 static struct
 {
-    uint32_t object[4];         // the ILTCustomDraw the game gets (vtable pointer), in 32-bit memory
-    uint32_t vtable[5];
     uint32_t states[NUM_LTRSTATES];
     uint32_t texture;           // SharedTexture*
     int close;                  // the canvas is really close: its vertices are in the camera's space
@@ -2915,14 +2917,15 @@ static void draw_canvas(uint32_t o)
 {
     uint32_t fn = g32(o + CV_FN), flags = g32(o + OB_FLAGS);
     if (fn == 0) return;
-    if (cdraw.vtable[0] == 0)
+    __typeof__(canvas_iface_init) *ci = &LOW_OBJ(canvas_iface);
+    if (ci->vtable[0] == 0)
     {
-        cdraw.vtable[0] = (uint32_t)(uintptr_t)&canvas_DrawPrimitive_asm2c;
-        cdraw.vtable[1] = (uint32_t)(uintptr_t)&canvas_SetState_asm2c;
-        cdraw.vtable[2] = (uint32_t)(uintptr_t)&canvas_GetState_asm2c;
-        cdraw.vtable[3] = (uint32_t)(uintptr_t)&canvas_SetTexture_asm2c;
-        cdraw.vtable[4] = (uint32_t)(uintptr_t)&canvas_GetTexelSize_asm2c;
-        cdraw.object[0] = (uint32_t)(uintptr_t)cdraw.vtable;
+        ci->vtable[0] = (uint32_t)(uintptr_t)canvas_DrawPrimitive_asm2c;
+        ci->vtable[1] = (uint32_t)(uintptr_t)canvas_SetState_asm2c;
+        ci->vtable[2] = (uint32_t)(uintptr_t)canvas_GetState_asm2c;
+        ci->vtable[3] = (uint32_t)(uintptr_t)canvas_SetTexture_asm2c;
+        ci->vtable[4] = (uint32_t)(uintptr_t)canvas_GetTexelSize_asm2c;
+        ci->object[0] = (uint32_t)(uintptr_t)ci->vtable;
     }
     // CanvasDrawMgr::SaveAndSetCanvasStates' defaults
     static const uint32_t defaults[NUM_LTRSTATES] = { 0, 1, 1, 5, 6, 1, 3, 2 };
@@ -2931,7 +2934,7 @@ static void draw_canvas(uint32_t o)
     cdraw.close = (flags & FLAG_REALLYCLOSE) != 0;
     std::map<uint64_t, canvas_batch> batches;
     cdraw.batches = &batches;
-    uint32_t args[3] = { (uint32_t)(uintptr_t)cdraw.object, o, g32(o + CV_USER) };
+    uint32_t args[3] = { (uint32_t)(uintptr_t)ci->object, o, g32(o + CV_USER) };
     call_game(fn, 3, args);
     cdraw.batches = NULL;
     if ((winapi_debug >= 2) && ((gs->frame % 300) == 0))

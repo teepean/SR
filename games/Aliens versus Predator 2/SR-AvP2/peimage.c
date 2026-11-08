@@ -42,8 +42,7 @@ static void *map_fixed(uint32_t addr, uint32_t size)
 #ifdef _WIN32
     return VirtualAlloc((void *)(uintptr_t)addr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 #else
-    void *p = mmap((void *)(uintptr_t)addr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
-    return (p == MAP_FAILED) ? NULL : p;
+    return sys_map_fixed(addr, size);       // sysmem.c: Linux and macOS
 #endif
 }
 

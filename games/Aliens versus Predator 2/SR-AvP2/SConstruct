@@ -7,22 +7,36 @@ vars.Add(EnumVariable('debug', 'Debug level (0 = release version)', '1',
                                  allowed_values=('0', '1', '2'),
                                  ignorecase=2))
 vars.Add(EnumVariable('device', 'Target device', 'pc64-linux',
-                                 allowed_values=('pc64-linux', 'pc64-windows'),
+                                 allowed_values=('pc64-linux', 'pc64-windows', 'pc64-macos'),
                                  ignorecase=2))
+# blob=1: the recompiled code as a separate image at a fixed low address (tools/mkblob.py, blob.c, asmsyms.h) and a
+# position independent program - how macOS has to do it; on Linux it tests that the runtime doesn't need to be low
+vars.Add(EnumVariable('blob', 'Recompiled code as a separate image (1) or linked in (0)', '0',
+                                 allowed_values=('0', '1')))
+# blob_kit=<dir>: the images and their link tables made elsewhere (tools/mkmackit.sh on Linux: <dir>/<program>.blob,
+# <dir>/blob_link_<program>.cpp) - then neither nasm, GNU binutils nor the generated assembler are needed here
+vars.Add(PathVariable('blob_kit', 'Prebuilt recompiled-code images (blob mode)', '', PathVariable.PathAccept))
 env = Environment(variables = vars)
 
 debug = int(env['debug'])
 device = env['device']
+blob = (env['blob'] == '1') or (device == 'pc64-macos')     # macOS: always
+blob_kit = env['blob_kit'] or (os.path.isdir('mac-kit') and device == 'pc64-macos' and 'mac-kit') or ''
 
 Help(vars.GenerateHelpText(env))
 
 if device == 'pc64-linux':
     # x86-64 (SRW OUT_X64): the runtime is compiled as C++ (PTR32 types, Game-Memory.c low-memory allocator);
     # recompiled code uses absolute 32-bit addresses, so the non-PIE executable is linked low (at 0x10000000)
-    env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fno-PIE -fno-exceptions -fno-rtti',
-               LINKFLAGS = '-m64 -no-pie -Wl,-Ttext-segment,0x10000000 -Wl,-z,noexecstack')
+    if blob:
+        env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fPIE -fno-exceptions -fno-rtti',
+                   LINKFLAGS = '-m64 -pie -Wl,-z,noexecstack',
+                   CPPDEFINES = ['SR_BLOB'])
+    else:
+        env.Append(CCFLAGS = '-O2 -Wall -m64 -x c++ -fno-PIE -fno-exceptions -fno-rtti',
+                   LINKFLAGS = '-m64 -no-pie -Wl,-Ttext-segment,0x10000000 -Wl,-z,noexecstack')
     env['LINK'] = 'g++'
-    env['OBJSUFFIX'] = '.o64'       # the 32-bit build uses .o in the same directories
+    env['OBJSUFFIX'] = '.pie.o64' if blob else '.o64'   # the 32-bit build uses .o in the same directories
 elif device == 'pc64-windows':
     # Windows x64, cross-compiled with MinGW-w64 (x86_64-w64-mingw32-*). SDL2 and freetype for MinGW:
     # WIN_DEPS=<dir> with <dir>/include/SDL2, <dir>/include/freetype2 and <dir>/lib (see BUILDING.md).
@@ -43,7 +57,25 @@ elif device == 'pc64-windows':
               )
     # no libwinpthread-1.dll next to the exe: link it statically
     env.Append(_LIBFLAGS = ' -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic')
-if device != 'pc64-windows':
+elif device == 'pc64-macos':
+    # macOS on Intel, or on Apple Silicon through Rosetta 2: an x86-64 program (the recompiled code is x86-64). The
+    # recompiled code is a separate image at a fixed low address (blob.c: Mach-O has no 32-bit absolute relocations
+    # and the program itself is above 4 GB); __PAGEZERO is shrunk (it covers the low 4 GB otherwise) so that the
+    # image and the game's memory fit below 2 GB. Dependencies from an x86-64 Homebrew (/usr/local), see
+    # SRW-games/Aliens versus Predator 2/BUILDING-macOS.md.
+    env['CC'] = 'clang'
+    env['CXX'] = 'clang++'
+    env['LINK'] = 'clang++'
+    env['OBJSUFFIX'] = '.mac.o'
+    arch = ' -arch x86_64 -mmacosx-version-min=11.0'
+    env.Append(CCFLAGS = arch + ' -O2 -Wall -x c++ -fno-exceptions -fno-rtti -Wno-unused-function -Wno-unused-variable',
+               LINKFLAGS = arch + ' -Wl,-pagezero_size,0x10000',
+               CPPDEFINES = ['SR_BLOB'])
+    env['ENV']['PATH'] = os.environ.get('PATH', '')
+    env['ENV']['PKG_CONFIG_PATH'] = os.environ.get('PKG_CONFIG_PATH', '/usr/local/lib/pkgconfig')
+    env.ParseConfig('pkg-config --cflags --libs sdl2 freetype2')
+    env.Append(LIBS = ['pthread', 'm'])
+if device == 'pc64-linux':
     env.Append(CCFLAGS = ' -O2 -Wall',
                CPPPATH = ['/usr/include/SDL2', '/usr/local/include/SDL2', '/usr/include/freetype2', '/usr/local/include'],
                LIBPATH = ['/usr/local/lib'],
@@ -63,7 +95,7 @@ if 'PATH_LIB' in os.environ:
     env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
 
 # FFmpeg (libavformat, libavcodec) decodes the Bink movies (bink.c); without it the movies are skipped
-if device == 'pc64-linux' and os.environ.get('NO_FFMPEG') is None:
+if device in ('pc64-linux', 'pc64-macos') and os.environ.get('NO_FFMPEG') is None:
     try:
         subprocess.check_output(['pkg-config', '--exists', 'libavformat', 'libavcodec', 'libavutil'])
         env.ParseConfig('pkg-config --cflags --libs libavformat libavcodec libavutil')
@@ -75,13 +107,13 @@ if device == 'pc64-linux' and os.environ.get('NO_FFMPEG') is None:
 # (music.c): DMUSIC=<checkout> with build-static/libdmusic.a; without it there is no music
 dmusic_libs = []
 dmusic = os.environ.get('DMUSIC', '/home/teemu/sorsa/dmusic')
-if device == 'pc64-linux' and os.path.exists(os.path.join(dmusic, 'build-static', 'libdmusic.a')):
+if device in ('pc64-linux', 'pc64-macos') and os.path.exists(os.path.join(dmusic, 'build-static', 'libdmusic.a')):
     env.Append(CPPDEFINES = ['HAVE_DMUSIC', 'DM_STATIC=1'], CPPPATH = [os.path.join(dmusic, 'include')])
     dmusic_libs = [File(os.path.join(dmusic, 'build-static', 'libdmusic.a')), File(os.path.join(dmusic, 'build-static', 'vendor', 'libdmusic-tsf.a'))]
 else:
     print('dmusic not found: no music')
 
-common_objs, avp2_objs, ph_objs = SConscript('x64/SConscript', exports='device env')
+common_asm_objs, common_c_objs, avp2_objs, ph_objs = SConscript('x64/SConscript', exports='device env')
 
 # Godot (LibGodot) as the window system and 3D renderer: host_godot.cpp with godot-cpp
 # (GODOT_CPP=<godot-cpp checkout with bin/libgodot-cpp.*.a built for the libgodot used>). libgodot itself is
@@ -89,8 +121,9 @@ common_objs, avp2_objs, ph_objs = SConscript('x64/SConscript', exports='device e
 godot_objs = []
 godot_cpp = os.environ.get('GODOT_CPP', '/home/teemu/sorsa/godot-cpp')
 godot_lib = None
-if device == 'pc64-linux' and os.path.isdir(godot_cpp):
-    for name in ['libgodot-cpp.linux.template_release.x86_64.a', 'libgodot-cpp.linux.template_debug.x86_64.a']:
+godot_platform = 'macos' if device == 'pc64-macos' else 'linux'
+if device in ('pc64-linux', 'pc64-macos') and os.path.isdir(godot_cpp):
+    for name in ['libgodot-cpp.%s.template_release.x86_64.a' % godot_platform, 'libgodot-cpp.%s.template_debug.x86_64.a' % godot_platform]:
         if os.path.exists(os.path.join(godot_cpp, 'bin', name)):
             godot_lib = os.path.join(godot_cpp, 'bin', name)
             break
@@ -108,10 +141,37 @@ else:
 
 # two programs from the same runtime: Aliens versus Predator 2 and Primal Hunt (game_avp2.c / game_ph.c and
 # each game's recompiled modules)
-suffix = '-x64' if device == 'pc64-linux' else ''
-runtime_objs = [env.Object(f) for f in Glob('*.c') if not os.path.basename(str(f)).startswith('game_')]
-env.Program('SR-AvP2' + suffix, runtime_objs + [env.Object('game_avp2.c')] + common_objs + avp2_objs + godot_objs + dmusic_libs)
-if ph_objs:
-    env.Program('SR-AvP2PH' + suffix, runtime_objs + [env.Object('game_ph.c')] + common_objs + ph_objs + godot_objs + dmusic_libs)
+suffix = ('-x64-blob' if blob else '-x64') if device == 'pc64-linux' else ''
+def runtime_object(f):
+    # blob: the runtime's allocations below 2 GB (lowalloc.h) - not in the allocator itself, nor where the memory
+    # never reaches the game (rezfs/music: dmusic frees what it gets with the system's free; the mixer and Bink's
+    # decoder state)
+    if blob and os.path.basename(str(f)) not in ('Game-Memory.c', 'lowalloc.c', 'rezfs.c', 'music.c', 'mixer.c', 'bink.c'):
+        return env.Object(f, CCFLAGS = env['CCFLAGS'] + ['-include', 'lowalloc.h'])
+    return env.Object(f)
+runtime_objs = [runtime_object(f) for f in Glob('*.c') if not os.path.basename(str(f)).startswith('game_')]
+blob_files = []
+def recompiled(name, module_objs):
+    # the recompiled code: linked in, or (blob) its image next to the program and the generated link table
+    if not blob:
+        return common_asm_objs + module_objs
+    if blob_kit:
+        blob_files.append(env.InstallAs(name + '.blob', os.path.join(blob_kit, name + '.blob')))
+        return [env.Object('blob/blob_link_' + name + env['OBJSUFFIX'], os.path.join(blob_kit, 'blob_link_' + name + '.cpp'),
+                           CPPPATH = env['CPPPATH'] + ['#'])]
+    env['ENV']['PATH'] = os.environ.get('PATH', '')
+    mkblob = '#../../../SRW-games/Aliens versus Predator 2/tools/mkblob.py'
+    outs = env.Command(['blob/' + name + '.blob', 'blob/blob_link_' + name + '.cpp'], common_asm_objs + module_objs + ['asmsyms.h', mkblob],
+                       'python3 ${SOURCES[-1].abspath} --name ' + name + ' --asmsyms ${SOURCES[-2]} --out ${TARGET.dir} ' +
+                       ' '.join('${SOURCES[%d]}' % i for i in range(len(common_asm_objs + module_objs))))
+    blob_files.append(env.InstallAs(name + '.blob', outs[0]))
+    return [env.Object(outs[1], CPPPATH = env['CPPPATH'] + ['#'])]
+
+programs = env.Program('SR-AvP2' + suffix, runtime_objs + [env.Object('game_avp2.c')] + common_c_objs + recompiled('SR-AvP2' + suffix, avp2_objs) + godot_objs + dmusic_libs)
+if ph_objs or (blob_kit and os.path.exists(os.path.join(blob_kit, 'SR-AvP2PH' + suffix + '.blob'))):
+    programs += env.Program('SR-AvP2PH' + suffix, runtime_objs + [env.Object('game_ph.c')] + common_c_objs + recompiled('SR-AvP2PH' + suffix, ph_objs) + godot_objs + dmusic_libs)
 else:
     print('Primal Hunt modules (x64/ph-*) not generated: SR-AvP2PH not built')
+
+# the programs and their images (not every object SConscript declares: with a blob kit the assembler isn't needed)
+Default(programs, blob_files)

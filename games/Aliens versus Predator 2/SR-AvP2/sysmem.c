@@ -1,6 +1,6 @@
 /**
  *
- *  Host memory mappings visible to the game (below 2 GB): Linux (mmap) and Windows (VirtualAlloc).
+ *  Host memory mappings visible to the game (below 2 GB): POSIX (mmap: Linux, macOS) and Windows (VirtualAlloc).
  *
  */
 
@@ -50,6 +50,26 @@ void sys_protect_none(void *addr, size_t len)
     DWORD old;
     VirtualProtect(addr, len, PAGE_NOACCESS, &old);
 }
+
+void *sys_map_fixed(uintptr_t addr, size_t len)
+{
+    void *p = VirtualAlloc((void *) addr, len, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if ((p != NULL) && (p != (void *) addr))
+    {
+        VirtualFree(p, 0, MEM_RELEASE);
+        return NULL;
+    }
+    return p;
+}
+
+int sys_protect_exec(void *addr, size_t len)
+{
+    DWORD old;
+    return VirtualProtect(addr, len, PAGE_EXECUTE_READ, &old) != 0;
+}
+
+int sys_reserve_fixed(uintptr_t addr, size_t len) { return 0; }
+void sys_dump_low_map(void) {}
 
 static LONG CALLBACK crash_handler(PEXCEPTION_POINTERS info)
 {
@@ -108,9 +128,15 @@ void sys_install_crash_handler(void)
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #if defined(__x86_64__)
 #include <ucontext.h>
+#endif
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/mach_vm.h>
 #endif
 
 /* Stray reads (Linux, 64-bit build): the game sometimes reads a little outside its blocks (e.g. object.lto's
@@ -121,16 +147,28 @@ void sys_install_crash_handler(void)
 static struct sigaction old_segv;
 static volatile int stray_pages;
 
+#if defined(__APPLE__)
+// macOS: the page fault's error code and the instruction pointer; a page that is reserved but inaccessible
+// raises SIGBUS instead of SIGSEGV
+#define FAULT_ERR(uc) ((uc)->uc_mcontext->__es.__err)
+#define FAULT_RIP(uc) ((uc)->uc_mcontext->__ss.__rip)
+static struct sigaction old_bus;
+#else
+#define FAULT_ERR(uc) ((uc)->uc_mcontext.gregs[REG_ERR])
+#define FAULT_RIP(uc) ((uc)->uc_mcontext.gregs[REG_RIP])
+#endif
+
 static void segv_handler(int sig, siginfo_t *info, void *ctx)
 {
     ucontext_t *uc = (ucontext_t *) ctx;
     uintptr_t addr = (uintptr_t) info->si_addr;
-    int is_write = (uc->uc_mcontext.gregs[REG_ERR] & 2) != 0;
+    int is_write = (FAULT_ERR(uc) & 2) != 0;
 
     if (!is_write && (addr >= 0x10000) && (addr < 0x80000000u) && (stray_pages < 256))
     {
         void *page = (void *)(addr & ~(uintptr_t) 4095);
-        void *m = mmap(page, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+        void *m = sys_map_fixed((uintptr_t) page, 4096);
+        if (m == NULL) m = MAP_FAILED;
         if (m == page)
         {
             static const char hex[] = "0123456789abcdef";
@@ -140,7 +178,7 @@ static void segv_handler(int sig, siginfo_t *info, void *ctx)
             for (i = 7; i >= 0; i--) msg[n++] = hex[(addr >> (i * 4)) & 15];
             memcpy(msg + n, " (rip 0x", 8);
             n += 8;
-            for (i = 15; i >= 0; i--) msg[n++] = hex[((uint64_t) uc->uc_mcontext.gregs[REG_RIP] >> (i * 4)) & 15];
+            for (i = 15; i >= 0; i--) msg[n++] = hex[((uint64_t) FAULT_RIP(uc) >> (i * 4)) & 15];
             memcpy(msg + n, "): zeros\n", 9);
             n += 9;
             if (write(2, msg, n) < 0) { }
@@ -151,6 +189,9 @@ static void segv_handler(int sig, siginfo_t *info, void *ctx)
     }
     // a real crash: the previous handler (the default one: core dump)
     sigaction(SIGSEGV, &old_segv, NULL);
+#if defined(__APPLE__)
+    sigaction(SIGBUS, &old_bus, NULL);
+#endif
     (void) sig;
 }
 
@@ -162,6 +203,9 @@ void sys_install_crash_handler(void)
     sa.sa_flags = SA_SIGINFO | SA_NODEFER;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, &old_segv);
+#if defined(__APPLE__)
+    sigaction(SIGBUS, &sa, &old_bus);
+#endif
 }
 #else
 void sys_install_crash_handler(void)
@@ -214,6 +258,95 @@ void sys_unmap(void *addr, size_t len)
 void sys_protect_none(void *addr, size_t len)
 {
     mprotect(addr, len, PROT_NONE);
+}
+
+// ranges reserved by sys_reserve_fixed (mapped over by sys_map_fixed)
+static struct { uintptr_t addr; size_t len; } reserved[8];
+
+static int is_reserved(uintptr_t addr, size_t len)
+{
+    for (unsigned i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++)
+        if ((reserved[i].len != 0) && (addr >= reserved[i].addr) && (addr + len <= reserved[i].addr + reserved[i].len)) return 1;
+    return 0;
+}
+
+int sys_reserve_fixed(uintptr_t addr, size_t len)
+{
+#ifdef MAP_FIXED_NOREPLACE
+    void *p = mmap((void *) addr, len, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+#else
+    void *p = mmap((void *) addr, len, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+#endif
+    if (p == MAP_FAILED) return 0;
+    if (p != (void *) addr)
+    {
+        munmap(p, len);
+        return 0;
+    }
+    for (unsigned i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++)
+        if (reserved[i].len == 0)
+        {
+            reserved[i].addr = addr;
+            reserved[i].len = len;
+            return 1;
+        }
+    return 1;
+}
+
+void sys_dump_low_map(void)
+{
+#if defined(__linux__)
+    FILE *f = fopen("/proc/self/maps", "r");
+    char line[512];
+    if (f == NULL) return;
+    fprintf(stderr, "memory below 4 GB:\n");
+    while (fgets(line, sizeof(line), f) != NULL)
+        if (strtoull(line, NULL, 16) < 0x100000000ull) fprintf(stderr, "  %s", line);
+    fclose(f);
+#elif defined(__APPLE__)
+    mach_vm_address_t a = 0;
+    mach_vm_size_t size;
+    vm_region_basic_info_data_64_t info;
+    mach_msg_type_number_t count;
+    mach_port_t object_name;
+    fprintf(stderr, "memory below 4 GB:\n");
+    for (;;)
+    {
+        count = VM_REGION_BASIC_INFO_COUNT_64;
+        if (mach_vm_region(mach_task_self(), &a, &size, VM_REGION_BASIC_INFO_64, (vm_region_info_t) &info, &count, &object_name) != KERN_SUCCESS) break;
+        if (a >= 0x100000000ull) break;
+        fprintf(stderr, "  %08llx-%08llx prot %d\n", (unsigned long long) a, (unsigned long long) (a + size), info.protection);
+        a += size;
+    }
+#endif
+}
+
+void *sys_map_fixed(uintptr_t addr, size_t len)
+{
+    if (is_reserved(addr, len))
+    {
+        // ours: map over the reservation
+        void *r = mmap((void *) addr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+        return (r == (void *) addr) ? r : NULL;
+    }
+#ifdef MAP_FIXED_NOREPLACE
+    void *p = mmap((void *) addr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+#else
+    // macOS: no MAP_FIXED_NOREPLACE; a hint is taken when the range is free
+    void *p = mmap((void *) addr, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#endif
+    if (p == MAP_FAILED) return NULL;
+    if (p != (void *) addr)
+    {
+        munmap(p, len);
+        return NULL;
+    }
+    return p;
+}
+
+int sys_protect_exec(void *addr, size_t len)
+{
+    return mprotect(addr, len, PROT_READ | PROT_EXEC) == 0;
 }
 
 #ifdef __cplusplus
