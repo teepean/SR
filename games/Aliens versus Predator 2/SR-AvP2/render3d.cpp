@@ -306,6 +306,7 @@ struct godot_scene
     std::map<uint32_t, sprite_instance> polygrids;    // by object
     std::map<uint32_t, sprite_instance> canvases;     // by object
     std::map<uint64_t, Ref<ShaderMaterial>> sprite_materials;  // by texture and shader variant
+    std::map<uint64_t, Ref<ShaderMaterial>> env_materials;     // models' environment map passes (skin, kind, env texture)
     std::map<uint32_t, texture_entry> textures;     // by SharedTexture*
     uint32_t frame;
     int shown;
@@ -607,6 +608,7 @@ static void fog_init(void)
     rs->global_shader_parameter_add("lt_sky_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 2000, 0, 0));
     rs->global_shader_parameter_add("lt_misc", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 0, 0));     // LMFullBright
     rs->global_shader_parameter_add("lt_vfog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 1300, 0.5f));  // vertical fog
+    rs->global_shader_parameter_add("lt_env", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0.5f, 0, 0.5f, 0.5f));   // models' env map
     rs->global_shader_parameter_add("lt_vfog2", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 180, 255.0f / 1800.0f, 0));
     rs->global_shader_parameter_add("lt_scales", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(2, 2, 0, 0));    // light scales
     dl_image = Image::create_empty(DL_MAX, 2, false, Image::FORMAT_RGBAF);
@@ -682,6 +684,14 @@ static void post_update(uint32_t sd)
     gs->post->set_shader_parameter(p_scale, scale);
     gs->post->set_shader_parameter(p_add, add);
     gs->post->set_shader_parameter(p_invert, cv_invert ? 1.0f : 0.0f);
+    // the models' environment map: 1 / EnvScale / 2, the pan (EnvPanSpeed x the camera's x and z (LithTech's) + 1/2)
+    {
+        static const StringName p_env("lt_env");
+        Vector3 cp = gs->camera->get_transform().origin;
+        float es = cvar("EnvScale", 1.0f), pan = cvar("EnvPanSpeed", 0.0f);
+        if (fabsf(es) < 0.001f) es = 1.0f;
+        RenderingServer::get_singleton()->global_shader_parameter_set(p_env, Vector4(0.5f / es, 0, pan * cp.x + 0.5f, pan * -cp.z + 0.5f));
+    }
     // the picture: the scene rectangle (SceneDesc m_Rect, in the game's screen pixels; the 2D frame is stretched over
     // the window), with d3d.ren's projection - FovX across the rectangle's width and FovY across its height,
     // independently: the camera keeps FovY (KEEP_HEIGHT) and the viewport's aspect is tan(FovX/2) / tan(FovY/2), its
@@ -2039,6 +2049,53 @@ static void update_world_models(uint32_t mw)
 #define FLAG_ONLYLIGHTWORLD (1 << 5)
 #define FLAG_REALLYCLOSE (1 << 6)
 #define FLAG_NOLIGHT (1 << 9)
+#define FLAG_ENVIRONMENTMAP (1 << 5)    // models (sprites: FLAG_GLOWSPRITE)
+#define RS_ENVMAPTEXTURE 0x10c          // RenderStruct m_pEnvMapTexture: the "EnvMap" console command's (WorldTextures\Chrome.dtx)
+
+// A model's environment map pass (d3d.ren ModelDraw: with FLAG_ENVIRONMENTMAP, EnvMapEnable and the RenderStruct's
+// environment map, a pass before the model's own one: the map by the vertex normals in view space (u, v = normal . the
+// view's x, y rows / EnvScale / 2 + EnvPanSpeed x the camera's x, z + 1/2), modulated by the vertex colour, alpha
+// blended by the vertex alpha - Chrome.dtx's alpha is 0 everywhere). The model's pass covers it unless the model is translucent (a cloaked Predator: AIChameleon): so only
+// then. The normals here are the faces' (the skinned vertices have none); the model's own material is its next pass.
+static Ref<Shader> model_env_shader(void)
+{
+    static Ref<Shader> sh;
+    if (sh.is_valid()) return sh;
+    sh.instantiate();
+    sh->set_code("shader_type spatial;\n"
+                 "render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;\n"
+                 "uniform sampler2D env_tex : filter_linear_mipmap, repeat_enable;\n"
+                 "global uniform vec4 lt_env;\n"
+                 "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
+                 "void fragment() {\n"
+                 "  vec3 n = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));\n"
+                 "  if (n.z < 0.0) n = -n;\n"
+                 "  vec4 e = texture(env_tex, vec2(n.x * lt_env.x + lt_env.z, n.y * lt_env.x + lt_env.w));\n"
+                 "  ALBEDO = to_linear(clamp(e.rgb * COLOR.rgb, 0.0, 1.0));\n"
+                 "  ALPHA = COLOR.a;\n"
+                 "}\n");
+    return sh;
+}
+
+static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page, int links);
+
+// (EnvMapAll, d3d.ren's console variable: every model gets only the environment map pass)
+static Ref<Material> env_material(uint32_t skin, int kind, uint32_t env, int only = 0)
+{
+    uint64_t key = ((uint64_t)skin << 32) ^ ((uint64_t)env << 5) ^ (uint64_t)kind ^ (only ? 16 : 0);
+    auto it = gs->env_materials.find(key);
+    if (it != gs->env_materials.end()) return it->second;
+    Ref<ShaderMaterial> m;
+    m.instantiate();
+    m->set_shader(model_env_shader());
+    texture_entry &te = get_texture(env);
+    if (te.texture.is_valid()) m->set_shader_parameter("env_tex", te.texture);
+    if (!only) m->set_next_pass(get_material(skin, kind, -1, 0));
+    gs->env_materials[key] = m;
+    return m;
+}
+
+static uint64_t env_models;     // drawn with the environment map pass (AVP2_DEBUG statistics)
 #define FLAG2_ADDITIVE (1 << 2)
 #define FLAG2_DYNAMICDIRLIGHT (1 << 7)
 
@@ -2574,7 +2631,15 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
         if (ste.state.blend == 2) kind = MAT_ADD;
         else if ((ste.state.blend == 1) || (ste.state.blend == 3)) kind = MAT_BLEND;
         if (close) kind |= MAT_REALLYCLOSE;
-        parts.push_back({ &s[t], get_material(skin, kind, -1, 0) });
+        uint32_t env = (render_struct != NULL) ? g32(H2G(render_struct) + RS_ENVMAPTEXTURE) : 0;
+        int env_all = (cvar("EnvMapAll", 0) != 0.0f);
+        if ((env != 0) && get_texture(env).texture.is_valid() &&
+            (env_all || ((flags & FLAG_ENVIRONMENTMAP) && (alpha < 255) && (cvar("EnvMapEnable", 0) != 0.0f))))
+        {
+            parts.push_back({ &s[t], env_material(skin, kind, env, env_all) });
+            env_models++;
+        }
+        else parts.push_back({ &s[t], get_material(skin, kind, -1, 0) });
     }
     // the mesh's AABB isn't updated in place: the instance's
     AABB box = dyn_update(DYN_MODEL, mi.mesh, mi.dyn, parts);
@@ -3818,6 +3883,14 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     }
 
     preload_update();
+    if (winapi_debug && ((gs->frame % 1200) == 300) && (render_struct != NULL))
+    {
+        // (checking RenderStruct m_pEnvMapTexture +0x10c: the "EnvMap" console command's texture)
+        uint32_t et = g32(H2G(render_struct) + 0x10c), cl = et ? g32(et + 0x38) : 0;
+        texture_entry &e = get_texture(et);
+        eprintf("render3d: env map texture %08x %s %.0f x %.0f cmd \"%.40s\"\n", et, e.texture.is_valid() ? "ok" : "none", e.inv_w ? 1.0f / e.inv_w : 0.0f,
+                e.inv_h ? 1.0f / e.inv_h : 0.0f, ((cl > 0x10000) && (cl < 0x80000000u)) ? (const char *)G2H(cl) : "");
+    }
     if (winapi_debug && ((gs->frame % 1200) == 600))
     {
         static const char *const names[DYN_KINDS] = { "models", "particles", "lines", "poly grids", "canvases" };
@@ -3826,7 +3899,8 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         for (int k = 0; k < DYN_KINDS; k++)
             len += snprintf(text + len, sizeof(text) - len, "%s%s %llu/%llu", k ? ", " : "", names[k], (unsigned long long)dyn_stats.in_place[k],
                             (unsigned long long)dyn_stats.rebuilt[k]);
-        eprintf("render3d: dynamic meshes (updated in place / rebuilt): %s\n", text);
+        eprintf("render3d: dynamic meshes (updated in place / rebuilt): %s; environment mapped models %llu\n", text, (unsigned long long)env_models);
+        env_models = 0;
         memset(&dyn_stats, 0, sizeof(dyn_stats));
     }
     if (!gs->shown)

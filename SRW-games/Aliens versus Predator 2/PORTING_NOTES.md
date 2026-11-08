@@ -697,3 +697,13 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   shader picks / mixes the current frames from lt_anims (blend, on, frames, mix) and lights the shadow maps from
   lt_anim_lights (by pixel; d3d.ren by texel). No lightmap uploads while the level runs. m6s1, m7s1, m4_open, a3s1,
   A2s2, a7s1, p4s1 and exp1s1 run without errors; not compared with a reference.
+
+### 2026-11-08 — models' environment map pass
+- d3d.ren (ModelDraw, setupmodel): a model with FLAG_ENVIRONMENTMAP (bit 5; the cloaked Predators - AIChameleon - and
+  env-mapped Props), EnvMapEnable on (the game's "chrome" option) and RenderStruct's m_pEnvMapTexture (+0x10c: the game
+  runs "EnvMap WorldTextures\Chrome.dtx") gets a pass of that map before its own: u, v = the vertex normal in view
+  space . the view's x, y rows / EnvScale / 2 + EnvPanSpeed x the camera's x, z + 1/2, modulated by the vertex colour,
+  alpha blended by the vertex alpha (Chrome.dtx's alpha is 0 everywhere). The model's own pass covers it unless the
+  model is translucent - so we draw it for translucent ones only, as a material whose next pass is the model's
+  (faces' normals: the skinned vertices have none). EnvMapAll (console variable): every model, the map only - m1s1's
+  marines turn chrome with it, as expected. No cloaked Predator at a level start to compare.
