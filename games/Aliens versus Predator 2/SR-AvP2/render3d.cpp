@@ -1404,6 +1404,14 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
         uint32_t surface = g32(poly + WP_SURFACE);
         if (surface == 0) continue;
         uint32_t sflags = g32(surface + SF_FLAGS);
+        // debugging: AVP2_R3D_DUMPBSP=<name part> lists that BSP's polies
+        static const char *dump_bsp = getenv("AVP2_R3D_DUMPBSP");
+        if ((dump_bsp != NULL) && strstr((const char *)(uintptr_t)(bsp + WB_NAME), dump_bsp))
+        {
+            uint32_t pv = g32(poly + WP_PVERTICES), pn = (pv == poly + WP_VERTICES) ? g16(poly + WP_NVERTICES) : g16(poly + WP_NEXTRAVERTICES);
+            eprintf("render3d: bsp \"%.40s\" poly %u: surface flags %08x texture %08x verts %u (%08x, first point %08x)\n", (const char *)(uintptr_t)(bsp + WB_NAME), p, sflags,
+                    g32(surface + SF_TEXTURE), pn, pv, pv ? g32(pv + PV_VEC) : 0);
+        }
         if (sflags & (SURF_INVISIBLE | SURF_NONEXISTANT | SURF_SKY)) continue;
         if (sflags & SURF_SPRITEANIMATE) st.sprite_polies++;
         uint32_t tex = g32(surface + SF_TEXTURE);
@@ -1679,6 +1687,7 @@ static void update_world_models(uint32_t mw)
 #define FLAG_ONLYLIGHTWORLD (1 << 5)
 #define FLAG_REALLYCLOSE (1 << 6)
 #define FLAG_NOLIGHT (1 << 9)
+#define FLAG2_CHROMAKEY (1 << 1)
 #define FLAG2_ADDITIVE (1 << 2)
 #define FLAG2_DYNAMICDIRLIGHT (1 << 7)
 
@@ -1999,16 +2008,35 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
                     xf.origin.x, xf.origin.y, xf.origin.z);
         }
     }
+    // debugging: AVP2_R3D_DUMPMODEL=<file name part> logs those models when they are rebuilt (box in model space)
+    static const char *dump_model = getenv("AVP2_R3D_DUMPMODEL");
+    if ((dump_model != NULL) && g32(model + 4) && strstr((const char *)(uintptr_t)g32(model + 4), dump_model))
+    {
+        AABB box;
+        int first = 1, nv = 0;
+        for (int t = 0; t < 4; t++) for (int64_t i = 0; i < s[t].v.size(); i++) { if (first) box = AABB(s[t].v[i], Vector3()); else box.expand_to(s[t].v[i]); first = 0; nv++; }
+        eprintf("render3d: model %08x \"%s\" %d vertices, box %.1f %.1f %.1f - %.1f %.1f %.1f, at %.1f %.1f %.1f, camera %.1f %.1f %.1f, alpha %u flags %08x/%08x skins %08x %08x\n", o,
+                (const char *)(uintptr_t)g32(model + 4), nv, box.position.x, box.position.y, box.position.z, box.get_end().x, box.get_end().y, box.get_end().z,
+                xf.origin.x, xf.origin.y, xf.origin.z, cam.origin.x, cam.origin.y, cam.origin.z, alpha, flags, flags2, g32(o + MI_SKINS), g32(o + MI_SKINS + 4));
+        for (int t = 0; t < 4; t++)
+            if (!s[t].v.is_empty())
+            {
+                texture_entry &te = get_texture(g32(o + MI_SKINS + 4 * t));
+                eprintf("render3d:   skin %d: %08x %s has alpha %d, %lld vertices\n", t, g32(o + MI_SKINS + 4 * t), te.texture.is_null() ? "(no texture)" : "", te.has_alpha, (long long)s[t].v.size());
+            }
+    }
     mi.mesh->clear_surfaces();
     int nsurf = 0;
     for (int t = 0; t < 4; t++)
     {
         if (s[t].v.is_empty()) continue;
         uint32_t skin = g32(o + MI_SKINS + 4 * t);
+        // d3d.ren alpha tests a model only with FLAG2_CHROMAKEY (d3d_DrawChromaKeyModels: ALPHAFUNC GREATER); a
+        // solid model ignores its texture's alpha (a1s2's bursting chest skins have alpha and must be opaque)
         int kind = MAT_OPAQUE;
         if (flags2 & FLAG2_ADDITIVE) kind = MAT_ADD;
         else if (alpha < 255) kind = MAT_BLEND;
-        else if (get_texture(skin).has_alpha) kind = MAT_ALPHA_TEST;
+        else if ((flags2 & FLAG2_CHROMAKEY) && get_texture(skin).has_alpha) kind = MAT_ALPHA_TEST;
         if (close) kind |= MAT_REALLYCLOSE;
         Array arrays;
         arrays.resize(Mesh::ARRAY_MAX);

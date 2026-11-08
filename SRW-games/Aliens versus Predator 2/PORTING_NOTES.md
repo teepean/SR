@@ -441,3 +441,9 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   2x blend), so it is 2 x light x (texture + detail - 0.5). Adding the detail after the light blackened dark
   surfaces (m1s1's rock block side: 2.6 vs the reference's 7.1; now 7.4). m1s1's start view now matches the Wine
   reference within ~10% on the ground and the rock faces (mean and contrast).
+- Models are alpha tested only with FLAG2_CHROMAKEY (d3d.ren: d3d_DrawChromaKeyModels between
+  d3d_BeginChromaKeyPolyPass / End, ALPHAFUNC GREATER than the texture's AlphaRef); solid models ignore their
+  texture's alpha. a1s2 starts with the camera inside the "bursting_chest" models, whose skins have alpha: with
+  alpha testing they vanished and the nest showed; now the view matches the Wine reference (the chest's inside).
+- Debugging: AVP2_R3D_DUMPBSP=<name part> (a BSP's polies: surface flags, texture), AVP2_R3D_DUMPMODEL=<file name
+  part> (model rebuilds: box, skins, alpha).
