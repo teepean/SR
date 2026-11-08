@@ -1,0 +1,6 @@
+;;
+;;  Aliens versus Predator 2: procedures of the runtime that the recompiled code calls (external_procedures.sci)
+;;
+
+proc memcpy external
+proc memmove external

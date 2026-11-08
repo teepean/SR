@@ -104,6 +104,7 @@ struct ddata_struct {
     ubyte[] data;
     int datalen;
     string addr;
+    int addrofs; // daddr label[offset]
 }
 
 struct dataseg_struct {
@@ -4542,6 +4543,7 @@ public int main(string[] args)
                         dataseg_data[current_dataseg_numdata].data.length = numbytes;
                         dataseg_data[current_dataseg_numdata].datalen = numbytes;
                         dataseg_data[current_dataseg_numdata].addr = "";
+                    dataseg_data[current_dataseg_numdata].addrofs = 0;
 
                         dataseg_data[current_dataseg_numdata].data[0..$] = 0;
 
@@ -4644,6 +4646,7 @@ public int main(string[] args)
                 dataseg_data[current_dataseg_numdata].data.length = dbdup;
                 dataseg_data[current_dataseg_numdata].datalen = dbdup;
                 dataseg_data[current_dataseg_numdata].addr = "";
+                    dataseg_data[current_dataseg_numdata].addrofs = 0;
 
                 dataseg_data[current_dataseg_numdata].data[0..$] = value;
 
@@ -4760,6 +4763,7 @@ public int main(string[] args)
                     dataseg_data[current_dataseg_numdata].data = values;
                     dataseg_data[current_dataseg_numdata].datalen = to!int(values.length);
                     dataseg_data[current_dataseg_numdata].addr = "";
+                    dataseg_data[current_dataseg_numdata].addrofs = 0;
 
                     current_dataseg_numdata++;
                 }
@@ -4797,6 +4801,7 @@ public int main(string[] args)
             }
 
             string param;
+            int param_offset = 0;
             if (current_line.param1 in define_list)
             {
                 param = define_list[current_line.param1];
@@ -4804,6 +4809,21 @@ public int main(string[] args)
             else
             {
                 param = current_line.param1;
+            }
+
+            // daddr label[offset]: an address inside a data label's data
+            long param_position = param.indexOf('[');
+            if (param_position > 0 && param[$ - 1] == ']')
+            {
+                string displacement = param[cast(uint)param_position + 1 .. $ - 1].strip();
+                string param_base = param[0 .. cast(uint)param_position].strip();
+                if (!replace_defines_in_expr(displacement) || !calculate_expr_value(displacement))
+                {
+                    write_error("Wrong daddr offset: " ~ current_line.params);
+                    return 69;
+                }
+                param = param_base;
+                param_offset = cast(int)(to!long(displacement));
             }
 
             if (current_dataseg_numdata > 0 && !dataseg_data[current_dataseg_numdata - 1].isaddr)
@@ -4820,6 +4840,7 @@ public int main(string[] args)
             dataseg_data[current_dataseg_numdata].data.length = 0;
             dataseg_data[current_dataseg_numdata].datalen = 0;
             dataseg_data[current_dataseg_numdata].addr = param.idup;
+            dataseg_data[current_dataseg_numdata].addrofs = param_offset;
 
             current_dataseg_numdata++;
 
@@ -4894,6 +4915,7 @@ public int main(string[] args)
                 dataseg_data[current_dataseg_numdata].data.length = value;
                 dataseg_data[current_dataseg_numdata].datalen = value;
                 dataseg_data[current_dataseg_numdata].addr = "";
+                    dataseg_data[current_dataseg_numdata].addrofs = 0;
 
                 dataseg_data[current_dataseg_numdata].data[0..$] = 0;
 
@@ -4970,6 +4992,11 @@ public int main(string[] args)
                     stderr.writeln("Daddr not a proc nor a dlabel: " ~ data.addr);
                     return 82;
                 }
+                if (data.addrofs != 0 && data.addr !in dlabel_list)
+                {
+                    stderr.writeln("Daddr with an offset not a dlabel: " ~ data.addr);
+                    return 82;
+                }
             }
         }
     }
@@ -5037,11 +5064,18 @@ public int main(string[] args)
                     {
                         auto addrlabel = dlabel_list[dataseg.data[i].addr];
 
-                        dataseg_values ~= "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset) ~ ") to i32)";
+                        dataseg_values ~= "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + dataseg.data[i].addrofs) ~ ") to i32)";
                     }
                     else
                     {
-                        dataseg_values ~= "ptrtoint (i8* @" ~ dataseg.data[i].addr ~ " to i32)";
+                        if (dataseg.data[i].addrofs != 0)
+                        {
+                            dataseg_values ~= "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " @" ~ dataseg.data[i].addr ~ ", i32 " ~ to!string(dataseg.data[i].addrofs) ~ ") to i32)";
+                        }
+                        else
+                        {
+                            dataseg_values ~= "ptrtoint (i8* @" ~ dataseg.data[i].addr ~ " to i32)";
+                        }
                     }
                 }
             }
@@ -5361,11 +5395,18 @@ public int main(string[] args)
                     {
                         auto addrlabel = dlabel_list[dataseg.data[i].addr];
 
-                        store_value = "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset) ~ ") to i32)";
+                        store_value = "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + dataseg.data[i].addrofs) ~ ") to i32)";
                     }
                     else
                     {
-                        store_value = "ptrtoint (i8* @" ~ dataseg.data[i].addr ~ " to i32)";
+                        if (dataseg.data[i].addrofs != 0)
+                        {
+                            store_value = "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " @" ~ dataseg.data[i].addr ~ ", i32 " ~ to!string(dataseg.data[i].addrofs) ~ ") to i32)";
+                        }
+                        else
+                        {
+                            store_value = "ptrtoint (i8* @" ~ dataseg.data[i].addr ~ " to i32)";
+                        }
                     }
                 }
 

@@ -23,6 +23,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
 #include "SR_defs.h"
@@ -402,6 +403,9 @@ int SR_full_disassembly(void)
     region_data *region;
     replace_data *replace;
 #endif
+#if (OUTPUT_TYPE == OUT_LLASM)
+    unsigned int region_errors;
+#endif
 #if ((OUTPUT_TYPE == OUT_X86) || (OUTPUT_TYPE == OUT_LLASM) || (OUTPUT_TYPE == OUT_X64))
     Entry_region ER;
 #endif
@@ -503,6 +507,9 @@ int SR_full_disassembly(void)
 
 
     // process regions
+#if (OUTPUT_TYPE == OUT_LLASM)
+    region_errors = 0;
+#endif
     for (index = 0; index < num_sections; index++)
     {
         // process only code segments
@@ -519,6 +526,14 @@ int SR_full_disassembly(void)
             {
 #if (OUTPUT_TYPE == OUT_LLASM)
                 ret = SR_disassemble_region_llasm(index, region);
+                // SRW_LIST_ERRORS=1: report the error of every region (instructions llasm can't translate,
+                // regions that need flags from the code jumping to them - instruction_flags.sci) instead of
+                // stopping at the first one
+                if (((ret == 5) || (ret == 6) || (ret == 7)) && (getenv("SRW_LIST_ERRORS") != NULL))
+                {
+                    region_errors++;
+                    ret = 0;
+                }
 #elif (OUTPUT_TYPE == OUT_X64)
                 ret = SR_disassemble_region_x64(index, region);
 #endif
@@ -537,6 +552,14 @@ int SR_full_disassembly(void)
             }*/
         }
     }
+
+#if (OUTPUT_TYPE == OUT_LLASM)
+    if (region_errors)
+    {
+        fprintf(stderr, "Error: %u regions with errors\n", region_errors);
+        return 6;
+    }
+#endif
 #endif
 
     return 0;

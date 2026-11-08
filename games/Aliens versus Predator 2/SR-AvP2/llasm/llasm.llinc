@@ -1,0 +1,36 @@
+;;
+;;  Aliens versus Predator 2: the llasm version of the recompiled code (native arm64 macOS, any 64-bit target with
+;;  pointer offsets): flags, the CPU's emulated parts (SR/llasm-support)
+;;
+
+macro NOP
+endm
+
+define CF_SHIFT 0
+define PF_SHIFT 2
+define AF_SHIFT 4
+define ZF_SHIFT 6
+define SF_SHIFT 7
+define OF_SHIFT 11
+define IF_SHIFT 9
+define DF_SHIFT 10
+
+define CF 0x01
+define PF 0x04
+define AF 0x10
+define ZF 0x40
+define SF 0x80
+define OF 0x0800
+define IF 0x0200
+define DF 0x0400
+
+include llasm_cmps.llinc
+include llasm_divide.llinc
+include llasm_float.llinc
+include llasm_fs_mem.llinc
+include llasm_int.llinc
+include llasm_movmem.llinc
+include llasm_movs.llinc
+include llasm_pushx.llinc
+include llasm_scas.llinc
+include llasm_stos.llinc

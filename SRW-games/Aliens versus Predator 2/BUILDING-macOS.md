@@ -20,6 +20,9 @@ position independent and live above 4 GB, and Mach-O has no 32-bit absolute relo
 It is an x86-64 program: on Apple Silicon it runs through Rosetta 2. Godot renders with Vulkan through MoltenVK
 (Godot's Metal driver is only built for arm64).
 
+A native arm64 version is in progress (PORTING_NOTES.md, "native arm64"): the recompiled code already compiles to
+arm64 (SRW's llasm output with pointer offsets); its runtime side isn't done yet.
+
 ## What you need
 
 - Apple Silicon: Rosetta 2 - `softwareupdate --install-rosetta --agree-to-license`

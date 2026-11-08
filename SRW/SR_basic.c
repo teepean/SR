@@ -404,7 +404,12 @@ static void SR_apply_fixup_data_offset(fixup_data *item, void *data)
         }
         else
         {
+#if (OUTPUT_TYPE == OUT_LLASM)
+            // llasm: daddr label[offset]
+            sprintf(cbuf2, " %s[%i]", cbuf, (int)((section[item->tsec].start + item->tofs) - (section[sec].start + ofs)));
+#else
             sprintf(cbuf2, " (%s + (%i))", cbuf, (int)((section[item->tsec].start + item->tofs) - (section[sec].start + ofs)));
+#endif
         }
 
         if (item->type == FT_SELFREL)

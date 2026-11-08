@@ -24,6 +24,8 @@
 
 func x86_repe_cmpsb $
 func x86_repne_cmpsb $
+func x86_repe_cmpsd $
+func x86_repne_cmpsd $
 
 macro REPE_CMPSB
     call x86_repe_cmpsb $
@@ -31,4 +33,12 @@ endm
 
 macro REPNE_CMPSB
     call x86_repne_cmpsb $
+endm
+
+macro REPE_CMPSD
+    call x86_repe_cmpsd $
+endm
+
+macro REPNE_CMPSD
+    call x86_repne_cmpsd $
 endm

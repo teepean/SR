@@ -511,3 +511,34 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - AVP2_FRAMESTATS=1 also logs Godot's pipeline compilations (per second; while drawing = stutter) and each slow
   frame (> 25 ms in Godot or > 50 ms in the game) with its compilations; AVP2_DEBUG logs every shader made (" late"
   after the preload).
+
+### 2026-11-08 — native arm64 (Apple Silicon): the recompiled code through SRW's llasm output
+- Why: the macOS build runs the x86-64 code through Rosetta 2. A native arm64 program can't keep the game's memory
+  in the low 4 GB, so the 32-bit addresses become offsets from a base (`pointer_offset`) - SRW's llasm output with
+  llasm -ptrofs, as Septerra's arm64-darwin build. llasm turns it into LLVM IR, llc into any 64-bit target.
+- Done: all 8 modules (AvP2 and Primal Hunt: lithtech, cshell, server, object) translate (SRW 0 errors), go through
+  llasm (-m64 -ptrofs -pic) and compile with LLVM 23 to arm64 Mach-O objects (server 5 MB .. object 27 MB; llc
+  25-115 s, up to 8 GB) and to x86-64.
+  - SRW's llasm backend (the x64 one had them): jecxz; and/or/xor reg, <address>; test/or/and reg, reg when nothing
+    needs the flags (the jcc after it compares the register); rol/ror r8 (the existing helper); bt/bts [mem], reg;
+    test r8, r8h and cmp [mem], r8h; fld/fstp tword (FLD_TWORD/FSTP_TWORD: the runtime converts the 10 bytes at the
+    address); f2xm1 fclex fldl2e fldl2t fldpi fpatan fprem fprem1 frndint fscale fsincos ftst fxam (x87_*_void),
+    fldenv/fnstenv (the 28 bytes at the address); (rep) cmpsd (the flags from the last compared dwords, reloaded);
+    relocations to the image base (lea eax, [edi+0x400000]: the address itself, as the x64 output; crashed SRW);
+    stdcall import names (_AIL_3D_orientation@28 -> _AIL_3D_orientation_28: '@' isn't valid in LLVM); data
+    addresses inside a data label (daddr label[offset]; llasm extended to take it). SRW_LIST_ERRORS=1 reports every
+    region's error instead of stopping at the first. The x64 output is unchanged (server byte-identical).
+  - SR/llasm-support: the new x87 operations, 80-bit <-> double (checked against the x87: 2M doubles both ways and
+    1M 80-bit roundings identical), repe/repne cmpsd.
+  - SCI files in SRW-<module>/llasm/: instruction_replacements.sci (the fs:[0] compare in llasm's language, up to
+    the je target so that it's a label), instruction_flags.sci (~140-280 entries per module, tools/mkiflags.py):
+    llasm has no flags register, so a label whose code reads flags set before the jump to it (MSVC's
+    `jne L ... L: sbb eax, eax`, ~50-100 per module) needs the jumps to it (and the instruction falling into it) to
+    write them. After a call the flags come from the callee: MSVC's CRT _fload returns ZF, so its rets write ZF.
+  - Scripts: tools/build_srwll.sh (SRW with OUT_LLASM), gen_all_llasm.sh (-> SR-AvP2/llasm/<module>/, generated,
+    not committed), SR-AvP2/llasm/{llasm,macros,extern}.llinc.
+- Next (the runtime for llasm): bridges for the ~690 imports (the module objects call e.g. _CloseHandle as llasm
+  procedures taking the CPU state: a llasm backend for gen_imports.py), the x64 asm stubs (c2asm, music, time,
+  canvas, raw, fs memory) in llasm, game pointers through pointer_offset in the C runtime (ptr32_t, REG2PTR;
+  ~230 direct casts), the memory layout (lithtech.exe's image at offset 0x400000, the low allocator inside the
+  4 GB window). Built and tested first on Linux x86-64 with -ptrofs, then arm64 macOS.

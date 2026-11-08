@@ -84,3 +84,56 @@ EXTERNC uint32_t CCALL x86_repne_cmpsb(CPU)
     return srcvalue1 | (srcvalue2 << 8);
 }
 
+
+// the dword versions: the flags come from the last compared dwords, which the code after them reads (SRW)
+EXTERNC uint32_t CCALL x86_repe_cmpsd(CPU)
+{
+    int32_t dir;
+    uint32_t srcptr1, srcptr2, counter, srcvalue1, srcvalue2;
+
+    dir = (eflags & DF)?-4:4;
+    counter = ecx;
+    srcptr1 = esi;
+    srcptr2 = edi;
+
+    do {
+        srcvalue1 = *((uint32_t *)REG2PTR(srcptr1));
+        srcvalue2 = *((uint32_t *)REG2PTR(srcptr2));
+        srcptr1 += dir;
+        srcptr2 += dir;
+        counter--;
+        if (srcvalue1 != srcvalue2) break;
+    } while (counter != 0);
+
+    ecx = counter;
+    esi = srcptr1;
+    edi = srcptr2;
+
+    return srcvalue1;
+}
+
+EXTERNC uint32_t CCALL x86_repne_cmpsd(CPU)
+{
+    int32_t dir;
+    uint32_t srcptr1, srcptr2, counter, srcvalue1, srcvalue2;
+
+    dir = (eflags & DF)?-4:4;
+    counter = ecx;
+    srcptr1 = esi;
+    srcptr2 = edi;
+
+    do {
+        srcvalue1 = *((uint32_t *)REG2PTR(srcptr1));
+        srcvalue2 = *((uint32_t *)REG2PTR(srcptr2));
+        srcptr1 += dir;
+        srcptr2 += dir;
+        counter--;
+        if (srcvalue1 == srcvalue2) break;
+    } while (counter != 0);
+
+    ecx = counter;
+    esi = srcptr1;
+    edi = srcptr2;
+
+    return srcvalue1;
+}

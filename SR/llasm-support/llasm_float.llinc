@@ -121,6 +121,24 @@ funcv x87_fxch_st $, num
 
 funcv x87_fyl2x_void $
 
+funcv x87_f2xm1_void $
+funcv x87_fclex_void $
+funcv x87_fldl2e_void $
+funcv x87_fldl2t_void $
+funcv x87_fldpi_void $
+funcv x87_fpatan_void $
+funcv x87_fprem_void $
+funcv x87_fprem1_void $
+funcv x87_frndint_void $
+funcv x87_fscale_void $
+funcv x87_fsincos_void $
+funcv x87_ftst_void $
+funcv x87_fxam_void $
+funcv x87_fld_tword $, *src
+funcv x87_fstp_tword $, *dest
+funcv x87_fldenv_mem $, *state
+funcv x87_fnstenv_mem $, *state
+
 
 funcv x87_facos_void $
 funcv x87_fasin_void $
@@ -469,6 +487,74 @@ endm
 
 macro FYL2X_VOID
     call x87_fyl2x_void $
+endm
+
+macro F2XM1_VOID
+    call x87_f2xm1_void $
+endm
+
+macro FCLEX_VOID
+    call x87_fclex_void $
+endm
+
+macro FLDL2E_VOID
+    call x87_fldl2e_void $
+endm
+
+macro FLDL2T_VOID
+    call x87_fldl2t_void $
+endm
+
+macro FLDPI_VOID
+    call x87_fldpi_void $
+endm
+
+macro FPATAN_VOID
+    call x87_fpatan_void $
+endm
+
+macro FPREM_VOID
+    call x87_fprem_void $
+endm
+
+macro FPREM1_VOID
+    call x87_fprem1_void $
+endm
+
+macro FRNDINT_VOID
+    call x87_frndint_void $
+endm
+
+macro FSCALE_VOID
+    call x87_fscale_void $
+endm
+
+macro FSINCOS_VOID
+    call x87_fsincos_void $
+endm
+
+macro FTST_VOID
+    call x87_ftst_void $
+endm
+
+macro FXAM_VOID
+    call x87_fxam_void $
+endm
+
+macro FLD_TWORD src
+    call x87_fld_tword $, \src
+endm
+
+macro FSTP_TWORD dest
+    call x87_fstp_tword $, \dest
+endm
+
+macro FLDENV state
+    call x87_fldenv_mem $, \state
+endm
+
+macro FNSTENV state
+    call x87_fnstenv_mem $, \state
 endm
 
 

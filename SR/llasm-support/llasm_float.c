@@ -921,6 +921,259 @@ EXTERNC void CCALL x87_fyl2x_void(CPU)
     POP_REGS;
 }
 
+// 80-bit extended <-> double (byte by byte: the same on every host)
+static double x87_ext80_to_double(const uint8_t *src)
+{
+    uint64_t mantissa;
+    int index, exponent;
+    double result;
+
+    mantissa = 0;
+    for (index = 7; index >= 0; index--) mantissa = (mantissa << 8) | src[index];
+    exponent = src[8] | ((src[9] & 0x7f) << 8);
+
+    if (exponent == 0x7fff)
+    {
+        result = ((mantissa << 1) == 0) ? INFINITY : NAN;
+    }
+    else if ((exponent == 0) && (mantissa == 0))
+    {
+        result = 0.0;
+    }
+    else
+    {
+        result = ldexp((double)mantissa, exponent - 16383 - 63);
+    }
+
+    return (src[9] & 0x80) ? -result : result;
+}
+
+static void x87_double_to_ext80(double value, uint8_t *dest)
+{
+    uint64_t mantissa;
+    int index, exponent;
+    uint32_t sign_exponent;
+
+    sign_exponent = signbit(value) ? 0x8000 : 0;
+    if (isnan(value))
+    {
+        mantissa = UINT64_C(0xc000000000000000);
+        sign_exponent |= 0x7fff;
+    }
+    else if (isinf(value))
+    {
+        mantissa = UINT64_C(0x8000000000000000);
+        sign_exponent |= 0x7fff;
+    }
+    else if (value == 0)
+    {
+        mantissa = 0;
+    }
+    else
+    {
+        // fabs(value) = m * 2^exponent, m in [0.5, 1): m * 2^64 is the explicit-integer-bit mantissa (exact)
+        mantissa = (uint64_t)ldexp(frexp(fabs(value), &exponent), 64);
+        sign_exponent |= (uint32_t)(exponent - 1 + 16383);
+    }
+
+    for (index = 0; index < 8; index++) dest[index] = (uint8_t)(mantissa >> (8 * index));
+    dest[8] = (uint8_t)sign_exponent;
+    dest[9] = (uint8_t)(sign_exponent >> 8);
+}
+
+EXTERNC void CCALL x87_fld_tword(CPU, const uint8_t *src)
+{
+    double value;
+
+    value = x87_ext80_to_double(src);
+    PUSH_REGS;
+    ST0 = value;
+}
+
+EXTERNC void CCALL x87_fstp_tword(CPU, uint8_t *dest)
+{
+    x87_double_to_ext80(ST0, dest);
+    POP_REGS;
+}
+
+EXTERNC void CCALL x87_f2xm1_void(CPU)
+{
+    ST0 = exp2(ST0) - 1.0;
+    CLEAR_X87_FLAGS;
+}
+
+EXTERNC void CCALL x87_fclex_void(CPU)
+{
+    // the exception flags aren't kept
+}
+
+EXTERNC void CCALL x87_fldl2e_void(CPU)
+{
+    PUSH_REGS;
+    ST0 = M_LOG2E;
+}
+
+EXTERNC void CCALL x87_fldl2t_void(CPU)
+{
+    PUSH_REGS;
+    ST0 = 3.32192809488736234787; // log2(10)
+}
+
+EXTERNC void CCALL x87_fldpi_void(CPU)
+{
+    PUSH_REGS;
+    ST0 = M_PI;
+}
+
+// arctan(ST1 / ST0) in the right quadrant
+EXTERNC void CCALL x87_fpatan_void(CPU)
+{
+    ST1 = atan2(ST1, ST0);
+    POP_REGS;
+    CLEAR_X87_FLAGS;
+}
+
+// the quotient's low bits: C0 = Q2, C3 = Q1, C1 = Q0; C2 = 0: the reduction is complete
+static void x87_set_quotient_flags(CPU, uint32_t quotient)
+{
+    st_sw_cond = ((quotient & 4) ? X87_C0 : 0) | ((quotient & 2) ? X87_C3 : 0) | ((quotient & 1) ? X87_C1 : 0);
+}
+
+// partial remainder, truncating quotient (fmod)
+EXTERNC void CCALL x87_fprem_void(CPU)
+{
+    double remainder_value, quotient;
+
+    remainder_value = fmod(ST0, ST1);
+    quotient = trunc((ST0 - remainder_value) / ST1);
+    ST0 = remainder_value;
+    x87_set_quotient_flags(cpu, (uint32_t)(uint64_t)fmod(fabs(quotient), 8.0));
+}
+
+// IEEE remainder, quotient rounded to nearest
+EXTERNC void CCALL x87_fprem1_void(CPU)
+{
+    int quotient;
+
+    ST0 = remquo(ST0, ST1, &quotient);
+    x87_set_quotient_flags(cpu, (uint32_t)(quotient < 0 ? -quotient : quotient));
+}
+
+// round to an integer by the control word's rounding mode
+EXTERNC void CCALL x87_frndint_void(CPU)
+{
+    switch ((st_cw >> X87_RC_SHIFT) & 3)
+    {
+        case 0:
+            ST0 = nearbyint(ST0);
+            break;
+        case 1:
+            ST0 = floor(ST0);
+            break;
+        case 2:
+            ST0 = ceil(ST0);
+            break;
+        default:
+            ST0 = trunc(ST0);
+            break;
+    }
+    CLEAR_X87_FLAGS;
+}
+
+// ST0 * 2^trunc(ST1)
+EXTERNC void CCALL x87_fscale_void(CPU)
+{
+    double scale;
+
+    scale = trunc(ST1);
+    if (scale > 65536.0) scale = 65536.0;
+    else if (scale < -65536.0) scale = -65536.0;
+    ST0 = ldexp(ST0, (int)scale);
+    CLEAR_X87_FLAGS;
+}
+
+// ST0 = cos, ST1 = sin of the old ST0
+EXTERNC void CCALL x87_fsincos_void(CPU)
+{
+    double value;
+
+    value = ST0;
+    ST0 = sin(value);
+    PUSH_REGS;
+    ST0 = cos(value);
+    CLEAR_X87_FLAGS;
+}
+
+// compare ST0 with 0.0
+EXTERNC void CCALL x87_ftst_void(CPU)
+{
+    if (isnan(ST0))
+    {
+        st_sw_cond = X87_C0 | X87_C2 | X87_C3;
+    }
+    else
+    {
+        X87_CMP(ST0, const_0_0)
+    }
+}
+
+// classify ST0 (C3 C2 C0): NaN 001, normal 010, infinity 011, zero 100, denormal 110; C1 = sign
+// (the registers' tags aren't kept: never "empty")
+EXTERNC void CCALL x87_fxam_void(CPU)
+{
+    uint32_t cond;
+
+    switch (fpclassify(ST0))
+    {
+        case FP_NAN:
+            cond = X87_C0;
+            break;
+        case FP_INFINITE:
+            cond = X87_C2 | X87_C0;
+            break;
+        case FP_ZERO:
+            cond = X87_C3;
+            break;
+        case FP_SUBNORMAL:
+            cond = X87_C3 | X87_C2;
+            break;
+        default:
+            cond = X87_C2;
+            break;
+    }
+    if (signbit(ST0)) cond |= X87_C1;
+    st_sw_cond = cond;
+}
+
+// the 28-byte environment (32-bit protected mode): control, status, tag words, instruction and operand pointers
+EXTERNC void CCALL x87_fldenv_mem(CPU, const uint8_t *state)
+{
+    uint32_t sw;
+
+    st_cw = (state[0] | (state[1] << 8));
+    sw = (state[4] | (state[5] << 8));
+    st_top = (sw >> 11) & 7;
+    st_sw_cond = sw & X87_CX;
+}
+
+// also masks all the exceptions (as fnstenv does)
+EXTERNC void CCALL x87_fnstenv_mem(CPU, uint8_t *state)
+{
+    uint32_t sw;
+    int index;
+
+    sw = st_sw_cond | (st_top << 11);
+    for (index = 0; index < 28; index++) state[index] = 0;
+    state[0] = (uint8_t)st_cw;
+    state[1] = (uint8_t)(st_cw >> 8);
+    state[2] = state[3] = 0xff;
+    state[4] = (uint8_t)sw;
+    state[5] = (uint8_t)(sw >> 8);
+    state[6] = state[7] = 0xff;
+    state[8] = state[9] = state[10] = state[11] = 0xff; // tags: empty (not kept)
+    st_cw |= 0x3f;
+}
+
 
 // math functions
 

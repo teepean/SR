@@ -1203,6 +1203,24 @@ int SRW_LoadFile(const char *fname)
                 }
 #endif
 
+#if (OUTPUT_TYPE == OUT_LLASM)
+                // llasm (LLVM) names can't contain '@' (stdcall decorations: _AIL_3D_orientation@28 -> _AIL_3D_orientation_28)
+                if (strchr(ProcName, '@') != NULL)
+                {
+                    char *sanitized, *c;
+
+                    sanitized = strdup(ProcName);
+                    if (sanitized != NULL)
+                    {
+                        for (c = sanitized; *c; c++)
+                        {
+                            if (*c == '@') *c = '_';
+                        }
+                        ProcName = sanitized;
+                    }
+                }
+#endif
+
                 ProcAdrName = (char *) malloc(strlen(ProcName) + 6);
                 if (ProcAdrName == NULL)
                 {
