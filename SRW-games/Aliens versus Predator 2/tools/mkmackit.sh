@@ -11,7 +11,8 @@ if [ -z "$OUT" ]; then echo "usage: $0 <output directory>"; exit 1; fi
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
 cd "$RT"
-COMMON="$(ls x64/*.o)"
+# the Linux build's assembler objects (not the Windows build's *.w64.o in the same directory)
+COMMON="$(ls x64/*.o | grep -v '\.w64\.o$')"
 python3 "$HERE/mkblob.py" --name SR-AvP2 --asmsyms asmsyms.h --out "$OUT" $COMMON \
     x64/lithtech/lithtech.o x64/cshell/cshell.o x64/server/server.o x64/object/object.o
 if [ -e x64/ph-lithtech/lithtech.o ]; then
