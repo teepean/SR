@@ -11,7 +11,11 @@
  *  another intensity (0: stop) - and the transitions between them (when: immediately / beat / measure / grid /
  *  segment end; optionally a transition segment). The game changes the intensity with the action (ChangeIntensity).
  *  Segment ends come from dmusic's segment-end callback (on the mixer thread), which picks what follows.
- *  Secondary segments and motifs (no AvP2 control file uses them) are not played.
+ *  Secondary segments and motifs are not played, which changes nothing: no control file uses secondary segments,
+ *  and the motifs the game asks for (Music.txt's PlayerDeath / AIDeath events: PlayerDeathMotifA/B, AIDeathMotifA/B;
+ *  EventB's MotifB/C) are in no style of AvP2 or Primal Hunt, so the original plays nothing for them either. The
+ *  only motif there is (P1Ambient1.sty's DrumAccent, EventA) belongs to an event no level triggers; the events the
+ *  levels trigger are wave files (the game plays those as sounds).
  *
  *  The files come from the resource archives (rezfs.c). Without dmusic (HAVE_DMUSIC) the engine's manager stays.
  *

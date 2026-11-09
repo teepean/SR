@@ -1,0 +1,2 @@
+; byte patches applied to the copy SRW translates (tools/patch_pe.py, gen_all.sh / gen_all_llasm.sh)
+1000E7B7 3bca 3bc9 ; CFolderDisplay::GetRendererData: cmp ecx, edx -> cmp ecx, ecx - every display mode, not only those whose width = height * 4 / 3 (render.c lists wide ones; camera.c widens the view)

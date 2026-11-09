@@ -37,6 +37,8 @@ gen() {
     mkdir "$dir"
     cp "$SRWBIN" "$dir/SRW.exe"
     cp "$RETAIL/$orig" "$HERE/$sub/SR.cfg" "$I76/SRW/compact_source.py" "$I76/SRW/repair_short_jumps.py" "$dir/"
+    # byte patches (SRW-<module>/patches.txt) on the copy SRW translates
+    if [ -e "$HERE/$sub/patches.txt" ]; then python3 "$HERE/tools/patch_pe.py" "$dir/$orig" "$HERE/$sub/patches.txt" || exit 1; fi
     for f in relocations.csv bssborder.csv; do [ -e "$HERE/$sub/$f" ] && cp "$HERE/$sub/$f" "$dir/"; done
     for f in "$HERE/$sub/x64/"*.sci; do [ -e "$f" ] && cp "$f" "$dir/"; done
     (cd "$dir" && ./SRW.exe "$orig" "$mod.asm" > srw.out 2> srw.err; echo "$mod: SRW rc=$?"; grep -E "^Error|disassembly error" srw.err; python3 compact_source.py > /dev/null; python3 "$I76/fix_import_names.py" "$mod.asm" seg*.inc > /dev/null; [ -e "$HERE/$sub/exports.txt" ] && python3 "$HERE/tools/prefix_exports.py" "$mod" "$HERE/$sub/exports.txt" "$mod.asm" seg*.inc)

@@ -40,6 +40,8 @@ gen() {
     mkdir "$dir"
     cp "$SRWBIN" "$dir/SRW.exe"
     cp "$RETAIL/$orig" "$HERE/$sub/SR.cfg" "$dir/"
+    # byte patches (SRW-<module>/patches.txt) on the copy SRW translates
+    if [ -e "$HERE/$sub/patches.txt" ]; then python3 "$HERE/tools/patch_pe.py" "$dir/$orig" "$HERE/$sub/patches.txt" || exit 1; fi
     for f in relocations.csv bssborder.csv; do [ -e "$HERE/$sub/$f" ] && cp "$HERE/$sub/$f" "$dir/"; done
     for f in external_procedures fixup_interpret_as_code global_aliases ignored_areas; do
         [ -e "$HERE/$sub/x64/$f.sci" ] && cp "$HERE/$sub/x64/$f.sci" "$dir/"

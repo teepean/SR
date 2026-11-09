@@ -728,3 +728,41 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   SpecularEnable.
 - Uncapped (vsync 0) with the GPU otherwise idle: 300-2000 fps, the 3D view 0.1-0.6 ms of GPU; the game's own code
   (1-3 ms) is the limit. The earlier 5.6 ms GPU in a1s1 was the other GPU user.
+
+### 2026-11-09 — p3s2's black crates; music motifs
+- p3s2 against a Wine reference (wine_ref.sh now passes +windowed 1 itself): the crates on the starting lift were
+  black. Their polies are vertex lit with 79 light animation references (LightAnim_BASE and a LightGroup per light
+  group of the room); poly_vertex_light / poly_lightmap gave up above 64 and left the light at 0. d3d.ren has no such
+  limit (RelightWorldPolyVertices walks m_nLMAnimRefs): now up to 4096. AVP2_DEBUG's build line counts such polies:
+  only m1s2 (4656: its crates and buildings were black, now as in the reference) and p3s2 (1902) have them.
+  The level's two sprite-animated polies (SURF_SPRITEANIMATE) are far from the start and look right.
+- New debugging aids: AVP2_R3D_DUMPBSP="=name" (exact) / "*sprite" (sprite-animated polies) with each poly's
+  lightmap, layers, animation references and vertex light; AVP2_R3D_SKIP=<letters> (object types, frozen light
+  animations, no dynamic lights).
+- Music motifs: not needed. Music.txt's PlayerDeath / AIDeath events name PlayerDeathMotifA/B and AIDeathMotifA/B
+  (EventB MotifB/C), which no style of AvP2 or Primal Hunt has: the original plays nothing for them either. The only
+  motif in the styles (P1Ambient1.sty's DrumAccent, EventA) belongs to an event no level triggers; the events levels
+  trigger (Event2, Event9, EventM4S1A, ...) are wave files.
+
+### 2026-11-09 — wide resolutions in the menu; gl_compatibility; lightmap filter option
+- The Graphics page (CFolderDisplay::GetRendererData) listed only modes with width = height * 4 / 3. The test's
+  `cmp ecx, edx` becomes `cmp ecx, ecx` in the copy of cshell SRW translates (SRW-cshell/patches.txt,
+  SRW-ph-cshell/patches.txt; tools/patch_pe.py, applied by gen_all.sh and gen_all_llasm.sh - an
+  instruction_replacements.sci jump loses its target's label and, in llasm, the flags), and render.c lists 16:9,
+  16:10 and 21:9 modes besides the 4:3 ones. Tested with AVP2_INPUT_SCRIPT (+NoMovies 1 skips the intro): the page
+  steps 1152x864 -> 1280x720 -> 1280x800, and leaving it switched the game to 1280x800 (camera.c widens the view; the
+  menus keep their 640x480 layout, centred, as at any larger resolution).
+- gl_compatibility's nearly black 3D: its scene shader takes ALBEDO as sRGB (`albedo = srgb_to_linear(albedo)`) while
+  our shaders hand it linear values (to_linear of the D3D-style sRGB result): converted twice. Its conversions are
+  approximations (a cubic, then 1.055 x^(1/2.4) - 0.055) that also lose ~40% of the darkest colours, so there
+  to_linear solves for the value they turn back into the colour (3 Newton steps; CURRENT_RENDERER in the shaders).
+  The shaders that place depth themselves (the sky behind everything, really close objects in front) assumed
+  reverse z in 0..1; gl_compatibility has OpenGL's -1..1 (near 1, far -1): lt_depth01 / lt_depth_clip. m1s1 now
+  within 2% of Forward+ in gl_compatibility; mobile within 4% (it was "darker" only by comparison with older frames).
+- Options (enhancements, off by default): lightmap_filter = bicubic (a B-spline over 4x4 texels from 4 bilinear taps;
+  the lightmap blocks then get a 2-texel border, the light animations' block stride follows) - softer light
+  gradients, no seams in a1s1; debanding = 1 (Godot's dithering of the 8-bit output).
+- p3s2's blue streak + crate flash near the lift's top: a game event (in some runs only, in all builds, also with the
+  light animations forced), not the renderer. New debugging aids: AVP2_R3D_ANIMLOG, AVP2_R3D_ANIMON / ANIMOFF,
+  AVP2_R3D_DEBUGVIEW (light, vertex colour, light scales, lightmap, inputs).
+

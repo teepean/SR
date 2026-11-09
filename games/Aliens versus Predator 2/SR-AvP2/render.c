@@ -173,11 +173,15 @@ void CCALL RenderDLLSetup_c(uint8_t *pStruct)
 // the modes the options menu offers (32 and 16 bits; the screen is 32-bit either way). The device is named
 // like the original's DirectDraw primary device: the Graphics page lists only the modes whose internal name
 // is the CardDesc console variable ("display"), and with none listed it crashes on leaving the page.
-// (The page also drops the modes that aren't 4:3.)
+// 4:3 and wide ones (16:9, 16:10, 21:9): the page's own 4:3 filter (CFolderDisplay::GetRendererData) is patched
+// out of cshell (SRW-cshell / SRW-ph-cshell instruction_replacements.sci), and camera.c widens the view (Hor+).
 RMode32 * CCALL GetSupportedModes_c(void)
 {
     static const int sizes[][2] = { { 640, 480 }, { 800, 600 }, { 1024, 768 }, { 1152, 864 }, { 1280, 960 },
-                                    { 1400, 1050 }, { 1600, 1200 }, { 1920, 1440 }, { 2048, 1536 } };
+                                    { 1400, 1050 }, { 1600, 1200 }, { 1920, 1440 }, { 2048, 1536 },
+                                    { 1280, 720 }, { 1366, 768 }, { 1600, 900 }, { 1920, 1080 }, { 2560, 1440 }, { 3840, 2160 },
+                                    { 1280, 800 }, { 1440, 900 }, { 1680, 1050 }, { 1920, 1200 }, { 2560, 1600 },
+                                    { 2560, 1080 }, { 3440, 1440 } };
     RMode32 *head = NULL;
     int i, d;
 

@@ -42,6 +42,9 @@
  *  To do: model LODs and static lights for models.
  *
  *  Debugging: AVP2_R3D_FULLBRIGHT=1 (textures only), AVP2_R3D_LMSCALE / AVP2_R3D_VCSCALE (light scales),
+ *  AVP2_R3D_SKIP=<letters> (object types left out: w m s p l g c; a: frozen light animations, d: no dynamic lights),
+ *  AVP2_R3D_ANIMLOG=1 (light animations going on / off), AVP2_R3D_ANIMON / ANIMOFF=<index> (one forced on / off),
+ *  AVP2_R3D_DEBUGVIEW=light|color|scales|lightmap|inputs (a shader input as the colour),
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
  *  AVP2_DEBUG=2 (the objects, once), AVP2_R3D_DUMPSTATES=1 (the textures' state changes), AVP2_R3D_DUMPDETAIL=1
  *  (texture headers, detail / environment map links), AVP2_R3D_NOLINKS=1|2|3 (no links / no env maps / no detail).
@@ -336,11 +339,14 @@ static void viewport_settings(SubViewport *vp)
     const char *up = config_get("upscaler");
     for (const auto &u : upscalers)
         if ((up != NULL) && (strcasecmp(up, u.name) == 0)) vp->set_scaling_3d_mode(u.mode);
+    // debanding (an enhancement: dithers the 8-bit output, for smooth light gradients - lightmap_filter = bicubic)
+    if (config_get_int("debanding", 0)) vp->set_use_debanding(true);
     int aniso = config_get_int("anisotropy", 4);
     vp->set_anisotropic_filtering_level((aniso >= 16) ? Viewport::ANISOTROPY_16X : ((aniso >= 8) ? Viewport::ANISOTROPY_8X :
                                         ((aniso >= 4) ? Viewport::ANISOTROPY_4X : ((aniso >= 2) ? Viewport::ANISOTROPY_2X : Viewport::ANISOTROPY_DISABLED))));
     if (winapi_debug)
-        eprintf("render3d: 3D view: msaa %d, render scale %.2f (%s), anisotropy %d\n", msaa, (f < 0.25f) ? 0.25f : ((f > 2.0f) ? 2.0f : f), (up != NULL) ? up : "bilinear", aniso);
+        eprintf("render3d: 3D view: msaa %d, render scale %.2f (%s), anisotropy %d, debanding %d\n", msaa, (f < 0.25f) ? 0.25f : ((f > 2.0f) ? 2.0f : f), (up != NULL) ? up : "bilinear", aniso,
+                config_get_int("debanding", 0));
 }
 
 static int ready(void)
@@ -587,7 +593,39 @@ enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
     "  }\n" \
     "  return clamp(f, 0.0, lt_vfog2.y) / 255.0;\n" \
     "}\n"
-#define FOG_UNIFORMS "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n" VFOG_GLSL
+// depth in clip space, for the shaders that place things themselves (the sky behind everything, really close objects
+// in front): Forward+ and Mobile have reverse z in 0..1 (near 1, far 0); gl_compatibility reverse z in OpenGL's -1..1
+// (near 1, far -1: Projection::set_depth_correction without the remap). lt_depth01: clip z / w -> 0..1, lt_depth_clip
+// back
+#define DEPTH_GLSL \
+    "#if CURRENT_RENDERER == RENDERER_COMPATIBILITY\n" \
+    "float lt_depth01(float z) { return z * 0.5 + 0.5; }\nfloat lt_depth_clip(float d) { return d * 2.0 - 1.0; }\n" \
+    "#else\n" \
+    "float lt_depth01(float z) { return z; }\nfloat lt_depth_clip(float d) { return d; }\n" \
+    "#endif\n"
+// our colours are worked out as D3D does, in the stored (sRGB) values; ALBEDO takes them linear - except in
+// gl_compatibility, which takes ALBEDO as sRGB and converts it itself (scene.glsl: albedo = srgb_to_linear(albedo);
+// converted here as well, the picture was nearly black) and back for the framebuffer with approximations
+// (tonemap_inc.glsl: a cubic, then 1.055 x^(1/2.4) - 0.055) that lose 40% of the darkest colours: there ALBEDO is
+// the value those two turn back into the colour (Newton's method on the cubic)
+#define TO_LINEAR_GLSL \
+    "#if CURRENT_RENDERER == RENDERER_COMPATIBILITY\n" \
+    "vec3 to_linear(vec3 c) {\n" \
+    "  vec3 l = pow((clamp(c, 0.0, 1.0) + 0.055) / 1.055, vec3(2.4));\n" \
+    "  vec3 a = c;\n" \
+    "  for (int i = 0; i < 3; i++) {\n" \
+    "    vec3 f = a * (a * (a * 0.305306011 + 0.682171111) + 0.012522878) - l;\n" \
+    "    vec3 d = a * (a * 0.915918033 + 1.364342222) + 0.012522878;\n" \
+    "    a = max(a - f / d, vec3(0.0));\n" \
+    "  }\n" \
+    "  return a;\n" \
+    "}\n" \
+    "#else\n" \
+    "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n" \
+    "#endif\n"
+#define CLOSE_DEPTH_GLSL "  POSITION.z = POSITION.w * lt_depth_clip(0.9 + 0.1 * clamp(lt_depth01(POSITION.z / POSITION.w), 0.0, 1.0));\n"
+
+#define FOG_UNIFORMS DEPTH_GLSL "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n" VFOG_GLSL
 // the dynamic lights that light the world: a 32 x 2 float texture (position (Godot), radius; colour 0-255), count
 #define DL_MAX 32
 #define DL_UNIFORMS "global uniform sampler2D lt_lights;\nglobal uniform vec4 lt_light_count;\nglobal uniform sampler2D lt_anims;\nglobal uniform sampler2D lt_anim_lights;\n"
@@ -603,13 +641,15 @@ static Ref<ImageTexture> alight_texture;
 static Ref<ImageTexture> anim_texture;
 
 
+static int lm_bicubic(void);
+
 static void fog_init(void)
 {
     RenderingServer *rs = RenderingServer::get_singleton();
     rs->global_shader_parameter_add("lt_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 2000, 0));
     rs->global_shader_parameter_add("lt_fog_color", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(1, 1, 1, 1));
     rs->global_shader_parameter_add("lt_sky_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 2000, 0, 0));
-    rs->global_shader_parameter_add("lt_misc", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 0, 0));     // LMFullBright
+    rs->global_shader_parameter_add("lt_misc", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, (float)lm_bicubic(), 0, 0));     // LMFullBright, bicubic lightmaps
     rs->global_shader_parameter_add("lt_vfog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 1300, 0.5f));  // vertical fog
     rs->global_shader_parameter_add("lt_env", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0.5f, 0, 0.5f, 0.5f));   // models' env map
     rs->global_shader_parameter_add("lt_vfog2", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 180, 255.0f / 1800.0f, 0));
@@ -668,7 +708,7 @@ static void post_update(uint32_t sd)
         if (fb != cv_fullbright)
         {
             cv_fullbright = fb;
-            RenderingServer::get_singleton()->global_shader_parameter_set("lt_misc", Vector4((float)fb, 0, 0, 0));
+            RenderingServer::get_singleton()->global_shader_parameter_set("lt_misc", Vector4((float)fb, (float)lm_bicubic(), 0, 0));
         }
     }
     // the light scale: the picture times the scale (DESTCOLOR x SRCCOLOR with the scale x 127.5), or the inverted
@@ -768,7 +808,7 @@ static const char *shader_code(int kind)
             "uniform float env_scale = 1.0;\n"
             "uniform float model = 0.0;\n"
             "global uniform vec4 lt_scales;\n" FOG_UNIFORMS DL_UNIFORMS STATE_UNIFORMS
-            "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
+            TO_LINEAR_GLSL
             "varying vec4 v_anim;\nvarying vec4 v_lm;\nvarying vec3 v_c0;\nvarying vec3 v_c1;\nvarying float v_vfog;\n";
         c += "void vertex() {\n";
         if (!(kind & MAT_SKY)) c += "  v_anim = CUSTOM0;\n  v_lm = CUSTOM1;\n  v_c0 = CUSTOM2.rgb;\n  v_c1 = CUSTOM3.rgb;\n";
@@ -777,11 +817,11 @@ static const char *shader_code(int kind)
         // reverse z (near 1, far 0): the really close objects get [0.9, 1]
         if (kind & MAT_REALLYCLOSE)
             c += "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
-                 "  POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n";
+                 CLOSE_DEPTH_GLSL;
         // the sky: just in front of the far plane (0), behind any world geometry (near / far >= 1 / 30000)
         if (kind & MAT_SKY)
             c += "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
-                 "  POSITION.z = POSITION.w * 1e-7;\n";
+                 "  POSITION.z = POSITION.w * lt_depth_clip(1e-7);\n";
         c += "}\n";
         // a detail texture (d3d.ren's second stage: ADDSIGNED, or MODULATE without DetailTextureAdd) on the texture,
         // before the light: d3d.ren draws the light first (the lightmap, or a vertex lit poly's gouraud colour) and
@@ -790,6 +830,25 @@ static const char *shader_code(int kind)
         // use_detail 1: a detail texture; 2, 3: an environment map (d3d_CalcEnvMapUV: the view direction reflected
         // by the poly's plane, in LithTech's coordinates; on the texture ADDSIGNED or MODULATE, or by the texture's
         // alpha: MODULATEALPHA_ADDCOLOR)
+        // the lightmap's filter (lt_misc.y: bicubic, a B-spline from 4 bilinear taps; lightmap_filter)
+        c += "vec4 lt_cubic(float v) {\n"
+             "  vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;\n  vec4 s = n * n * n;\n"
+             "  float x = s.x, y = s.y - 4.0 * s.x, z = s.z - 4.0 * s.y + 6.0 * s.x;\n"
+             "  return vec4(x, y, z, 6.0 - x - y - z) * (1.0 / 6.0);\n"
+             "}\n"
+             "vec3 lt_lightmap(vec2 uv) {\n"
+             "  if (lt_misc.y < 0.5) return texture(lightmap, uv).rgb;\n"
+             "  vec2 size = vec2(textureSize(lightmap, 0));\n"
+             "  vec2 p = uv * size - 0.5;\n  vec2 f = fract(p);\n  p -= f;\n"
+             "  vec4 xc = lt_cubic(f.x), yc = lt_cubic(f.y);\n"
+             "  vec4 c = p.xxyy + vec2(-0.5, 1.5).xyxy;\n"
+             "  vec4 s = vec4(xc.xz + xc.yw, yc.xz + yc.yw);\n"
+             "  vec4 o = (c + vec4(xc.yw, yc.yw) / s) / size.xxyy;\n"
+             "  vec3 s0 = texture(lightmap, o.xz).rgb, s1 = texture(lightmap, o.yz).rgb;\n"
+             "  vec3 s2 = texture(lightmap, o.xw).rgb, s3 = texture(lightmap, o.yw).rgb;\n"
+             "  float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);\n"
+             "  return mix(mix(s3, s2, sx), mix(s1, s0, sx), sy);\n"
+             "}\n";
         c += "void fragment() {\n"
             "  vec4 t = texture(albedo, UV);\n"
             "  vec3 dt = vec3(0.5);\n"
@@ -812,7 +871,7 @@ static const char *shader_code(int kind)
             // layers are next to the base in the page, the first one that's on is taken as is unless it comes after
             // a base layer, the others are scaled by their blend; vertex lit polies add their layers that are on
             c += "  if (use_lightmap > 0.5) {\n"
-                 "    light = texture(lightmap, UV2).rgb;\n"
+                 "    light = lt_lightmap(UV2);\n"
                  "    bool first = v_lm.z < 0.5;\n"
                  "    int after = int(v_lm.y + 0.5);\n"
                  "    for (int k = 0; k < 4; k++) {\n"
@@ -828,8 +887,8 @@ static const char *shader_code(int kind)
                  "      first = false;\n"
                  "      int fr = (lk == 0) ? 0 : int(st.z + 0.5);\n"
                  "      int f0 = fr / 256, f1 = fr % 256;\n"
-                 "      vec3 c = texture(lightmap, UV2 + vec2(v_lm.x * float(1 + b0 + f0), 0.0)).rgb;\n"
-                 "      if ((f1 != f0) && (st.w > 0.0)) c = mix(c, texture(lightmap, UV2 + vec2(v_lm.x * float(1 + b0 + f1), 0.0)).rgb, st.w);\n"
+                 "      vec3 c = lt_lightmap(UV2 + vec2(v_lm.x * float(1 + b0 + f0), 0.0));\n"
+                 "      if ((f1 != f0) && (st.w > 0.0)) c = mix(c, lt_lightmap(UV2 + vec2(v_lm.x * float(1 + b0 + f1), 0.0)), st.w);\n"
                  // a shadow map: the coverage times the animation's point light (d3d.ren BuildShadowMappedLightAnimTexels:
                  // the falloff table (1 - d^2 / r^2) in 64 steps x LightSaturate, the colour as (2c - 255))
                  "      if (lk == 2) {\n"
@@ -898,6 +957,15 @@ static const char *shader_code(int kind)
         // lit texture, the skin's UVs x ModelDetailTextureScale)
         c += "  if (use_detail > 3.5) col = clamp(col + texture(detail_tex, vec2(dot(detail_m.xy, UV), dot(detail_m.zw, UV))).rgb - 0.5, 0.0, 1.0);\n";
         if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  col = t.rgb;\n";
+        // debugging: AVP2_R3D_DEBUGVIEW=light|color|scales|lightmap shows that instead of the surface
+        if (const char *dv = getenv("AVP2_R3D_DEBUGVIEW"))
+        {
+            if (strcmp(dv, "light") == 0) c += "  col = clamp(light * 0.5, 0.0, 1.0);\n";
+            else if (strcmp(dv, "color") == 0) c += "  col = COLOR.rgb;\n";
+            else if (strcmp(dv, "scales") == 0) c += "  col = clamp(lt_scales.xyz * 0.5, 0.0, 1.0);\n";
+            else if ((strcmp(dv, "inputs") == 0) && !(kind & MAT_SKY)) c += "  col = vec3(use_lightmap, v_lm.z, COLOR.r);\n";
+            else if ((strcmp(dv, "lightmap") == 0) && !(kind & MAT_SKY)) c += "  col = (use_lightmap > 0.5) ? texture(lightmap, UV2).rgb : vec3(1.0, 0.0, 1.0);\n";
+        }
         // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
         // surfaces fade to black)
         c += (kind & MAT_SKY) ? "  float f = lt_fog.x * clamp((-VERTEX.z - lt_sky_fog.x) / max(lt_sky_fog.y - lt_sky_fog.x, 0.001), 0.0, 1.0);\n"
@@ -1247,12 +1315,27 @@ static int decompress_lm(uint32_t in, uint32_t len, uint32_t *out, uint32_t max)
     return 1;
 }
 
-// places w x h texels (with a one texel border) in a lightmap page: returns the page, (x, y) of the inside
-// places n blocks of w x h texels side by side (each with a one texel border) in a lightmap page: returns the
-// page, (x, y) of the first block's inside (block k is (w + 2) * k texels to the right)
+// SR-AvP2.cfg lightmap_filter: bilinear (d3d.ren's, default) or bicubic (an enhancement: a B-spline over 4x4
+// texels, smoother light; the blocks then get a two texel border, the filter's reach)
+static int lm_bicubic(void)
+{
+    static int v = -1;
+    if (v < 0)
+    {
+        const char *f = config_get("lightmap_filter");
+        v = (f != NULL) && (strcasecmp(f, "bicubic") == 0);
+        if (winapi_debug && v) eprintf("render3d: lightmaps filtered bicubic\n");
+    }
+    return v;
+}
+static int lm_pad(void) { return lm_bicubic() ? 2 : 1; }
+
+// places n blocks of w x h texels side by side (each with a border of lm_pad() texels, copies of the edge) in a
+// lightmap page: returns the page, (x, y) of the first block's inside (block k is (w + 2 pad) * k texels to the right)
 static int lm_place(const uint32_t *const *blocks, int n, int w, int h, int *ox, int *oy)
 {
-    int bw = (w + 2) * n, bh = h + 2;
+    int pad = lm_pad();
+    int bw = (w + 2 * pad) * n, bh = h + 2 * pad;
     lm_page *pg = wm->pages.empty() ? NULL : &wm->pages.back();
     if (pg != NULL)
     {
@@ -1270,19 +1353,19 @@ static int lm_place(const uint32_t *const *blocks, int n, int w, int h, int *ox,
     for (int k = 0; k < n; k++)
     {
         const uint32_t *texels = blocks[k];
-        for (int y = -1; y <= h; y++)
+        for (int y = -pad; y < h + pad; y++)
         {
             int sy = (y < 0) ? 0 : ((y >= h) ? h - 1 : y);
-            uint32_t *row = &pg->px[(size_t)(pg->y + 1 + y) * pg->size + pg->x + (w + 2) * k + 1];
-            for (int x = -1; x <= w; x++)
+            uint32_t *row = &pg->px[(size_t)(pg->y + pad + y) * pg->size + pg->x + (w + 2 * pad) * k + pad];
+            for (int x = -pad; x < w + pad; x++)
             {
                 int sx = (x < 0) ? 0 : ((x >= w) ? w - 1 : x);
                 row[x] = texels[sy * w + sx];
             }
         }
     }
-    *ox = pg->x + 1;
-    *oy = pg->y + 1;
+    *ox = pg->x + pad;
+    *oy = pg->y + pad;
     pg->x += bw;
     if (bh > pg->row_h) pg->row_h = bh;
     return (int)wm->pages.size() - 1;
@@ -1469,9 +1552,9 @@ static int poly_lightmap(uint32_t mw, uint32_t poly, uint32_t *texels, uint32_t 
     int n = *w * *h;
     if ((n == 0) || (n > 0x400)) return 0;
     uint32_t refs = g32(poly + WP_LMANIMREFS), nrefs = g32(poly + WP_NLMANIMREFS);
-    if ((refs == 0) || (nrefs == 0) || (nrefs > 64)) return 0;
+    if ((refs == 0) || (nrefs == 0) || (nrefs > 4096)) return 0;
     memset(texels, 0, (size_t)n * 4);
-    int max_blocks = LM_PAGE_SIZE / (*w + 2) - 1;
+    int max_blocks = LM_PAGE_SIZE / (*w + 2 * lm_pad()) - 1;
     if (max_blocks > MAX_BLOCKS) max_blocks = MAX_BLOCKS;
     int on = 0;     // layers that are on, in order (the first is taken as is)
     for (uint32_t r = 0; r < nrefs; r++)
@@ -1528,7 +1611,7 @@ static void poly_vertex_light(uint32_t mw, uint32_t poly, uint32_t n, uint8_t (*
     pl->after_base = 0;
     pl->has_base = 0;
     uint32_t refs = g32(poly + WP_LMANIMREFS), nrefs = g32(poly + WP_NLMANIMREFS);
-    if ((refs == 0) || (nrefs > 64)) return;
+    if ((refs == 0) || (nrefs > 4096)) return;
     for (uint32_t r = 0; r < nrefs; r++)
     {
         uint32_t ia, anim, lf = anim_any_frame(mw, refs + 4 * r, &ia);
@@ -1579,11 +1662,23 @@ static void update_anims(uint32_t mw)
         float blend = gf(la + LA_BLEND);
         uint32_t f0 = g32(la + LA_IFRAMES), f1 = g32(la + LA_IFRAMES + 4), nf = g8(la + LA_NFRAMES);
         float on = ((f0 != 0xffffffffu) && (blend >= 0.02f)) ? 1.0f : 0.0f;
+        // debugging: AVP2_R3D_ANIMOFF / AVP2_R3D_ANIMON=<index> forces one animation off / on
+        static const int force_off = getenv("AVP2_R3D_ANIMOFF") ? atoi(getenv("AVP2_R3D_ANIMOFF")) : -1;
+        static const int force_on = getenv("AVP2_R3D_ANIMON") ? atoi(getenv("AVP2_R3D_ANIMON")) : -1;
+        if ((int)a == force_off) on = 0.0f;
+        if ((int)a == force_on) { on = 1.0f; if (blend < 0.02f) blend = 1.0f; }
         if (f0 >= nf) f0 = 0;
         if ((f1 >= nf) || (f1 > 255)) f1 = f0;
         uint32_t pct = g32(la + LA_PERCENT);
         float st[4] = { blend, on, (float)(f0 * 256 + f1), (float)((pct > 255) ? 255 : pct) / 255.0f };
         float *cur = &anim_state[(size_t)a * 11];
+        // debugging: AVP2_R3D_ANIMLOG=1 logs the animations that go on or off (after the first frame)
+        static const int animlog = getenv("AVP2_R3D_ANIMLOG") != NULL;
+        if (animlog && (cur[1] != st[1]) && ((cur[1] >= 0.0f) || (st[1] > 0.5f)))
+            eprintf("render3d: frame %u light animation %u \"%.32s\" %s: frames %u (%d/%d) blend %.2f%s colour %.0f %.0f %.0f at %.0f %.0f %.0f radius %.0f\n", gs->frame, a,
+                    (const char *)G2H(la), (st[1] > 0.5f) ? "on" : "off", nf, (int)g32(la + LA_IFRAMES), (int)g32(la + LA_IFRAMES + 4), blend,
+                    g32(la + LA_SHADOWMAP) ? " shadow map" : "", gf(la + LA_LIGHTCOLOR), gf(la + LA_LIGHTCOLOR + 4), gf(la + LA_LIGHTCOLOR + 8),
+                    gf(la + LA_LIGHTPOS), gf(la + LA_LIGHTPOS + 4), gf(la + LA_LIGHTPOS + 8), gf(la + LA_LIGHTRADIUS));
         if ((cur[0] != st[0]) || (cur[1] != st[1]) || (cur[2] != st[2]) || (cur[3] != st[3]))
         {
             memcpy(cur, st, sizeof(st));
@@ -1722,6 +1817,7 @@ struct build_stats
     uint32_t polies, tris, lightmapped;
     uint32_t sprite_polies = 0;     // SURF_SPRITEANIMATE
     uint32_t alpha_main = 0, alpha_wm = 0;      // alpha tested (the texture has alpha): the main world's, world models'
+    uint32_t many_refs = 0;         // polies with more than 64 light animation references
     int main_world = 0;             // add_bsp: the main world's (or terrain's) BSP
 };
 
@@ -1768,15 +1864,21 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
         if (surface == 0) continue;
         uint32_t sflags = g32(surface + SF_FLAGS);
         // debugging: AVP2_R3D_DUMPBSP=<name part> lists that BSP's polies
+        // ("=name": that name exactly; "*sprite": every BSP's sprite-animated polies)
         static const char *dump_bsp = getenv("AVP2_R3D_DUMPBSP");
-        if ((dump_bsp != NULL) && strstr((const char *)G2H(bsp + WB_NAME), dump_bsp))
+        int dump_this = (dump_bsp != NULL) && ((dump_bsp[0] == '=') ? (strcmp((const char *)G2H(bsp + WB_NAME), dump_bsp + 1) == 0)
+                                               : (strcmp(dump_bsp, "*sprite") == 0) ? ((sflags & SURF_SPRITEANIMATE) != 0)
+                                               : (strstr((const char *)G2H(bsp + WB_NAME), dump_bsp) != NULL));
+        if (dump_this)
         {
             uint32_t pv = g32(poly + WP_PVERTICES), pn = (pv == poly + WP_VERTICES) ? g16(poly + WP_NVERTICES) : g16(poly + WP_NEXTRAVERTICES);
-            eprintf("render3d: bsp \"%.40s\" poly %u: surface flags %08x texture %08x verts %u (%08x, first point %08x)\n", (const char *)G2H(bsp + WB_NAME), p, sflags,
-                    g32(surface + SF_TEXTURE), pn, pv, pv ? g32(pv + PV_VEC) : 0);
+            uint32_t pt0 = pv ? g32(pv + PV_VEC) : 0;
+            eprintf("render3d: bsp \"%.40s\" poly %u: surface %08x flags %08x texture %08x verts %u (%08x, first point %08x: %.0f %.0f %.0f)\n", (const char *)G2H(bsp + WB_NAME), p,
+                    surface, sflags, g32(surface + SF_TEXTURE), pn, pv, pt0, pt0 ? gf(pt0) : 0.0f, pt0 ? gf(pt0 + 4) : 0.0f, pt0 ? gf(pt0 + 8) : 0.0f);
         }
         if (sflags & (SURF_INVISIBLE | SURF_NONEXISTANT | SURF_SKY)) continue;
         if (sflags & SURF_SPRITEANIMATE) st.sprite_polies++;
+        if (g32(poly + WP_NLMANIMREFS) > 64) st.many_refs++;
         uint32_t tex = g32(surface + SF_TEXTURE);
         uint32_t verts = g32(poly + WP_PVERTICES);
         // the poly's own vertices, or a reallocated list of m_nExtraVertices (the poly grew)
@@ -1834,7 +1936,20 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
             if (sflags & (SURF_BRIGHT | SURF_LIGHTMAP)) pl.n = 0;
             else poly_vertex_light(mw, poly, n, vlight, vlayers, &pl);
         }
-        float lc0[4] = { 0, 0, 0, 0 }, lc1[4] = { (float)(lw + 2) / LM_PAGE_SIZE, (float)pl.after_base, (float)pl.has_base, 0 };
+        if (dump_this)
+        {
+            uint32_t refs = g32(poly + WP_LMANIMREFS), nrefs = g32(poly + WP_NLMANIMREFS);
+            eprintf("render3d:   lightmap %ux%u page %d layers %d (blocks %d) base %d, %u animation refs, vertex 0 light %u %u %u\n", g8(poly + WP_LMWIDTH), g8(poly + WP_LMHEIGHT),
+                    page, pl.n, pl.nblocks, pl.has_base, nrefs, vlight[0][0], vlight[0][1], vlight[0][2]);
+            for (uint32_t r = 0; (r < nrefs) && (r < 8) && refs; r++)
+            {
+                uint32_t ia = g16(refs + 4 * r), anim = g32(mw + MW_LIGHTANIMS + 4) + ia * LA_SIZE;
+                if (ia >= g32(mw + MW_LIGHTANIMS + 8)) continue;
+                eprintf("render3d:     anim %u \"%.32s\" frames %u frame %d/%d blend %.2f shadow %u\n", ia, (const char *)G2H(anim), g8(anim + LA_NFRAMES),
+                        (int)g32(anim + LA_IFRAMES), (int)g32(anim + LA_IFRAMES + 4), gf(anim + LA_BLEND), g32(anim + LA_SHADOWMAP));
+            }
+        }
+        float lc0[4] = { 0, 0, 0, 0 }, lc1[4] = { (float)(lw + 2 * lm_pad()) / LM_PAGE_SIZE, (float)pl.after_base, (float)pl.has_base, 0 };
         for (int k = 0; k < pl.n; k++)
             lc0[k] = (float)(pl.anim[k] + 1) + ((page >= 0) ? 8192.0f * (float)pl.start[k] + 524288.0f * (float)pl.kind[k] : 0.0f);
         for (k = 1; k + 1 < n; k++)
@@ -1982,8 +2097,8 @@ static void build_world(world_context *ctx)
         for (auto &b : kv.second) keys.push_back(b.first);    // the surfaces' materials, in their order
     }
     ctx->built = 1;
-    if (winapi_debug) eprintf("render3d: built %u polies (%u lightmapped, %zu lightmap pages, %u sprite-animated, alpha tested: %u main world, %u world models), %u triangles, %zu static batches, %zu world model meshes, %zu textures\n",
-                              st.polies, st.lightmapped, wm->pages.size(), st.sprite_polies, st.alpha_main, st.alpha_wm, st.tris, batches.size(), gs->bsp_meshes.size(), gs->textures.size());
+    if (winapi_debug) eprintf("render3d: built %u polies (%u lightmapped, %zu lightmap pages, %u sprite-animated, %u with over 64 light animations, alpha tested: %u main world, %u world models), %u triangles, %zu static batches, %zu world model meshes, %zu textures\n",
+                              st.polies, st.lightmapped, wm->pages.size(), st.sprite_polies, st.many_refs, st.alpha_main, st.alpha_wm, st.tris, batches.size(), gs->bsp_meshes.size(), gs->textures.size());
 }
 
 // LithTech's LTMatrix (rows, translation in the 4th column) -> Godot: S M S with S = diag(1, 1, -1)
@@ -2106,7 +2221,7 @@ static Ref<Shader> model_env_shader(void)
                  "render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;\n"
                  "uniform sampler2D env_tex : filter_linear_mipmap, repeat_enable;\n"
                  "global uniform vec4 lt_env;\n"
-                 "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
+                 TO_LINEAR_GLSL
                  "void fragment() {\n"
                  "  vec3 n = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));\n"
                  "  if (n.z < 0.0) n = -n;\n"
@@ -2833,7 +2948,7 @@ static Ref<Shader> sprite_shader(int v)
         "uniform int flags = 0;\n"
         "instance uniform vec4 color = vec4(1.0);\n"
         "instance uniform vec2 half_size = vec2(1.0);\n" FOG_UNIFORMS STATE_UNIFORMS
-        "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
+        TO_LINEAR_GLSL
         "void vertex() {\n"
         "  vec3 ctr;\n"
         "  vec3 p;\n";
@@ -2859,7 +2974,7 @@ static Ref<Shader> sprite_shader(int v)
          "    vec3 pb = p;\n    pb.z = -max(-ctr.z - 20.0, 1.0) + (p.z - ctr.z);\n"
          "    vec4 q = PROJECTION_MATRIX * vec4(pb, 1.0);\n    POSITION.z = q.z / q.w * POSITION.w;\n"
          "  }\n"
-         "  if (" + flag(SPR_CLOSE) + ") POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n"
+         "  if (" + flag(SPR_CLOSE) + ") {\n" CLOSE_DEPTH_GLSL "  }\n"
          "}\n"
          "void fragment() {\n"
          "  vec4 t = texture(albedo, UV) * color * COLOR;\n"
@@ -3243,12 +3358,12 @@ static Ref<ShaderMaterial> line_material(int close)
     static Ref<ShaderMaterial> *m = new Ref<ShaderMaterial>[2];     // never destroyed (see world_shader)
     if (m[close].is_null())
     {
-        std::string c = "shader_type spatial;\nrender_mode unshaded, cull_disabled, depth_draw_never;\n"
-                         "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n";
+        std::string c = "shader_type spatial;\nrender_mode unshaded, cull_disabled, depth_draw_never;\n" DEPTH_GLSL
+                         TO_LINEAR_GLSL;
         if (close)
             c += "void vertex() {\n"
                  "  POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));\n"
-                 "  POSITION.z = POSITION.w * (0.9 + 0.1 * clamp(POSITION.z / POSITION.w, 0.0, 1.0));\n"
+                 CLOSE_DEPTH_GLSL
                  "}\n";
         c += "void fragment() {\n  ALBEDO = to_linear(COLOR.rgb);\n  ALPHA = COLOR.a;\n}\n";
         m[close].instantiate();
@@ -3918,17 +4033,22 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     // the objects (after the camera: models are culled and lit with it)
     if ((ctx != NULL) && (ctx->world != 0) && (ctx == gs->current))
     {
+        // debugging: AVP2_R3D_SKIP=<letters> leaves object types out (w world models' movement, m models, s sprites,
+        // p particles, l lines, g poly grids, c canvases; a: the light animations stay as they were at the start,
+        // d: no dynamic lights on the world)
+        static const char *skip = getenv("AVP2_R3D_SKIP");
+        auto on = [](char t) { return (skip == NULL) || (strchr(skip, t) == NULL); };
         update_attachments(ctx->world);
-        update_world_models(ctx->world);
+        if (on('w')) update_world_models(ctx->world);
         update_sky(ctx->world, sd);
-        update_world_lights(ctx->world);
-        update_anims(ctx->world);
-        update_models(ctx->world, sd);
-        update_sprites(ctx->world, sd);
-        update_particles(ctx->world);
-        update_lines(ctx->world);
-        update_polygrids(ctx->world, sd);
-        update_canvases(ctx->world);
+        if (on('d')) update_world_lights(ctx->world);
+        if (on('a')) update_anims(ctx->world);
+        if (on('m')) update_models(ctx->world, sd);
+        if (on('s')) update_sprites(ctx->world, sd);
+        if (on('p')) update_particles(ctx->world);
+        if (on('l')) update_lines(ctx->world);
+        if (on('g')) update_polygrids(ctx->world, sd);
+        if (on('c')) update_canvases(ctx->world);
     }
 
     preload_update();
