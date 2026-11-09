@@ -707,3 +707,24 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   model is translucent - so we draw it for translucent ones only, as a material whose next pass is the model's
   (faces' normals: the skinned vertices have none). EnvMapAll (console variable): every model, the map only - m1s1's
   marines turn chrome with it, as expected. No cloaked Predator at a level start to compare.
+
+### 2026-11-09 — models' light and the world's dynamic lights as d3d.ren; models' detail textures
+- Models (d3d.ren SetupModelLight / SkinAndLightPieceVertices): the object colour is x ModelSaturation (2) with Saturate,
+  the vertex colour (ambient from the light grid, the sun, the objects' dynamic lights, all x the object colour, +
+  the scene's ModelLightAdd) is clamped to 255 after it, and stage 0 modulates the texture 1x. We clamped first and
+  doubled after (the world's 2x), so a lit model could reach 2x its texture; and the world's shader added the world's
+  dynamic lights to models a second time. m1s1's marines were tan-yellow, the reference's dark: now they match.
+- The world's dynamic lights, in the light before the texture multiplies it (d3d.ren draws the light first):
+  lightmapped polies' lightmaps get them (d3d_RefreshWorldPolyLightmap -> ApplyPolyDynamicLightsToLightmap: + the
+  falloff table (1 - d^2 / r^2, 64 steps, x LightSaturate) x (2c - 255) per texel, clamped; FLAG_SOLIDLIGHT: the
+  colour as is); vertex lit polies (LMDynamic + MultipassGouraud: DrawWorldPolyDynamicLightPasses) get a projected
+  texture of the light, (max(c, 127) - 127) x (1 - (in-plane / 1.25 r)^2 - (plane distance / r)^2), drawn twice with
+  Saturate; FLAG_DONTLIGHTBACKFACING lights skip polies they're behind. We had the vertex lit formula on lightmapped
+  polies, added after the texture. m1s1: the marines' lamps now light the ground under them yellow as in the reference.
+- Models' detail textures (FLAG_DETAILTEXTURE, a Prop's DetailTexture): the skin's linked texture at the skin's UVs x
+  ModelDetailTextureScale (3), ADDSIGNED after the light (DrawModelRenderPasses, FillModelDetailTexCoords). Only two
+  props in all of AvP2's worlds set it (milk cartons in a1s2 and m1s4) and their skin has no linked texture, PH none
+  (all PropTypes have DetailTexture = 0): no visible change in the shipped games. ModelSpecular: no model has
+  SpecularEnable.
+- Uncapped (vsync 0) with the GPU otherwise idle: 300-2000 fps, the 3D view 0.1-0.6 ms of GPU; the game's own code
+  (1-3 ms) is the limit. The earlier 5.6 ms GPU in a1s1 was the other GPU user.

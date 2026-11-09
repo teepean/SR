@@ -36,7 +36,10 @@
  *  their pipelines then and not when an effect first appears.
  *  Multi-frame and shadow-map light animations: their frames (or coverage masks) are blocks next to the poly's base
  *  lightmap; the shader mixes the current two (and lights a shadow map with the animation's point light).
- *  To do: model environment maps, model LODs and static lights for models.
+ *  Models: lit by vertex as d3d.ren (SetupModelLight: the light grid, the sun, the objects' dynamic lights, the
+ *  object colour x ModelSaturation, clamped to 255; the texture modulated 1x), their environment map pass
+ *  (translucent FLAG_ENVIRONMENTMAP models, EnvMapAll) and detail textures (FLAG_DETAILTEXTURE).
+ *  To do: model LODs and static lights for models.
  *
  *  Debugging: AVP2_R3D_FULLBRIGHT=1 (textures only), AVP2_R3D_LMSCALE / AVP2_R3D_VCSCALE (light scales),
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
@@ -763,6 +766,7 @@ static const char *shader_code(int kind)
             "uniform sampler2D detail_tex : filter_linear_mipmap, repeat_enable;\n"
             "uniform float use_detail = 0.0;\nuniform vec4 detail_m = vec4(1.0, 0.0, 0.0, 1.0);\nuniform float detail_add = 1.0;\n"
             "uniform float env_scale = 1.0;\n"
+            "uniform float model = 0.0;\n"
             "global uniform vec4 lt_scales;\n" FOG_UNIFORMS DL_UNIFORMS STATE_UNIFORMS
             "vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }\n"
             "varying vec4 v_anim;\nvarying vec4 v_lm;\nvarying vec3 v_c0;\nvarying vec3 v_c1;\nvarying float v_vfog;\n";
@@ -791,7 +795,7 @@ static const char *shader_code(int kind)
             "  vec3 dt = vec3(0.5);\n"
             "  if ((use_detail > 0.5) && (use_detail < 1.5)) dt = texture(detail_tex, vec2(dot(detail_m.xy, UV), dot(detail_m.zw, UV))).rgb;\n"
             "  if ((use_detail > 0.5) && (use_detail < 1.5)) t.rgb = (detail_add > 0.5) ? clamp(t.rgb + dt - 0.5, 0.0, 1.0) : t.rgb * dt;\n"
-            "  if (use_detail > 1.5) {\n"
+            "  if ((use_detail > 1.5) && (use_detail < 3.5)) {\n"
             "    vec3 ewp = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
             "    vec3 en = normalize(cross(dFdx(ewp), dFdy(ewp))) * vec3(1.0, 1.0, -1.0);\n"
             "    vec3 ei = (ewp - CAMERA_POSITION_WORLD) * vec3(1.0, 1.0, -1.0);\n"
@@ -838,7 +842,6 @@ static const char *shader_code(int kind)
                  "      }\n"
                  "      light += c * w;\n"
                  "    }\n"
-                 "    light = (lt_misc.x > 0.5) ? vec3(1.0) : min(light, vec3(1.0)) * lt_scales.x;\n"
                  "  } else {\n"
                  "    light = COLOR.rgb;\n"
                  "    for (int k = 0; k < 2; k++) {\n"
@@ -846,37 +849,54 @@ static const char *shader_code(int kind)
                  "      if (a < 0) break;\n"
                  "      if (texelFetch(lt_anims, ivec2(a % 1024, a / 1024), 0).y > 0.5) light += (k == 0) ? v_c0 : v_c1;\n"
                  "    }\n"
-                 "    light = min(light, vec3(1.0)) * lt_scales.y;\n"
                  "  }\n";
         c += "  vec3 add = vec3(0.0);\n";
-        // dynamic lights (not on the sky): on lightmapped polies d3d.ren adds a texture of the light (LMDynamic,
-        // BuildDynamicLightmapPixels: (max(c, 127) - 127) x (1 - (in-plane distance / 1.25 r)^2 - (plane distance / r)^2),
-        // not times the surface's texture); on vertex lit polies the vertex colours get (2c - 255) x (1 - d / r)
+        // dynamic lights (not on the sky, not on models: their vertex colours have them), in the light before the
+        // texture multiplies it (d3d.ren draws the light first):
+        // - lightmapped polies: the poly's lightmap gets them (d3d_RefreshWorldPolyLightmap ->
+        //   ApplyPolyDynamicLightsToLightmap): each texel inside the radius + the falloff table (1 - d^2 / r^2 in 64
+        //   steps x LightSaturate) x (2c - 255), clamped; FLAG_SOLIDLIGHT (or FastLight): the light's colour as is
+        // - vertex lit polies (LMDynamic, MultipassGouraud: DrawWorldPolyDynamicLightPasses): a texture of the light
+        //   added to the gouraud colour, (max(c, 127) - 127) x (1 - (in-plane distance / 1.25 r)^2 - (plane distance /
+        //   r)^2), twice with Saturate
+        // FLAG_DONTLIGHTBACKFACING lights skip the polies they are behind (d_LightPolies' plane test)
         if (!(kind & MAT_SKY))
-            c += "  if (lt_light_count.x > 0.5) {\n"
+            c += "  if ((lt_light_count.x > 0.5) && (model < 0.5)) {\n"
                  "    vec3 wp = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;\n"
                  "    vec3 n = normalize(cross(dFdx(wp), dFdy(wp)));\n"
+                 "    if (dot(n, CAMERA_POSITION_WORLD - wp) < 0.0) n = -n;\n"
                  "    for (int i = 0; i < int(lt_light_count.x); i++) {\n"
                  "      vec4 lp = texelFetch(lt_lights, ivec2(i, 0), 0);\n"
-                 "      vec3 lc = texelFetch(lt_lights, ivec2(i, 1), 0).rgb;\n"
+                 "      vec4 lc = texelFetch(lt_lights, ivec2(i, 1), 0);\n"
+                 "      int lf = int(lc.a + 0.5);\n"
                  "      vec3 d = lp.xyz - wp;\n"
-                 "      float d2 = dot(d, d);\n"
-                 "      if (d2 >= lp.w * lp.w * 1.5625) continue;\n"
+                 "      float d2 = dot(d, d), r2 = max(lp.w * lp.w, 0.001);\n"
+                 "      if (d2 >= r2 * 1.5625) continue;\n"
+                 "      float pd = dot(d, n);\n"
+                 "      if (((lf & 64) != 0) && (pd < 0.01)) continue;\n"
                  "      if (use_lightmap > 0.5) {\n"
-                 "        float pd = dot(d, n);\n"
-                 "        float a = 1.0 - (d2 - pd * pd) / (lp.w * lp.w * 1.5625) - (pd * pd) / (lp.w * lp.w);\n"
-                 "        if (a > 0.0) add += max(lc - 127.0, vec3(0.0)) / 255.0 * a;\n"
+                 "        if (d2 >= r2) continue;\n"
+                 "        float fo = min(floor((1.0 - d2 / r2) * 63.0) / 63.0 * lt_scales.z, 1.0);\n"
+                 "        light = ((lf & 16) != 0) ? lc.rgb / 255.0 : clamp(min(light, vec3(1.0)) + fo * (2.0 * lc.rgb - 255.0) / 255.0, 0.0, 1.0);\n"
                  "      } else {\n"
-                 "        float a = 1.0 - sqrt(d2) / lp.w;\n"
-                 "        if (a > 0.0) light += (2.0 * lc - 255.0) / 255.0 * a;\n"
+                 "        float a = 1.0 - (d2 - pd * pd) / (r2 * 1.5625) - (pd * pd) / r2;\n"
+                 "        if (a > 0.0) light += max(lc.rgb - 127.0, vec3(0.0)) / 255.0 * a * lt_scales.y;\n"
                  "      }\n"
                  "    }\n"
                  "  }\n";
+        // the scales: the lightmap 2x (LMFullBright: none), vertex colours 2x with Saturate (the framebuffer holds
+        // the light: clamped first); a model's vertex colours are its light
+        if (!(kind & MAT_SKY))
+            c += "  if (use_lightmap > 0.5) light = (lt_misc.x > 0.5) ? vec3(1.0) : min(light, vec3(1.0)) * lt_scales.x;\n"
+                 "  else light = (model > 0.5) ? min(light, vec3(1.0)) : min(light, vec3(1.0)) * lt_scales.y;\n";
         // the texture's colour op (its state change, for the texture pass): texture x light, the texture alone, or
         // texture + light - 0.5; a lightmap is a pass of its own after it (multipass), so it stays
         c += "  vec3 lit = clamp(t.rgb * clamp(light, 0.0, 2.0) + add, 0.0, 1.0);\n"
              "  vec3 col = (st_colorop > 1.5) ? clamp(t.rgb + clamp(light, 0.0, 2.0) - 0.5 + add, 0.0, 1.0)\n"
              "            : ((st_colorop > 0.5) && (use_lightmap < 0.5)) ? t.rgb : lit;\n";
+        // a model's detail texture (d3d.ren DrawModelRenderPasses with FLAG_DETAILTEXTURE: stage 1 ADDSIGNED on the
+        // lit texture, the skin's UVs x ModelDetailTextureScale)
+        c += "  if (use_detail > 3.5) col = clamp(col + texture(detail_tex, vec2(dot(detail_m.xy, UV), dot(detail_m.zw, UV))).rgb - 0.5, 0.0, 1.0);\n";
         if (getenv("AVP2_R3D_FULLBRIGHT")) c += "  col = t.rgb;\n";
         // fog (d3d.ren: by the distance from the viewer, the sky's by its depth from the sky camera; additive
         // surfaces fade to black)
@@ -1084,11 +1104,16 @@ static void set_detail(const Ref<ShaderMaterial> &m, uint32_t shared, const text
     }
 }
 
-// links: the texture's detail texture / environment map (world surfaces; d3d.ren's models do their own)
+// links: 1 the texture's detail texture / environment map (world surfaces); 0 a model's skin; 2 a model's skin with
+// its detail texture (FLAG_DETAILTEXTURE). A model's vertex colours are its whole light (d3d.ren SetupModelLight: the
+// object colour x ModelSaturation with Saturate, the sum clamped to 255, stage 0 MODULATE), and the world's dynamic
+// lights are in them already (the objects' lights)
+#define MODEL_DETAIL_KEY (1ull << 50)
 static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page, int links = 1)
 {
     if (kind & MAT_SKY) links = 0;
-    uint64_t key = ((uint64_t)shared << 16) | ((uint64_t)(page + 1) << 4) | (uint64_t)kind | (links ? 0 : (1ull << 48));
+    uint64_t key = ((uint64_t)shared << 16) | ((uint64_t)(page + 1) << 4) | (uint64_t)kind | ((links == 1) ? 0 : (1ull << 48)) |
+                   ((links == 2) ? MODEL_DETAIL_KEY : 0);
     auto it = wm->materials.find(key);
     if (it != wm->materials.end()) return it->second;
 
@@ -1102,7 +1127,22 @@ static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page, int
         m->set_shader_parameter("lightmap", wm->pages[page].texture);
         m->set_shader_parameter("use_lightmap", 1.0f);
     }
-    if (links) set_detail(m, shared, t);
+    if (links == 1) set_detail(m, shared, t);
+    if ((links != 1) && !(kind & MAT_SKY)) m->set_shader_parameter("model", 1.0f);
+    // the model's detail texture: the skin's linked texture (whatever its kind: BindModelSkinTextures), on the skin's
+    // UVs x ModelDetailTextureScale (FillModelDetailTexCoords), ADDSIGNED after the light
+    uint32_t linked = (links == 2) ? g32(shared + ST_LINKED) : 0;
+    if (linked != 0)
+    {
+        texture_entry &d = get_texture(linked);
+        if (d.texture.is_valid())
+        {
+            float sc = cvar("ModelDetailTextureScale", 3.0f);
+            m->set_shader_parameter("detail_tex", d.texture);
+            m->set_shader_parameter("detail_m", Vector4(sc, 0.0f, 0.0f, sc));
+            m->set_shader_parameter("use_detail", 4.0f);
+        }
+    }
     wm->materials[key] = m;
     track_material(shared, m);
     return m;
@@ -2080,9 +2120,9 @@ static Ref<Shader> model_env_shader(void)
 static Ref<ShaderMaterial> get_material(uint32_t shared, int kind, int page, int links);
 
 // (EnvMapAll, d3d.ren's console variable: every model gets only the environment map pass)
-static Ref<Material> env_material(uint32_t skin, int kind, uint32_t env, int only = 0)
+static Ref<Material> env_material(uint32_t skin, int kind, uint32_t env, int only, int links)
 {
-    uint64_t key = ((uint64_t)skin << 32) ^ ((uint64_t)env << 5) ^ (uint64_t)kind ^ (only ? 16 : 0);
+    uint64_t key = ((uint64_t)skin << 32) ^ ((uint64_t)env << 5) ^ (uint64_t)kind ^ (only ? 16 : 0) ^ ((links == 2) ? 0x1000000000000ull : 0);
     auto it = gs->env_materials.find(key);
     if (it != gs->env_materials.end()) return it->second;
     Ref<ShaderMaterial> m;
@@ -2090,12 +2130,14 @@ static Ref<Material> env_material(uint32_t skin, int kind, uint32_t env, int onl
     m->set_shader(model_env_shader());
     texture_entry &te = get_texture(env);
     if (te.texture.is_valid()) m->set_shader_parameter("env_tex", te.texture);
-    if (!only) m->set_next_pass(get_material(skin, kind, -1, 0));
+    if (!only) m->set_next_pass(get_material(skin, kind, -1, links));
     gs->env_materials[key] = m;
     return m;
 }
 
 static uint64_t env_models;     // drawn with the environment map pass (AVP2_DEBUG statistics)
+static uint64_t detail_models;  // model skins drawn with their detail texture
+#define FLAG_DETAILTEXTURE (1 << 3)     // models
 #define FLAG2_ADDITIVE (1 << 2)
 #define FLAG2_DYNAMICDIRLIGHT (1 << 7)
 
@@ -2380,8 +2422,10 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     uint32_t tr = call_game_this(g32(vt + MI_VT_GETTRANSFORMS), 1, args);
     if (tr == 0) return;
 
-    // light (ModelDraw::SetupModelLight), in model space
-    float objc[3] = { g8(o + OB_COLOR) / 255.0f, g8(o + OB_COLOR + 1) / 255.0f, g8(o + OB_COLOR + 2) / 255.0f };
+    // light (ModelDraw::SetupModelLight), in model space; the object colour x ModelSaturation with Saturate (the 2x
+    // the world gets from its blend: a model's light is clamped to 255 after it, the texture modulated 1x)
+    float ms = (cvar("Saturate", 0) != 0.0f) ? cvar("ModelSaturation", 2.0f) : 1.0f;
+    float objc[3] = { g8(o + OB_COLOR) * ms / 255.0f, g8(o + OB_COLOR + 1) * ms / 255.0f, g8(o + OB_COLOR + 2) * ms / 255.0f };
     uint8_t alpha = g8(o + OB_COLOR + 3);
     float add[3] = { gf(sd + SD_MODELLIGHTADD), gf(sd + SD_MODELLIGHTADD + 4), gf(sd + SD_MODELLIGHTADD + 8) };
     float tint[3] = { gf(sd + SD_VERTEXTINT), gf(sd + SD_VERTEXTINT + 4), gf(sd + SD_VERTEXTINT + 8) };
@@ -2496,6 +2540,8 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     key = hash_bytes(key, (const void *)G2H(o + MI_HIDDENPIECES), 4);
     key = hash_bytes(key, &alpha, 1);
     key = hash_bytes(key, &flags2, 4);
+    uint32_t kflags = flags & (FLAG_DETAILTEXTURE | FLAG_ENVIRONMENTMAP);
+    key = hash_bytes(key, &kflags, 4);
     key = hash_bytes(key, &model, 4);
     for (int t = 0; t < 4; t++)
     {
@@ -2633,13 +2679,16 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
         if (close) kind |= MAT_REALLYCLOSE;
         uint32_t env = (render_struct != NULL) ? g32(H2G(render_struct) + RS_ENVMAPTEXTURE) : 0;
         int env_all = (cvar("EnvMapAll", 0) != 0.0f);
+        // FLAG_DETAILTEXTURE (props with DetailTexture) and a skin with a linked texture: the detail pass
+        int links = ((flags & FLAG_DETAILTEXTURE) && (skin != 0) && (g32(skin + ST_LINKED) != 0)) ? 2 : 0;
+        if (links == 2) detail_models++;
         if ((env != 0) && get_texture(env).texture.is_valid() &&
             (env_all || ((flags & FLAG_ENVIRONMENTMAP) && (alpha < 255) && (cvar("EnvMapEnable", 0) != 0.0f))))
         {
-            parts.push_back({ &s[t], env_material(skin, kind, env, env_all) });
+            parts.push_back({ &s[t], env_material(skin, kind, env, env_all, links) });
             env_models++;
         }
-        else parts.push_back({ &s[t], get_material(skin, kind, -1, 0) });
+        else parts.push_back({ &s[t], get_material(skin, kind, -1, links) });
     }
     // the mesh's AABB isn't updated in place: the instance's
     AABB box = dyn_update(DYN_MODEL, mi.mesh, mi.dyn, parts);
@@ -2699,7 +2748,7 @@ static void update_world_lights(uint32_t mw)
         uint32_t l = lights[i].second;
         Vector3 p = lt_pos(l + OB_POS);
         dl_image->set_pixel(i, 0, Color(p.x, p.y, p.z, gf(l + DL_RADIUS)));
-        dl_image->set_pixel(i, 1, Color(g8(l + OB_COLOR), g8(l + OB_COLOR + 1), g8(l + OB_COLOR + 2), 0));
+        dl_image->set_pixel(i, 1, Color(g8(l + OB_COLOR), g8(l + OB_COLOR + 1), g8(l + OB_COLOR + 2), (float)(g32(l + OB_FLAGS) & 0x50)));
     }
     if (n > 0) dl_texture->update(dl_image);
     if ((winapi_debug >= 2) && ((gs->frame % 600) == 300))
@@ -3899,8 +3948,10 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         for (int k = 0; k < DYN_KINDS; k++)
             len += snprintf(text + len, sizeof(text) - len, "%s%s %llu/%llu", k ? ", " : "", names[k], (unsigned long long)dyn_stats.in_place[k],
                             (unsigned long long)dyn_stats.rebuilt[k]);
-        eprintf("render3d: dynamic meshes (updated in place / rebuilt): %s; environment mapped models %llu\n", text, (unsigned long long)env_models);
+        eprintf("render3d: dynamic meshes (updated in place / rebuilt): %s; environment mapped models %llu, detail textured skins %llu\n", text,
+                (unsigned long long)env_models, (unsigned long long)detail_models);
         env_models = 0;
+        detail_models = 0;
         memset(&dyn_stats, 0, sizeof(dyn_stats));
     }
     if (!gs->shown)
