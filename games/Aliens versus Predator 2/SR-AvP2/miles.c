@@ -15,6 +15,9 @@
  *  A 3D provider ("Miles 2D Stereo Positional Audio") is listed for the engine's options, with 3D samples that are
  *  played like 2D ones with distance attenuation and pan from the listener.
  *
+ *  Debugging: AVP2_SOUNDLOG=1 logs what the engine does with the 2D samples and streams (start, stop, position,
+ *  silencing).
+ *
  */
 
 #include <stdint.h>
@@ -342,6 +345,11 @@ static mixer_source source;
 
 static uint32_t frame_bytes(const ail_sample *s) { return (uint32_t)(s->channels * (s->bits / 8)); }
 
+// AVP2_SOUNDLOG=1: the engine's sample calls (time in ms, sample, what)
+static int soundlog = -1;
+static int slog_on(void) { if (soundlog < 0) soundlog = (getenv("AVP2_SOUNDLOG") != NULL); return soundlog; }
+#define SLOG(s, ...) do { if (slog_on()) { eprintf("sound: %u %p ", SDL_GetTicks(), (void *)(s)); eprintf(__VA_ARGS__); } } while (0)
+
 // one sample into the mix (stereo float), with the mixer locked
 static void mix_sample(ail_sample *s, float *out, int frames)
 {
@@ -556,11 +564,12 @@ int32_t CCALL AIL_digital_master_volume_c(void *drvr) { return master_volume; }
 /* 2D samples                                                          */
 
 void * CCALL AIL_allocate_sample_handle_c(void *drvr) { return new_sample(SAMPLE_MAGIC, 0); }
-void CCALL AIL_release_sample_handle_c(void *h) { SAMPLE(h); free_sample(s); }
+void CCALL AIL_release_sample_handle_c(void *h) { SAMPLE(h); SLOG(s, "release\n"); free_sample(s); }
 
 void CCALL AIL_init_sample_c(void *h)
 {
     SAMPLE(h);
+    SLOG(s, "init (status %d)\n", s->status);
     mixer_lock();
     free(s->owned);
     s->owned = NULL;
@@ -591,6 +600,7 @@ int32_t CCALL AIL_set_sample_file_c(void *h, const uint8_t *file, int32_t block)
 void CCALL AIL_set_sample_address_c(void *h, const uint8_t *start, uint32_t len)
 {
     SAMPLE(h);
+    SLOG(s, "address %p, %u bytes (status %d)\n", (const void *)start, len, s->status);
     mixer_lock();
     free(s->owned);
     s->owned = NULL;
@@ -611,18 +621,25 @@ void CCALL AIL_set_sample_type_c(void *h, int32_t format, uint32_t flags)
 }
 
 void CCALL AIL_set_sample_playback_rate_c(void *h, int32_t rate) { SAMPLE(h); s->rate = rate; }
-void CCALL AIL_set_sample_volume_c(void *h, int32_t volume) { SAMPLE(h); s->volume = (volume < 0) ? 0 : ((volume > 127) ? 127 : volume); }
+void CCALL AIL_set_sample_volume_c(void *h, int32_t volume)
+{
+    SAMPLE(h);
+    int v = (volume < 0) ? 0 : ((volume > 127) ? 127 : volume);
+    if ((v == 0) != (s->volume == 0)) SLOG(s, "volume %d -> %d\n", s->volume, v);
+    s->volume = v;
+}
 void CCALL AIL_set_sample_pan_c(void *h, int32_t pan) { SAMPLE(h); s->pan = (pan < 0) ? 0 : ((pan > 127) ? 127 : pan); }
 int32_t CCALL AIL_sample_volume_c(void *h) { SAMPLE(h) 0; return s->volume; }
 int32_t CCALL AIL_sample_pan_c(void *h) { SAMPLE(h) 64; return s->pan; }
 void CCALL AIL_set_sample_user_data_c(void *h, uint32_t index, int32_t value) { SAMPLE(h); if (index < 8) s->user[index] = value; }
 int32_t CCALL AIL_sample_user_data_c(void *h, uint32_t index) { SAMPLE(h) 0; return (index < 8) ? s->user[index] : 0; }
 
-void CCALL AIL_stop_sample_c(void *h) { SAMPLE(h); mixer_lock(); if (s->status == SMP_PLAYING) s->status = SMP_STOPPED; mixer_unlock(); }
+void CCALL AIL_stop_sample_c(void *h) { SAMPLE(h); SLOG(s, "stop (status %d, at %.0f of %u frames)\n", s->status, s->pos, frame_bytes(s) ? s->len / frame_bytes(s) : 0); mixer_lock(); if (s->status == SMP_PLAYING) s->status = SMP_STOPPED; mixer_unlock(); }
 
 void CCALL AIL_resume_sample_c(void *h)
 {
     SAMPLE(h);
+    SLOG(s, "resume (status %d) %u bytes, %d Hz, volume %d, pan %d, loop %d, from %.0f\n", s->status, s->len, s->rate, s->volume, s->pan, s->loop_count, s->pos);
     if ((winapi_debug >= 2) && (s->status != SMP_PLAYING))
         eprintf("miles: sample %p plays %u bytes, %d Hz, %d bits, %d channels, volume %d, pan %d, loop %d (%d..%d), from %.0f\n", (void *)s, s->len, s->rate, s->bits, s->channels,
                 s->volume, s->pan, s->loop_count, s->loop_start, s->loop_end, s->pos);
@@ -637,6 +654,7 @@ void CCALL AIL_set_sample_loop_block_c(void *h, int32_t start, int32_t end) { SA
 void CCALL AIL_set_sample_ms_position_c(void *h, int32_t ms)
 {
     SAMPLE(h);
+    SLOG(s, "ms position %d (status %d)\n", ms, s->status);
     mixer_lock();
     s->pos = (ms > 0) ? (double)ms * s->rate / 1000.0 : 0.0;
     s->loops_done = 0;
@@ -687,23 +705,31 @@ void * CCALL AIL_open_stream_c(void *drvr, const char *name, int32_t mem)
     if (s->owned == NULL) s->owned = buf;    // PCM: played from the file data
     else free(buf);
     if (winapi_debug) eprintf("miles: stream %u bytes, format %d, %d Hz, %d channels\n", size, w.format, w.rate, w.channels);
+    SLOG(s, "stream open %u bytes, %d Hz, %d channels\n", size, w.rate, w.channels);
     return s;
 }
 
-void CCALL AIL_close_stream_c(void *h) { STREAM(h); free_sample(s); }
-void CCALL AIL_start_stream_c(void *h) { STREAM(h); mixer_lock(); s->pos = 0.0; s->loops_done = 0; s->status = SMP_PLAYING; mixer_unlock(); }
+void CCALL AIL_close_stream_c(void *h) { STREAM(h); SLOG(s, "stream close (status %d, at %.0f of %u frames)\n", s->status, s->pos, frame_bytes(s) ? s->len / frame_bytes(s) : 0); free_sample(s); }
+void CCALL AIL_start_stream_c(void *h) { STREAM(h); SLOG(s, "stream start, volume %d, pan %d\n", s->volume, s->pan); mixer_lock(); s->pos = 0.0; s->loops_done = 0; s->status = SMP_PLAYING; mixer_unlock(); }
 void CCALL AIL_pause_stream_c(void *h, int32_t onoff)
 {
     STREAM(h);
+    SLOG(s, "stream pause %d (status %d, at %.0f)\n", onoff, s->status, s->pos);
     mixer_lock();
     if (onoff) { if (s->status == SMP_PLAYING) s->status = SMP_STOPPED; }
     else if ((s->status == SMP_STOPPED) || (s->status == SMP_DONE)) s->status = SMP_PLAYING;
     mixer_unlock();
 }
 void CCALL AIL_set_stream_loop_count_c(void *h, int32_t count) { STREAM(h); mixer_lock(); s->loop_count = (count < 0) ? 1 : count; s->loops_done = 0; mixer_unlock(); }
-void CCALL AIL_set_stream_ms_position_c(void *h, int32_t ms) { STREAM(h); mixer_lock(); s->pos = (ms > 0) ? (double)ms * s->rate / 1000.0 : 0.0; mixer_unlock(); }
+void CCALL AIL_set_stream_ms_position_c(void *h, int32_t ms) { STREAM(h); SLOG(s, "stream ms position %d\n", ms); mixer_lock(); s->pos = (ms > 0) ? (double)ms * s->rate / 1000.0 : 0.0; mixer_unlock(); }
 void CCALL AIL_set_stream_playback_rate_c(void *h, int32_t rate) { STREAM(h); s->rate = rate; }
-void CCALL AIL_set_stream_volume_c(void *h, int32_t volume) { STREAM(h); s->volume = (volume < 0) ? 0 : ((volume > 127) ? 127 : volume); }
+void CCALL AIL_set_stream_volume_c(void *h, int32_t volume)
+{
+    STREAM(h);
+    int v = (volume < 0) ? 0 : ((volume > 127) ? 127 : volume);
+    if ((v == 0) != (s->volume == 0)) SLOG(s, "stream volume %d -> %d\n", s->volume, v);
+    s->volume = v;
+}
 void CCALL AIL_set_stream_pan_c(void *h, int32_t pan) { STREAM(h); s->pan = (pan < 0) ? 0 : ((pan > 127) ? 127 : pan); }
 int32_t CCALL AIL_stream_volume_c(void *h) { STREAM(h) 0; return s->volume; }
 int32_t CCALL AIL_stream_pan_c(void *h) { STREAM(h) 64; return s->pan; }

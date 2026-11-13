@@ -766,3 +766,29 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   light animations forced), not the renderer. New debugging aids: AVP2_R3D_ANIMLOG, AVP2_R3D_ANIMON / ANIMOFF,
   AVP2_R3D_DEBUGVIEW (light, vertex colour, light scales, lightmap, inputs).
 
+
+### 2026-11-14 — the world ran 1.8x real time above 100 fps (cut dialogue); a bigger HUD and subtitles
+- Reported in play: characters' speech was cut off. AVP2_SOUNDLOG=1 (miles.c: what the engine does with the 2D
+  samples and streams) showed one-shot sounds stopped while playing, at 0.34 s + 0.56 x their length, with the
+  player standing still - Sounds/Dialogue/29106.wav (8.5 s, its headers right) stopped at 5.15 s. The engine's
+  CServerMgr::Update (AvP2 lithtech.exe 0x485850, Primal Hunt 0x48b5d0) runs a world tick on every call and counts
+  it at least 10 ms (m_FrameTime = clamp(time since the last call, 0.01, 0.2)); the client calls it every frame, so
+  at 180 fps (5.56 ms frames) the world - AI, physics, timers, the server's sound timers - ran 1.8x real time. A
+  lip-synced line is played by the client, but the server keeps a silent copy and ends the lip sync (stopping the
+  client's sound) when its own timer runs out (CCharacter::UpdateSounds -> KillVoicedSound).
+  instruction_replacements.sci (x64 and llasm, both games) does what avp2src's modern build does (M-P1-23): the last
+  tick's time (+0x8e4 / PH +0xae4) is kept only when a tick runs, and the tick runs only when the time since it
+  (+0x8e0 / +0xae0) is at least 10 ms or negative (one unsigned compare of the float's bits with 0.01f's); otherwise
+  the call goes on to the object queue flush (packets and the network are still handled every call). The
+  campaign's opening scene now runs in real time and every line plays to its end (also the llasm build).
+- Cinematic dialogue sounds twice at once (the lip-synced sound and the server's local copy, CCharacter::
+  PlayVoicedSound with the external camera on): the original code does that too.
+- The campaign page's difficulty list: a click picks a level; from the keyboard Up selects the list and Left / Right
+  change the level (CListCtrl with EnableMouseClickSelect: Up / Down move between the page's controls) - as the
+  original. At 1920x1080 the 640x480 page is small and the chosen level's white hard to tell from the others' green.
+- A bigger HUD, menus and subtitles: the game's 2D is drawn in the game's resolution in fixed pixel fonts (the
+  subtitles: the message font, Subtitle.cpp), so at 1920x1080 they are a third of their 640x480 size. The 3D view is
+  drawn at the window's own size whatever the game's resolution, so game_resolution = 960x540 with window_scale = 2
+  gives a 1920x1080 window with the 2D doubled and the 3D at full resolution. New: the 2D frame is drawn with nearest
+  filtering at whole multiples (ui_filter = auto | linear | nearest: sharp text), and window_scale steps down when the
+  window wouldn't fit on the screen (a resolution picked in the game's menu that is already the screen's).

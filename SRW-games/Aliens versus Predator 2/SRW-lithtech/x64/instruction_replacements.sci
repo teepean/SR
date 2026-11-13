@@ -1,3 +1,5 @@
 loc_4B91BD,7,mov r10d, 0x0|CALL x86_read_fs_dword|cmp esi, r9d ; CRT SEH unwind (_local_unwind2 area): cmp esi, fs:[0] - SRW translates only mov/push/pop with fs:
 loc_49EF00,6,CALL avp2_time_init_asm2c ; time_Init: the engine clock at a high resolution (x64/time-asm.asm) - call timeGetTime
 loc_49EF13,36,CALL avp2_time_get_asm2c|fld qword [r11d] ; time_GetTime: (timeGetTime() - base) * 0.001 in whole ms -> the time as a double in its stack scratch
+loc_485891,6,mov eax, [esi+0x8e4]|fstp dword [esi+0x8e4]|cmp dword [esi+0x8e0], 0x3c23d70a|cmovae eax, [esi+0x8e4]|mov [esi+0x8e4], eax ; CServerMgr::Update: the last tick's time is kept only when a tick runs (time since it >= 10 ms, or negative: as unsigned, the float's bits >= 0.01f's 0x3c23d70a) - fstp dword [esi+0x8e4]
+loc_48590F,6,cmp dword [esi+0x8e0], 0x3c23d70a|jb near loc_485AAC|fld dword [loc_4D51F0] ; CServerMgr::Update: a world tick only once 10 ms have passed since the last one (a tick counts at least 10 ms: at 180 fps the world, its sounds and the dialogue's timers ran 1.8x real time); otherwise on to the object queue flush, as avp2src's M-P1-23 - fld dword [loc_4D51F0]

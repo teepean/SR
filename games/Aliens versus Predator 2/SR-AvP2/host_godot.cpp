@@ -768,9 +768,18 @@ static void present_frame(const uint32_t *pixels, int w, int h)
     {
         float fr[4];
         ghost_frame_rect(w, h, size.x, size.y, fr);
+        // its filter (SR-AvP2.cfg ui_filter): auto = nearest when the frame is a whole multiple of the game's screen
+        // (a bigger HUD, menus and subtitles: game_resolution = half the window's, window_scale = 2 - sharp text),
+        // bilinear otherwise; or linear / nearest always
+        const char *uf = config_get("ui_filter");
+        int kx = (int)fr[2] / w, ky = (int)fr[3] / h;
+        bool whole = (kx >= 1) && (kx == ky) && ((float)(kx * w) == fr[2]) && ((float)(ky * h) == fr[3]);
+        bool nearest = ((uf != NULL) && (strcasecmp(uf, "nearest") == 0)) || (((uf == NULL) || (strcasecmp(uf, "linear") != 0)) && whole && (kx > 1));
+        rs->canvas_item_set_default_texture_filter(gs->canvas_item, nearest ? RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_NEAREST : RenderingServer::CANVAS_ITEM_TEXTURE_FILTER_LINEAR);
         rs->canvas_item_clear(gs->canvas_item);
         rs->canvas_item_add_texture_rect(gs->canvas_item, Rect2(fr[0], fr[1], fr[2], fr[3]), gs->texture);
         drawn_size = size;
+        if (winapi_debug) eprintf("host: 2D frame %dx%d in %.0fx%.0f at %.0f,%.0f, %s\n", w, h, fr[2], fr[3], fr[0], fr[1], nearest ? "nearest" : "bilinear");
     }
 
     uint64_t t_uploaded = SDL_GetPerformanceCounter();
@@ -1021,6 +1030,10 @@ static void apply_wanted(void)
         {
             int scale = config_get_int("window_scale", 1);
             if (scale < 1) scale = 1;
+            // no bigger than the screen: a smaller whole scale (window_scale = 2 for a big HUD and a resolution
+            // picked in the game's menu that is already the screen's)
+            Rect2i usable = ds->screen_get_usable_rect(ds->window_get_current_screen());
+            while ((scale > 1) && (usable.size.x > 0) && (usable.size.y > 0) && ((w.size_w * scale > usable.size.x) || (w.size_h * scale > usable.size.y))) scale--;
             req_w = w.size_w * scale;
             req_h = w.size_h * scale;
             // or a size of its own (window_size = 1280x720: a wide window, see aspect)
