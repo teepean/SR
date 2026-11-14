@@ -29,6 +29,8 @@ void r3d_unbind_texture(void *texture);
 void r3d_set_screen_size(int w, int h);
 // the renderer starts (after the window): the shaders are made and compiled now (shader preloading)
 void r3d_init(void);
+// Godot shuts down: the renderer's background work stops first
+void r3d_shutdown(void);
 
 #ifdef __cplusplus
 }

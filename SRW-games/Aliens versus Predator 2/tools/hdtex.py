@@ -5,6 +5,14 @@
                                     RGBA) + OUTDIR/manifest.txt. Primal Hunt also uses AvP2's REZ files: give both
                                     directories (one pack serves both games: the textures are found by content)
   hdtex.py check OUTDIR             the manifest's images: present, readable, the original's aspect ratio
+  hdtex.py upscale SRC DST MODEL [--max N] [--all]
+                                    an upscaled copy of a pack: every image through a super-resolution model
+                                    (.pth / .safetensors, loaded by spandrel - e.g. OpenModelDB's CC0
+                                    4x-PBRify_RPLKSRd_V3 for 2000s game textures), wrap-padded (tiling textures stay
+                                    seamless), RGB only (the game takes the original's alpha), at most N pixels a side
+                                    (default 2048). Skipped (the original stays): interface, sprite, detail and
+                                    environment map textures and those of 32 pixels or less (--all: none skipped).
+                                    Needs PyTorch and spandrel (MIT); a CUDA GPU makes it minutes instead of hours.
 
 Workflow: export from your own copy of the game, upscale / edit the PNGs (keep their names; another format with the
 same name works too: .dds with mipmaps (BC1-7), .webp, .jpg, .tga), then point SR-AvP2.cfg at the directory:
@@ -145,11 +153,94 @@ def check(outdir):
     return 1 if bad else 0
 
 
+def skipped(rel, w, h):
+    r = rel.lower()
+    if r.startswith('interface/') or r.startswith('spritetextures/') or '/envmap' in r or 'envmap/' in r:
+        return True
+    if '/details/' in r or '/detailtex/' in r:
+        return True
+    return max(w, h) <= 32
+
+
+def upscale(src, dst, model_path, max_size=2048, everything=False, pad=16, tile=640, overlap=32):
+    import numpy as np, shutil, time
+    import torch
+    from PIL import Image
+    from spandrel import ModelLoader
+    dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+    desc = ModelLoader(device=dev).load_from_file(model_path)
+    desc.eval()
+    half = (dev == 'cuda') and desc.supports_half
+    if half:
+        desc.half()
+    sc = desc.scale
+    entries = {}
+    for line in open(os.path.join(src, 'manifest.txt'), encoding='utf-8'):
+        if line.startswith('#') or not line.strip():
+            continue
+        k, rel, size, fmt = line.rstrip('\n').split('\t')
+        w, h = map(int, size.split('x'))
+        entries.setdefault(rel, (w, h))
+    os.makedirs(dst, exist_ok=True)
+    shutil.copy(os.path.join(src, 'manifest.txt'), os.path.join(dst, 'manifest.txt'))
+
+    def run(x):
+        t = torch.from_numpy(x).permute(2, 0, 1)[None].to(dev)
+        t = t.half() if half else t.float()
+        with torch.inference_mode():
+            y = desc(t / 255.0)
+        return (y[0].float().clamp(0, 1) * 255.0 + 0.5).byte().permute(1, 2, 0).cpu().numpy()
+
+    def model_rgb(rgb):
+        ph, pw = rgb.shape[:2]
+        if max(ph, pw) <= tile:
+            return run(rgb)
+        out = np.zeros((ph * sc, pw * sc, 3), np.uint8)
+        step = tile - 2 * overlap
+        for y0 in range(0, ph, step):
+            for x0 in range(0, pw, step):
+                ya, xa = max(y0 - overlap, 0), max(x0 - overlap, 0)
+                yb, xb = min(y0 + step + overlap, ph), min(x0 + step + overlap, pw)
+                r = run(np.ascontiguousarray(rgb[ya:yb, xa:xb]))
+                ye, xe = min(y0 + step, ph), min(x0 + step, pw)
+                out[y0 * sc:ye * sc, x0 * sc:xe * sc] = r[(y0 - ya) * sc:(ye - ya) * sc, (x0 - xa) * sc:(xe - xa) * sc]
+        return out
+
+    done = skip = 0
+    t0 = time.time()
+    for rel, (w, h) in sorted(entries.items()):
+        path = os.path.join(src, *rel.split('/'))
+        if not os.path.exists(path) or (not everything and skipped(rel, w, h)):
+            skip += 1
+            continue
+        rgb = np.asarray(Image.open(path).convert('RGB'))
+        ih, iw = rgb.shape[:2]
+        p = min(pad, ih, iw)
+        y = model_rgb(np.pad(rgb, ((p, p), (p, p), (0, 0)), mode='wrap'))[p * sc:(p + ih) * sc, p * sc:(p + iw) * sc]
+        im = Image.fromarray(np.ascontiguousarray(y))
+        if max(im.size) > max_size:
+            f = max_size / max(im.size)
+            im = im.resize((max(1, round(im.width * f)), max(1, round(im.height * f))), Image.LANCZOS)
+        out = os.path.join(dst, *rel.split('/'))
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        im.save(out, compress_level=1)
+        done += 1
+        if done % 250 == 0:
+            print('%d upscaled, %d skipped (%.0f s)' % (done, skip, time.time() - t0), file=sys.stderr)
+    with open(os.path.join(dst, 'pack.txt'), 'w') as f:
+        f.write('upscaled from %s by %s (%dx, at most %d px)\n' % (src, os.path.basename(model_path), sc, max_size))
+    print('%d images upscaled, %d left as the original (%.0f s) -> %s' % (done, skip, time.time() - t0, dst))
+    return 0
+
+
 def main(a):
     if len(a) >= 4 and a[1] == 'export':
         return export(a[2:-1], a[-1])
     if len(a) == 3 and a[1] == 'check':
         return check(a[2])
+    if len(a) >= 5 and a[1] == 'upscale':
+        mx = int(a[a.index('--max') + 1]) if '--max' in a else 2048
+        return upscale(a[2], a[3], a[4], mx, '--all' in a)
     print(__doc__)
     return 1
 

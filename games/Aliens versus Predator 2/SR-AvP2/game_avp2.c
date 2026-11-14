@@ -73,6 +73,8 @@ static const char *const avp2_rez[] = { "AVP2.REZ", "SOUNDS.REZ", "ALIEN.REZ", "
     "# 3D: HD textures bigger than this (pixels per side) are halved; the memory for them kept between levels (MB)\n" \
     "#hd_textures_max = 4096\n" \
     "#hd_textures_cache_mb = 1024\n" \
+    "# 3D: HD textures first used during play load in the background (the original until then; 0: at once)\n" \
+    "#hd_textures_async = 1\n" \
     "# LibGodot and the embedded Godot project (default: next to the program)\n" \
     "#libgodot = libgodot.so\n" \
     "#godot_project = godot/project.godot\n" \

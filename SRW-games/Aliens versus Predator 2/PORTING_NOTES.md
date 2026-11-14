@@ -785,8 +785,19 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   m1s1/a4s1, 0 missing; a 2x Lanczos RGB-only pack: the same picture within 6% (the cut-outs keep the original's
   alpha; at normal distances the 2x texture's mip 1 is the original), m2s1 328 textures in 1.0 s; a pack inverting
   only WorldTextures: the world inverted, models as they were (63 skins without an image, no warnings); PH exa1s1 /
-  exa2s1 with the combined pack 199 / 352 found. Loads happen on the game thread when a texture is first used
-  (models mid-level too): big PNGs cost tens of ms each - DDS with mipmaps loads fastest.
+  exa2s1 with the combined pack 199 / 352 found.
+- HD textures in the background (hd_textures_async = 1): a replacement first needed during play is loaded by two
+  worker threads (hd_process: Image work only - load, checks, halving, alpha, mipmaps) while the original is drawn;
+  hd_poll (r3d_end_frame) makes the ImageTexture on the game's thread and sets it as albedo in the texture's tracked
+  materials (animated surfaces read te.texture each frame; materials using it as a detail texture keep the original).
+  A world build and its first 3 frames load at once (the level's loading). The workers' state is on the heap and the
+  threads detached (no static destructors at exit); ghost_shutdown -> r3d_shutdown stops them before Godot goes.
+- tools/hdtex.py upscale SRC DST MODEL: the pack through a super-resolution model with spandrel (MIT; PyTorch),
+  wrap-padded 16 px (tiling stays seamless), tiles of 640 with 32 px overlap, RGB only (the game adds the original's
+  alpha), at most 2048 px; skips interface, sprite, detail and environment map textures and those <= 32 px.
+  OpenModelDB's 4x-PBRify_RPLKSRd_V3 (CC0, Kim2091; sha256 1325a088...): AvP2 + PH 3986 images in 336 s on an RTX
+  3090, 5 GB of PNGs. In game: A2s3's wall panels lose the DXT blotches (crisp weathering, edges, bolts); 2.1-3.3 s
+  of image work per level, 0.6-0.9 GB of textures; a4s1 walk 180 fps, GPU 3D 0.70 ms as without, no frame > 25 ms.
 - Models: no 64-piece limit (d3d.ren has none; loaderanim.abc has 68 pieces, unreferenced); hidden pieces tested as
   d3d.ren's (1 << i) & m_HiddenPieces, i.e. bit i mod 32 (x86 shifts). AVP2_R3D_DUMPCHROMA=1 logs the chroma key
   world models (alpha tested batches, where, the camera).

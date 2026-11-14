@@ -82,6 +82,10 @@
 #include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/classes/hashing_context.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <deque>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
@@ -217,6 +221,7 @@ struct texture_entry
     uint32_t state_ptr = 0;     // the StateChange* the materials have
     texture_state state = { 0, 0, 0, { 0, 0, 0 }, 0, 0 };
     std::vector<Ref<ShaderMaterial>> materials;     // the materials with this texture (their state uniforms follow)
+    std::string hd_key;         // its HD replacement is being loaded (hd_poll puts it in)
 };
 
 // a world model object's mesh instance
@@ -586,9 +591,171 @@ static Ref<Image> hd_load(const std::string &rel, std::string &path, int *found)
     return Ref<Image>();
 }
 
-// the replacement for a texture (orig: its mip 0 as RGBA8, w x h), null: none
-static Ref<ImageTexture> hd_texture(const std::string &key, const Ref<Image> &orig, int has_alpha, uint32_t w, uint32_t h)
+// one replacement's work: the image, checked and made ready (any thread: Image work only, no RenderingServer)
+struct hd_job
 {
+    std::string key, rel;
+    Ref<Image> orig;            // the original's mip 0 (its alpha), or null
+    int has_alpha;
+    uint32_t w, h;
+};
+
+struct hd_result
+{
+    std::string key, rel, path;
+    Ref<Image> image;           // null: none (found = 0: no file, else why)
+    int found;
+    const char *why;
+    uint64_t us;
+};
+
+static hd_result hd_process(const hd_job &j)
+{
+    hd_result r;
+    uint64_t t0 = Time::get_singleton()->get_ticks_usec();
+    r.key = j.key;
+    r.rel = j.rel;
+    r.why = NULL;
+    Ref<Image> im = hd_load(j.rel, r.path, &r.found);
+    // (a pack with some of the images: the others are the originals, silently)
+    if (r.found && im.is_null()) r.why = "unreadable";
+    else if (r.found && ((uint64_t)im->get_width() * j.h != (uint64_t)im->get_height() * j.w)) r.why = "not the original's aspect ratio";
+    if (r.found && (r.why == NULL))
+    {
+        // too big: halved
+        while ((im->get_width() > hd.max_size) || (im->get_height() > hd.max_size))
+        {
+            if (im->is_compressed()) im->decompress();
+            im->clear_mipmaps();
+            im->resize((im->get_width() + 1) / 2, (im->get_height() + 1) / 2, Image::INTERPOLATE_LANCZOS);
+        }
+        // the original's alpha (cut-outs, blended skins) for an image without one (detect_alpha knows DXT3/5 and the
+        // uncompressed formats; other compressed ones than DXT1 - BC7, ... - are taken to have theirs)
+        Image::Format f = im->get_format();
+        int keep = im->is_compressed() && (f != Image::FORMAT_DXT1) && (f != Image::FORMAT_DXT3) && (f != Image::FORMAT_DXT5);
+        if (j.has_alpha && j.orig.is_valid() && !keep && (im->detect_alpha() == Image::ALPHA_NONE))
+        {
+            if (im->is_compressed()) im->decompress();
+            im->clear_mipmaps();
+            im->convert(Image::FORMAT_RGBA8);
+            Ref<Image> a = Image::create_from_data(j.orig->get_width(), j.orig->get_height(), false, j.orig->get_format(), j.orig->get_data());
+            a->convert(Image::FORMAT_RGBA8);
+            a->resize(im->get_width(), im->get_height(), Image::INTERPOLATE_BILINEAR);
+            PackedByteArray d = im->get_data(), ad = a->get_data();
+            uint8_t *dp = d.ptrw();
+            const uint8_t *ap = ad.ptr();
+            for (int64_t i = 3; i < d.size(); i += 4) dp[i] = ap[i];
+            im = Image::create_from_data(im->get_width(), im->get_height(), false, Image::FORMAT_RGBA8, d);
+        }
+        if (!im->has_mipmaps())
+        {
+            if (im->is_compressed()) im->decompress();
+            im->generate_mipmaps();
+        }
+        r.image = im;
+    }
+    r.us = Time::get_singleton()->get_ticks_usec() - t0;
+    return r;
+}
+
+// a processed replacement into the cache (the game's thread: makes the texture), null: none
+static Ref<ImageTexture> hd_finish(const hd_result &r, uint32_t w, uint32_t h)
+{
+    hd.load_us += r.us;
+    if (!r.found || r.image.is_null())
+    {
+        hd.bad[r.rel] = 1;
+        if (!r.found) hd.absent++;
+        else
+        {
+            hd.failed++;
+            eprintf("render3d: HD texture %s: %s - the original is used\n", r.path.c_str(), r.why ? r.why : "failed");
+        }
+        return Ref<ImageTexture>();
+    }
+    hd_cached e;
+    e.texture = ImageTexture::create_from_image(r.image);
+    e.bytes = (uint64_t)r.image->get_data_size();
+    e.used = ++hd.clock;
+    hd.cache[r.key] = e;
+    hd.cache_bytes += e.bytes;
+    hd.replaced++;
+    if (getenv("AVP2_R3D_DUMPHD")) eprintf("render3d: HD texture %s: %dx%d for %ux%u\n", r.path.c_str(), r.image->get_width(), r.image->get_height(), w, h);
+    // over the budget: the least recently used ones go (the materials keep theirs while they use them)
+    while ((hd.cache_bytes > hd.budget) && (hd.cache.size() > 1))
+    {
+        auto old = hd.cache.begin();
+        for (auto i = hd.cache.begin(); i != hd.cache.end(); ++i)
+            if (i->second.used < old->second.used) old = i;
+        if (old->first == r.key) break;
+        hd.cache_bytes -= old->second.bytes;
+        hd.cache.erase(old);
+    }
+    return e.texture;
+}
+
+// Loading in the background (hd_textures_async = 1, the default): a texture first used during play (a model's skin, a
+// sprite) keeps the original until its replacement is ready a few frames later (hd_poll swaps it into the
+// materials) - a PNG of a few MB takes tens of ms, a hitch on the game's thread. While a world is built and for its
+// first frames they are loaded at once (the level's loading).
+// (on the heap, never destroyed, the threads detached: nothing of it runs at the process's exit)
+struct hd_async_state
+{
+    std::mutex lock;
+    std::condition_variable wake, stopped;
+    std::deque<hd_job> jobs;
+    std::deque<hd_result> done;
+    std::map<std::string, int> pending;         // keys queued or being loaded (the game's thread's)
+    int quit = 0, running = 0;
+};
+static hd_async_state *hdq;
+static int hd_sync_frames;                      // frames still loaded at once (after a world build)
+
+static void hd_worker(void)
+{
+    for (;;)
+    {
+        hd_job j;
+        {
+            std::unique_lock<std::mutex> l(hdq->lock);
+            hdq->wake.wait(l, [] { return hdq->quit || !hdq->jobs.empty(); });
+            if (hdq->quit) break;
+            j = hdq->jobs.front();
+            hdq->jobs.pop_front();
+        }
+        hd_result r = hd_process(j);
+        std::lock_guard<std::mutex> l(hdq->lock);
+        if (hdq->quit) break;
+        hdq->done.push_back(r);
+    }
+    std::lock_guard<std::mutex> l(hdq->lock);
+    hdq->running--;
+    hdq->stopped.notify_all();
+}
+
+static int hd_async(void)
+{
+    static int v = -1;
+    if (v < 0) v = config_get_int("hd_textures_async", 1) != 0;
+    return v && (hd_sync_frames <= 0);
+}
+
+// Godot shuts down: the workers stop first (they use Images)
+extern "C" void r3d_shutdown(void)
+{
+    if (hdq == NULL) return;
+    std::unique_lock<std::mutex> l(hdq->lock);
+    hdq->quit = 1;
+    hdq->wake.notify_all();
+    hdq->stopped.wait_for(l, std::chrono::seconds(5), [] { return hdq->running == 0; });
+}
+
+static void hd_poll(void);
+
+// the replacement for a texture (orig: its mip 0 as RGBA8, w x h), null: none (or not yet: pending)
+static Ref<ImageTexture> hd_texture(const std::string &key, const Ref<Image> &orig, int has_alpha, uint32_t w, uint32_t h, int *pending)
+{
+    *pending = 0;
     auto it = hd.files.find(key);
     if (it == hd.files.end()) { hd.missing++; return Ref<ImageTexture>(); }
     auto c = hd.cache.find(key);
@@ -599,77 +766,32 @@ static Ref<ImageTexture> hd_texture(const std::string &key, const Ref<Image> &or
         return c->second.texture;
     }
     if (hd.bad.count(it->second)) return Ref<ImageTexture>();
-    std::string path;
-    int found;
-    uint64_t t0 = Time::get_singleton()->get_ticks_usec();
-    struct timer { uint64_t t0; ~timer() { hd.load_us += Time::get_singleton()->get_ticks_usec() - t0; } } tm = { t0 };
-    Ref<Image> im = hd_load(it->second, path, &found);
-    const char *why = NULL;
-    // (a pack with some of the images: the others are the originals, silently)
-    if (!found)
+    hd_job j;
+    j.key = key;
+    j.rel = it->second;
+    j.has_alpha = has_alpha;
+    j.w = w;
+    j.h = h;
+    // (a copy: the caller makes mipmaps of its image)
+    if (has_alpha && orig.is_valid()) j.orig = Image::create_from_data(orig->get_width(), orig->get_height(), false, orig->get_format(), orig->get_data());
+    if (!hd_async())
+        return hd_finish(hd_process(j), w, h);
+    *pending = 1;
+    if (hdq == NULL)
     {
-        hd.bad[it->second] = 1;
-        hd.absent++;
-        return Ref<ImageTexture>();
+        hdq = new hd_async_state();
+        hdq->running = 2;
+        for (int i = 0; i < 2; i++) std::thread(hd_worker).detach();
     }
-    if (im.is_null()) why = "unreadable";
-    else if ((uint64_t)im->get_width() * h != (uint64_t)im->get_height() * w) why = "not the original's aspect ratio";
-    if (why != NULL)
+    if (hdq->pending.count(key)) return Ref<ImageTexture>();
+    hdq->pending[key] = 1;
     {
-        hd.bad[it->second] = 1;
-        hd.failed++;
-        eprintf("render3d: HD texture %s: %s - the original is used\n", path.c_str(), why);
-        return Ref<ImageTexture>();
+        std::lock_guard<std::mutex> l(hdq->lock);
+        if (hdq->quit) return Ref<ImageTexture>();
+        hdq->jobs.push_back(j);
     }
-    // too big: halved
-    while ((im->get_width() > hd.max_size) || (im->get_height() > hd.max_size))
-    {
-        if (im->is_compressed()) im->decompress();
-        im->clear_mipmaps();
-        im->resize((im->get_width() + 1) / 2, (im->get_height() + 1) / 2, Image::INTERPOLATE_LANCZOS);
-    }
-    // the original's alpha (cut-outs, blended skins) for an image without one (detect_alpha knows DXT3/5 and the
-    // uncompressed formats; other compressed ones than DXT1 - BC7, ... - are taken to have theirs)
-    Image::Format f = im->get_format();
-    int keep = im->is_compressed() && (f != Image::FORMAT_DXT1) && (f != Image::FORMAT_DXT3) && (f != Image::FORMAT_DXT5);
-    if (has_alpha && orig.is_valid() && !keep && (im->detect_alpha() == Image::ALPHA_NONE))
-    {
-        if (im->is_compressed()) im->decompress();
-        im->clear_mipmaps();
-        im->convert(Image::FORMAT_RGBA8);
-        Ref<Image> a = Image::create_from_data(orig->get_width(), orig->get_height(), false, orig->get_format(), orig->get_data());
-        a->convert(Image::FORMAT_RGBA8);
-        a->resize(im->get_width(), im->get_height(), Image::INTERPOLATE_BILINEAR);
-        PackedByteArray d = im->get_data(), ad = a->get_data();
-        uint8_t *dp = d.ptrw();
-        const uint8_t *ap = ad.ptr();
-        for (int64_t i = 3; i < d.size(); i += 4) dp[i] = ap[i];
-        im = Image::create_from_data(im->get_width(), im->get_height(), false, Image::FORMAT_RGBA8, d);
-    }
-    if (!im->has_mipmaps())
-    {
-        if (im->is_compressed()) im->decompress();
-        im->generate_mipmaps();
-    }
-    hd_cached e;
-    e.texture = ImageTexture::create_from_image(im);
-    e.bytes = (uint64_t)im->get_data_size();
-    e.used = ++hd.clock;
-    hd.cache[key] = e;
-    hd.cache_bytes += e.bytes;
-    hd.replaced++;
-    if (getenv("AVP2_R3D_DUMPHD")) eprintf("render3d: HD texture %s: %dx%d for %ux%u\n", path.c_str(), im->get_width(), im->get_height(), w, h);
-    // over the budget: the least recently used ones go (the materials keep theirs while they use them)
-    while ((hd.cache_bytes > hd.budget) && (hd.cache.size() > 1))
-    {
-        auto old = hd.cache.begin();
-        for (auto i = hd.cache.begin(); i != hd.cache.end(); ++i)
-            if (i->second.used < old->second.used) old = i;
-        if (old->first == key) break;
-        hd.cache_bytes -= old->second.bytes;
-        hd.cache.erase(old);
-    }
-    return e.texture;
+    hdq->wake.notify_one();
+    return Ref<ImageTexture>();
 }
 
 static texture_entry make_texture(uint32_t shared)
@@ -783,12 +905,46 @@ static texture_entry make_texture(uint32_t shared)
     if (img.is_null() || img->is_empty()) return e;
     if (!hd_key.empty())
     {
-        e.texture = hd_texture(hd_key, img, e.has_alpha, w, h);
-        if (e.texture.is_valid()) return e;
+        int pending;
+        Ref<ImageTexture> t = hd_texture(hd_key, img, e.has_alpha, w, h, &pending);
+        if (t.is_valid())
+        {
+            e.texture = t;
+            return e;
+        }
+        // (the original until the replacement is ready: hd_poll)
+        if (pending) e.hd_key = hd_key;
     }
     img->generate_mipmaps();
     e.texture = ImageTexture::create_from_image(img);
     return e;
+}
+
+// each frame: the replacements loaded in the background go into their textures' materials
+static void hd_poll(void)
+{
+    if (hd_sync_frames > 0) hd_sync_frames--;
+    if (hdq == NULL) return;
+    std::deque<hd_result> done;
+    {
+        std::lock_guard<std::mutex> l(hdq->lock);
+        done.swap(hdq->done);
+    }
+    static const StringName p_albedo("albedo");
+    for (const hd_result &r : done)
+    {
+        hdq->pending.erase(r.key);
+        Ref<ImageTexture> t = hd_finish(r, 0, 0);
+        for (auto &kv : gs->textures)
+        {
+            texture_entry &te = kv.second;
+            if (te.hd_key != r.key) continue;
+            te.hd_key.clear();
+            if (t.is_null()) continue;
+            te.texture = t;
+            for (Ref<ShaderMaterial> &m : te.materials) m->set_shader_parameter(p_albedo, t);
+        }
+    }
 }
 
 static texture_entry &get_texture(uint32_t shared)
@@ -2290,6 +2446,8 @@ static std::vector<Ref<ArrayMesh>> make_meshes(batch_map &batches)
 // get their own meshes, placed each frame (update_world_models).
 static void build_world(world_context *ctx)
 {
+    // the level's textures (and its first frames') HD replacements at once: it's loading
+    hd_sync_frames = 3;
     clear_world();
     uint32_t mw = ctx->world;
     uint32_t models = g32(mw + MW_WORLDMODELS + 4), nmodels = g32(mw + MW_WORLDMODELS + 8);
@@ -4387,6 +4545,7 @@ extern "C" void r3d_end_frame(int drawn)
     if (!ready()) return;
     gamma_frame();
     preload_update();
+    hd_poll();
     if (!drawn && gs->shown)
     {
         gs->root->set_visible(false);

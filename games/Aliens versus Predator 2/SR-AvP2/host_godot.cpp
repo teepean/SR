@@ -523,6 +523,7 @@ static void run_iteration(void)
 
 extern "C" void ghost_resize(int w, int h);
 extern "C" float gamma_value(void);
+extern "C" void r3d_shutdown(void);
 extern "C" void ghost_set_title(const char *title);
 
 extern "C" int ghost_create_window(const char *title, int w, int h)
@@ -1082,6 +1083,8 @@ extern "C" void ghost_shutdown(void)
 {
     if (!started) return;
     quitting = 1;
+    // the renderer's background work (HD texture loads) stops before Godot goes
+    r3d_shutdown();
     // the process ends right after this: Godot's own shutdown (Vulkan device, window) is all that matters
     if (destroy_instance != NULL) destroy_instance(instance_ptr);
     started = 0;
