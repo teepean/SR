@@ -801,10 +801,12 @@ static void present_frame(const uint32_t *pixels, int w, int h)
     frame_stats_add(t_start, t_uploaded, SDL_GetPerformanceCounter());
 
     // debugging: AVP2_DUMP_GODOT=<existing dir> saves what Godot drew (read back from the GPU) every 2 seconds
+    // (AVP2_DUMP_GODOT_MS: another interval)
     static uint32_t last_dump;
     static int dump_index;
     const char *dir = getenv("AVP2_DUMP_GODOT");
-    if ((dir != NULL) && started && (SDL_GetTicks() - last_dump >= 2000))
+    static uint32_t dump_ms = getenv("AVP2_DUMP_GODOT_MS") ? (uint32_t)atoi(getenv("AVP2_DUMP_GODOT_MS")) : 2000;
+    if ((dir != NULL) && started && (SDL_GetTicks() - last_dump >= dump_ms))
     {
         last_dump = SDL_GetTicks();
         SceneTree *tree = Object::cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());

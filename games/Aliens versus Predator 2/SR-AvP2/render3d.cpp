@@ -42,12 +42,13 @@
  *  To do: model LODs and static lights for models.
  *
  *  Debugging: AVP2_R3D_FULLBRIGHT=1 (textures only), AVP2_R3D_LMSCALE / AVP2_R3D_VCSCALE (light scales),
- *  AVP2_R3D_SKIP=<letters> (object types left out: w m s p l g c; a: frozen light animations, d: no dynamic lights),
+ *  AVP2_R3D_SKIP=<letters> (object types left out: w m s p l g c k; a: frozen light animations, d: no dynamic lights),
  *  AVP2_R3D_ANIMLOG=1 (light animations going on / off), AVP2_R3D_ANIMON / ANIMOFF=<index> (one forced on / off),
  *  AVP2_R3D_DEBUGVIEW=light|color|scales|lightmap|inputs (a shader input as the colour),
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
  *  AVP2_DEBUG=2 (the objects, once), AVP2_R3D_DUMPSTATES=1 (the textures' state changes), AVP2_R3D_DUMPDETAIL=1
- *  (texture headers, detail / environment map links), AVP2_R3D_NOLINKS=1|2|3 (no links / no env maps / no detail).
+ *  (texture headers, detail / environment map links), AVP2_R3D_NOLINKS=1|2|3 (no links / no env maps / no detail),
+ *  AVP2_R3D_SKYLOG=1 (the sky's objects and the sky camera), AVP2_R3D_SMOOTHLOG=1 (model smoothing levels).
  *
  */
 
@@ -283,6 +284,8 @@ struct model_instance
     int close = 0;              // parented to the camera
     float sun_pos[3] = { 0, 0, 0 };
     float sun = -1.0f;          // how much of the sun reaches it (< 0: not known yet)
+    int smooth = 0;             // model_smoothing: the level it's drawn with (by its size on the screen)
+    float extent = -1.0f;       // half the diagonal of its mesh's box when it was last built (< 0: not yet)
 };
 
 // a sprite object's quad
@@ -1027,7 +1030,7 @@ enum { MAT_OPAQUE = 0, MAT_ALPHA_TEST = 1, MAT_BLEND = 2, MAT_ADD = 3 };
     "#endif\n"
 #define CLOSE_DEPTH_GLSL "  POSITION.z = POSITION.w * lt_depth_clip(0.9 + 0.1 * clamp(lt_depth01(POSITION.z / POSITION.w), 0.0, 1.0));\n"
 
-#define FOG_UNIFORMS DEPTH_GLSL "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\n" VFOG_GLSL
+#define FOG_UNIFORMS DEPTH_GLSL "global uniform vec4 lt_fog;\nglobal uniform vec4 lt_fog_color;\nglobal uniform vec4 lt_sky_fog;\nglobal uniform vec4 lt_misc;\nglobal uniform vec4 lt_sky_rect;\n" VFOG_GLSL
 // the dynamic lights that light the world: a 32 x 2 float texture (position (Godot), radius; colour 0-255), count
 #define DL_MAX 32
 #define DL_UNIFORMS "global uniform sampler2D lt_lights;\nglobal uniform vec4 lt_light_count;\nglobal uniform sampler2D lt_anims;\nglobal uniform sampler2D lt_anim_lights;\n"
@@ -1050,6 +1053,7 @@ static void fog_init(void)
     RenderingServer *rs = RenderingServer::get_singleton();
     rs->global_shader_parameter_add("lt_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 2000, 0));
     rs->global_shader_parameter_add("lt_fog_color", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(1, 1, 1, 1));
+    rs->global_shader_parameter_add("lt_sky_rect", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 1, 1));
     rs->global_shader_parameter_add("lt_sky_fog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 2000, 0, 0));
     rs->global_shader_parameter_add("lt_misc", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, (float)lm_bicubic(), 0, 0));     // LMFullBright, bicubic lightmaps
     rs->global_shader_parameter_add("lt_vfog", RenderingServer::GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 1300, 0.5f));  // vertical fog
@@ -1171,7 +1175,6 @@ static void post_update(uint32_t sd)
         gs->picture->set_position(pos);
         gs->picture->set_size(end - pos);
     }
-    gs->sky_root->set_visible(cv_drawsky != 0);
 }
 
 // a shader from its code. Godot parses it here and compiles it for the GPU in its worker threads; the first draw
@@ -1255,8 +1258,11 @@ static const char *shader_code(int kind)
              "  float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);\n"
              "  return mix(mix(s3, s2, sx), mix(s1, s0, sx), sy);\n"
              "}\n";
-        c += "void fragment() {\n"
-            "  vec4 t = texture(albedo, UV);\n"
+        c += "void fragment() {\n";
+        // the sky only in the screen rectangle of the sky portals in view (lt_sky_rect: update_sky)
+        if (kind & MAT_SKY)
+            c += "  if ((SCREEN_UV.x < lt_sky_rect.x) || (SCREEN_UV.y < lt_sky_rect.y) || (SCREEN_UV.x > lt_sky_rect.z) || (SCREEN_UV.y > lt_sky_rect.w)) discard;\n";
+        c += "  vec4 t = texture(albedo, UV);\n"
             "  vec3 dt = vec3(0.5);\n"
             "  if ((use_detail > 0.5) && (use_detail < 1.5)) dt = texture(detail_tex, vec2(dot(detail_m.xy, UV), dot(detail_m.zw, UV))).rgb;\n"
             "  if ((use_detail > 0.5) && (use_detail < 1.5)) t.rgb = (detail_add > 0.5) ? clamp(t.rgb + dt - 0.5, 0.0, 1.0) : t.rgb * dt;\n"
@@ -2230,7 +2236,11 @@ struct build_stats
     uint32_t alpha_main = 0, alpha_wm = 0;      // alpha tested (the texture has alpha): the main world's, world models'
     uint32_t many_refs = 0;         // polies with more than 64 light animation references
     int main_world = 0;             // add_bsp: the main world's (or terrain's) BSP
+    uint32_t wm_sky = 0;            // sky portals in world models
 };
+
+static void smooth_clear(void);
+static void sky_portals_clear(void);
 
 static void clear_world(void)
 {
@@ -2240,6 +2250,8 @@ static void clear_world(void)
     gs->wm_instances.clear();
     for (auto &kv : gs->models) kv.second.mi->queue_free();
     gs->models.clear();
+    smooth_clear();
+    sky_portals_clear();
     for (auto &kv : gs->sprites) kv.second.mi->queue_free();
     gs->sprites.clear();
     for (auto &kv : gs->particles) kv.second.mi->queue_free();
@@ -2261,6 +2273,105 @@ static void clear_world(void)
 }
 
 // a BSP's polygons into batches, in the BSP's own coordinates (where it was placed in the level)
+// The sky is drawn only through the sky portals in view (d3d.ren's d3d_DrawSky: none drawn - no sky; else the sky
+// pass in the screen rectangle around them, d3d_GetSkyPortalExtents). Elsewhere the screen keeps what's behind the
+// world: where it's cut by the far plane, nothing (a1s1's opening, a room in space without portals: its far corner
+// showed the planet's clouds as a triangle). The main world's SURF_SKY polies (Godot coordinates), each frame clipped
+// to the view (in front of the camera, no visibility test: the world covers the sky there anyway).
+struct sky_portal { std::vector<Vector3> pts; Vector3 centre; float radius; };
+static std::vector<sky_portal> sky_portals;
+static std::map<uint32_t, std::vector<sky_portal>> wm_sky_portals;     // world models' (by BSP, in its space)
+static void sky_portals_clear(void) { sky_portals.clear(); wm_sky_portals.clear(); }
+static Transform3D lt_matrix(uint32_t m);
+
+static void add_sky_portal(uint32_t poly, std::vector<sky_portal> &list)
+{
+    uint32_t verts = g32(poly + WP_PVERTICES);
+    uint32_t n = (verts == poly + WP_VERTICES) ? g16(poly + WP_NVERTICES) : g16(poly + WP_NEXTRAVERTICES);
+    if ((verts == 0) || (n < 3) || (n > 64)) return;
+    sky_portal sp;
+    Vector3 sum;
+    for (uint32_t k = 0; k < n; k++)
+    {
+        uint32_t pt = g32(verts + k * PV_SIZE + PV_VEC);
+        if ((pt < 0x10000) || (pt >= 0x80000000u)) return;
+        sp.pts.push_back(lt_pos(pt));
+        sum += sp.pts.back();
+    }
+    sp.centre = sum / (float)n;
+    sp.radius = 0.0f;
+    for (const Vector3 &q : sp.pts) sp.radius = fmaxf(sp.radius, (q - sp.centre).length());
+    list.push_back(sp);
+}
+
+// the sky portals' rectangle on the screen (0..1, y down); 0: none in view
+static int sky_portal_rect(uint32_t mw, float r[4])
+{
+    Camera3D *cam = gs->camera;
+    Transform3D view = cam->get_camera_transform().affine_inverse();
+    Projection proj = cam->get_camera_projection();
+    float zn = -(float)cam->get_near(), zf = -(float)cam->get_far();
+    // the view's side planes in view space (inward; from the projection's rows - Projection[i] is a column) for a
+    // quick test per portal
+    auto row = [&](int k) { return Vector4(proj[0][k], proj[1][k], proj[2][k], proj[3][k]); };
+    Vector4 r0 = row(0), r1 = row(1), r3 = row(3);
+    Vector4 sides[4] = { r3 + r0, r3 - r0, r3 + r1, r3 - r1 };
+    Vector3 sn[4];
+    float sdist[4];
+    for (int i = 0; i < 4; i++)
+    {
+        Vector3 n(sides[i].x, sides[i].y, sides[i].z);
+        float l = fmaxf((float)n.length(), 1e-6f);
+        sn[i] = n / l;
+        sdist[i] = (float)sides[i].w / l;
+    }
+    r[0] = r[1] = 1e30f; r[2] = r[3] = -1e30f;
+    int seen = 0;
+    static std::vector<Vector3> v, c;
+    // one portal (to = its object's transform for a world model's)
+    auto add = [&](const sky_portal &p, const Transform3D *to) {
+        // whole screen already: nothing to add
+        if (seen && (r[0] <= 0.0f) && (r[1] <= 0.0f) && (r[2] >= 1.0f) && (r[3] >= 1.0f)) return;
+        Vector3 vc = view.xform(to ? to->xform(p.centre) : p.centre);
+        if ((vc.z - p.radius > zn) || (vc.z + p.radius < zf)) return;     // behind the camera or past the far plane
+        for (int i = 0; i < 4; i++) if ((float)sn[i].dot(vc) + sdist[i] < -p.radius) return;
+        v.clear();
+        for (const Vector3 &q : p.pts) v.push_back(view.xform(to ? to->xform(q) : q));
+        // clipped to the near plane (in front: z < zn)
+        c.clear();
+        for (size_t i = 0; i < v.size(); i++)
+        {
+            const Vector3 &a = v[i], &b = v[(i + 1) % v.size()];
+            int ina = a.z < zn, inb = b.z < zn;
+            if (ina) c.push_back(a);
+            if (ina != inb) { float t = (zn - a.z) / (b.z - a.z); c.push_back(a + (b - a) * t); }
+        }
+        if (c.size() < 3) return;
+        float lo[2] = { 1e30f, 1e30f }, hi[2] = { -1e30f, -1e30f };
+        for (const Vector3 &q : c)
+        {
+            Vector4 h = proj.xform(Vector4(q.x, q.y, q.z, 1.0f));
+            if (!(h.w > 0.0f)) continue;
+            float x = h.x / h.w * 0.5f + 0.5f, y = 0.5f - h.y / h.w * 0.5f;
+            lo[0] = fminf(lo[0], x); lo[1] = fminf(lo[1], y); hi[0] = fmaxf(hi[0], x); hi[1] = fmaxf(hi[1], y);
+        }
+        if ((hi[0] < 0.0f) || (hi[1] < 0.0f) || (lo[0] > 1.0f) || (lo[1] > 1.0f)) return;      // off the screen
+        seen++;
+        r[0] = fminf(r[0], lo[0]); r[1] = fminf(r[1], lo[1]); r[2] = fmaxf(r[2], hi[0]); r[3] = fmaxf(r[3], hi[1]);
+    };
+    for (const sky_portal &p : sky_portals) add(p, NULL);
+    // world models' portals (m_close, p_open: 6 each), where their objects are now
+    if (!wm_sky_portals.empty())
+        for_objects(mw, OT_WORLDMODEL, [&](uint32_t o) {
+            if (!(g32(o + OB_FLAGS) & FLAG_VISIBLE) || (g32(o + OB_FLAGS2) & FLAG2_SKYOBJECT)) return;
+            auto it = wm_sky_portals.find(g32(o + WM_ORIGINALBSP));
+            if (it == wm_sky_portals.end()) return;
+            Transform3D t = lt_matrix(o + WM_TRANSFORM);
+            for (const sky_portal &p : it->second) add(p, &t);
+        });
+    return seen;
+}
+
 static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, build_stats &st)
 {
     static uint32_t texels[0x400], layers[MAX_BLOCKS][0x400];
@@ -2287,6 +2398,8 @@ static void add_bsp(uint32_t mw, uint32_t bsp, float grid, batch_map &batches, b
             eprintf("render3d: bsp \"%.40s\" poly %u: surface %08x flags %08x texture %08x verts %u (%08x, first point %08x: %.0f %.0f %.0f)\n", (const char *)G2H(bsp + WB_NAME), p,
                     surface, sflags, g32(surface + SF_TEXTURE), pn, pv, pt0, pt0 ? gf(pt0) : 0.0f, pt0 ? gf(pt0 + 4) : 0.0f, pt0 ? gf(pt0 + 8) : 0.0f);
         }
+        if ((sflags & SURF_SKY) && st.main_world) add_sky_portal(poly, sky_portals);
+        else if (sflags & SURF_SKY) { add_sky_portal(poly, wm_sky_portals[bsp]); st.wm_sky++; }
         if (sflags & (SURF_INVISIBLE | SURF_NONEXISTANT | SURF_SKY)) continue;
         if (sflags & SURF_SPRITEANIMATE) st.sprite_polies++;
         if (g32(poly + WP_NLMANIMREFS) > 64) st.many_refs++;
@@ -2494,6 +2607,7 @@ static void build_world(world_context *ctx)
         else add_bsp(mw, bsp, grid, bsp_batches[bsp], st);
     }
     upload_lm_pages();
+    if (winapi_debug) eprintf("render3d: %zu sky portals (%u more in world models)\n", sky_portals.size(), st.wm_sky);
 
     for (Ref<ArrayMesh> &mesh : make_meshes(batches))
     {
@@ -2784,8 +2898,17 @@ static float sun_amount(uint32_t mw, const float p[3], const float right[3], flo
 
 static uint64_t hash_bytes(uint64_t h, const void *p, size_t n)
 {
+    // FNV-1a style, 8 bytes at a time
     const uint8_t *b = (const uint8_t *)p;
-    for (size_t i = 0; i < n; i++) h = (h ^ b[i]) * 0x100000001b3ull;
+    size_t i = 0;
+    for (; i + 8 <= n; i += 8)
+    {
+        uint64_t w;
+        memcpy(&w, b + i, 8);
+        h = (h ^ w) * 0x100000001b3ull;
+        h ^= h >> 29;
+    }
+    for (; i < n; i++) h = (h ^ b[i]) * 0x100000001b3ull;
     return h;
 }
 
@@ -2863,18 +2986,22 @@ static uint64_t dyn_index_hash(const dyn_arrays &a)
 
 static AABB dyn_bounds(const std::vector<dyn_part> &parts)
 {
-    AABB box;
+    // (plain minimum and maximum: AABB::expand_to per vertex is slow)
+    float lo[3] = { 0, 0, 0 }, hi[3] = { 0, 0, 0 };
     int first = 1;
     for (const dyn_part &p : parts)
     {
         const Vector3 *V = p.a->v.ptr();
         for (int64_t i = 0, n = p.a->v.size(); i < n; i++)
         {
-            if (first) { box = AABB(V[i], Vector3()); first = 0; }
-            else box.expand_to(V[i]);
+            float x = (float)V[i].x, y = (float)V[i].y, z = (float)V[i].z;
+            if (first) { lo[0] = hi[0] = x; lo[1] = hi[1] = y; lo[2] = hi[2] = z; first = 0; continue; }
+            lo[0] = fminf(lo[0], x); hi[0] = fmaxf(hi[0], x);
+            lo[1] = fminf(lo[1], y); hi[1] = fmaxf(hi[1], y);
+            lo[2] = fminf(lo[2], z); hi[2] = fmaxf(hi[2], z);
         }
     }
-    return box;
+    return AABB(Vector3(lo[0], lo[1], lo[2]), Vector3(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]));
 }
 
 enum { DYN_MODEL, DYN_PARTICLES, DYN_LINES, DYN_POLYGRID, DYN_CANVAS, DYN_KINDS };
@@ -2932,6 +3059,171 @@ static AABB dyn_update(int kind, const Ref<ArrayMesh> &mesh, std::vector<dyn_sur
     }
     dyn_stats.rebuilt[kind]++;
     return dyn_bounds(parts);
+}
+
+// Model smoothing (model_smoothing = 2..4, an enhancement; 0 = off, as the original): each triangle of a model is
+// drawn as level x level triangles on a curved PN triangle (Vlachos, Peters, Boyd, Mitchell 2001: ATI TruForm, of
+// the game's own time) through its corners and their normals. The normals are the pose's, each the average of the
+// faces around the vertex in its smoothing group: faces meeting at an edge sharper than model_crease_angle (degrees,
+// default 55) are in different groups. Such edges, and open ones (the pieces' edges, seams), stay straight: boxes,
+// crates and gun bodies keep their edges, and the two sides of every edge get the same points (no cracks). The UVs
+// and the rest pose's position and normal (the vertex light) are interpolated. Only the drawing changes: the
+// skeleton, the pieces (hidden ones, dismemberment), the sockets and the engine's own uses of the mesh are the
+// original's.
+struct smooth_piece
+{
+    uint32_t verts = 0, nverts = 0, tris = 0, ntris = 0;    // what it was made from (the cache's check)
+    uint16_t first[3] = { 0, 0, 0 };
+    float rest0[3] = { 0, 0, 0 };
+    std::vector<uint32_t> tri;      // the valid triangles (indices into the piece's)
+    std::vector<int32_t> group;     // per corner of a valid triangle: its smoothing group
+    std::vector<uint8_t> curved;    // per valid triangle: bit e = its edge from corner e to e + 1 is curved
+    uint32_t ngroups = 0;
+};
+static std::map<uint32_t, smooth_piece> smooth_pieces;     // by ModelPiece (cleared with the world)
+static uint64_t smooth_tris;        // triangles drawn smoothed (AVP2_DEBUG statistics)
+
+// a level's points on a triangle (u0, u1, u2 = (level - a - b, a, b) / level: towards corners 1 and 2), each with its
+// weights for the cubic's 10 control points and its barycentric ones, and the level x level triangles by point, in the
+// original's order (the z flip mirrors the winding: 0, 2, 1)
+struct smooth_grid
+{
+    int np = 0;
+    float w[15][13];
+    int corner[15];     // the original corner it is (-1: a new point)
+    std::vector<int32_t> ind;
+};
+
+static const smooth_grid &smooth_grid_for(int level)
+{
+    static smooth_grid grids[5];
+    smooth_grid &G = grids[level];
+    if (G.np) return G;
+    int gi[5][5];
+    for (int a = 0; a <= level; a++)
+        for (int b = 0; a + b <= level; b++)
+        {
+            int g = G.np++;
+            gi[a][b] = g;
+            float u1 = (float)a / level, u2 = (float)b / level, u0 = (float)(level - a - b) / level;
+            float w[13] = { u0 * u0 * u0, u1 * u1 * u1, u2 * u2 * u2, 3.0f * u0 * u0 * u1, 3.0f * u0 * u1 * u1, 3.0f * u1 * u1 * u2,
+                            3.0f * u1 * u2 * u2, 3.0f * u0 * u2 * u2, 3.0f * u0 * u0 * u2, 6.0f * u0 * u1 * u2, u0, u1, u2 };
+            memcpy(G.w[g], w, sizeof(w));
+            G.corner[g] = (a == level) ? 1 : ((b == level) ? 2 : (((a == 0) && (b == 0)) ? 0 : -1));
+        }
+    auto tri = [&](int g0, int g1, int g2) { G.ind.push_back(g0); G.ind.push_back(g2); G.ind.push_back(g1); };
+    for (int a = 0; a < level; a++)
+        for (int b = 0; a + b < level; b++)
+        {
+            tri(gi[a][b], gi[a + 1][b], gi[a][b + 1]);
+            if (a + b < level - 1) tri(gi[a + 1][b], gi[a + 1][b + 1], gi[a][b + 1]);
+        }
+    return G;
+}
+static void smooth_clear(void) { smooth_pieces.clear(); }
+
+static int smooth_level(void)
+{
+    static int level = -1;
+    if (level < 0)
+    {
+        int v = config_get_int("model_smoothing", 0);
+        level = (v < 2) ? 0 : ((v > 4) ? 4 : v);
+        if (level) eprintf("render3d: model smoothing: %d x %d triangles each, edges sharper than %d degrees kept\n", level, level, config_get_int("model_crease_angle", 55));
+    }
+    return level;
+}
+
+static const smooth_piece &smooth_topology(uint32_t pc, uint32_t verts, uint32_t nverts, uint32_t tris, uint32_t ntris)
+{
+    smooth_piece &sp = smooth_pieces[pc];
+    if ((sp.verts == verts) && (sp.nverts == nverts) && (sp.tris == tris) && (sp.ntris == ntris) &&
+        (sp.first[0] == g16(tris)) && (sp.first[1] == g16(tris + 2)) && (sp.first[2] == g16(tris + 4)) &&
+        (sp.rest0[0] == gf(verts + 8)) && (sp.rest0[1] == gf(verts + 12)) && (sp.rest0[2] == gf(verts + 16)))
+        return sp;
+    sp = smooth_piece();
+    sp.verts = verts; sp.nverts = nverts; sp.tris = tris; sp.ntris = ntris;
+    for (int j = 0; j < 3; j++) { sp.first[j] = g16(tris + 2 * j); sp.rest0[j] = gf(verts + 8 + 4 * j); }
+    static float crease_cos = 2.0f;
+    if (crease_cos > 1.5f) crease_cos = cosf((float)config_get_int("model_crease_angle", 55) * 0.017453292f);
+
+    // the valid triangles and their faces' normals in the rest pose
+    std::vector<uint32_t> ix;
+    std::vector<float> fn;
+    for (uint32_t t = 0; t < ntris; t++)
+    {
+        uint32_t tri = tris + t * 0x20;
+        uint32_t i0 = g16(tri), i1 = g16(tri + 2), i2 = g16(tri + 4);
+        if ((i0 >= nverts) || (i1 >= nverts) || (i2 >= nverts)) continue;
+        sp.tri.push_back(t);
+        ix.push_back(i0); ix.push_back(i1); ix.push_back(i2);
+        float p[3][3];
+        for (int c = 0; c < 3; c++) for (int j = 0; j < 3; j++) p[c][j] = gf(verts + ix[ix.size() - 3 + c] * 0x20 + 8 + 4 * j);
+        float a[3] = { p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2] }, b[3] = { p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2] };
+        float n[3] = { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+        float l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+        for (int j = 0; j < 3; j++) fn.push_back((l > 0.0f) ? n[j] / l : 0.0f);
+    }
+    size_t nt = sp.tri.size();
+    // the edges, by their vertices
+    struct edge { uint64_t key; uint32_t t; uint32_t e; };
+    std::vector<edge> edges;
+    edges.reserve(nt * 3);
+    for (uint32_t k = 0; k < nt; k++)
+        for (uint32_t e = 0; e < 3; e++)
+        {
+            uint32_t a = ix[k * 3 + e], b = ix[k * 3 + (e + 1) % 3];
+            if (a == b) continue;
+            edges.push_back({ ((uint64_t)std::min(a, b) << 32) | std::max(a, b), k, e });
+        }
+    std::sort(edges.begin(), edges.end(), [](const edge &x, const edge &y) { return (x.key < y.key) || ((x.key == y.key) && ((x.t < y.t) || ((x.t == y.t) && (x.e < y.e)))); });
+    // smoothing groups: the corners at a vertex joined across the edges that aren't creases (union-find)
+    std::vector<int32_t> parent(nt * 3);
+    for (size_t c = 0; c < parent.size(); c++) parent[c] = (int32_t)c;
+    auto find = [&](int32_t c) { while (parent[c] != c) { parent[c] = parent[parent[c]]; c = parent[c]; } return c; };
+    auto corner = [&](uint32_t k, uint32_t v) { for (uint32_t j = 0; j < 3; j++) if (ix[k * 3 + j] == v) return (int32_t)(k * 3 + j); return -1; };
+    std::vector<std::pair<size_t, size_t>> shared;  // the edges between exactly two triangles
+    for (size_t i = 0; i < edges.size();)
+    {
+        size_t j = i;
+        while ((j < edges.size()) && (edges[j].key == edges[i].key)) j++;
+        if (j - i == 2)
+        {
+            shared.push_back(std::make_pair(i, i + 1));
+            uint32_t k1 = edges[i].t, k2 = edges[i + 1].t;
+            float d = fn[k1 * 3] * fn[k2 * 3] + fn[k1 * 3 + 1] * fn[k2 * 3 + 1] + fn[k1 * 3 + 2] * fn[k2 * 3 + 2];
+            if ((k1 != k2) && (d >= crease_cos))
+                for (uint32_t v : { (uint32_t)(edges[i].key >> 32), (uint32_t)edges[i].key })
+                {
+                    int32_t c1 = corner(k1, v), c2 = corner(k2, v);
+                    if ((c1 >= 0) && (c2 >= 0)) parent[find(c1)] = find(c2);
+                }
+        }
+        i = j;
+    }
+    std::vector<int32_t> id(nt * 3, -1);
+    sp.group.resize(nt * 3);
+    for (size_t c = 0; c < nt * 3; c++)
+    {
+        int32_t r = find((int32_t)c);
+        if (id[r] < 0) id[r] = (int32_t)sp.ngroups++;
+        sp.group[c] = id[r];
+    }
+    // an edge is curved when both of its ends are in the same group on both sides
+    sp.curved.assign(nt, 0);
+    for (const auto &s : shared)
+    {
+        const edge &x = edges[s.first], &y = edges[s.second];
+        if (x.t == y.t) continue;
+        int same = 1;
+        for (uint32_t v : { (uint32_t)(x.key >> 32), (uint32_t)x.key })
+        {
+            int32_t c1 = corner(x.t, v), c2 = corner(y.t, v);
+            if ((c1 < 0) || (c2 < 0) || (sp.group[c1] != sp.group[c2])) same = 0;
+        }
+        if (same) { sp.curved[x.t] |= (uint8_t)(1 << x.e); sp.curved[y.t] |= (uint8_t)(1 << y.e); }
+    }
+    return sp;
 }
 
 static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &cam, const std::vector<uint32_t> &lights)
@@ -3070,8 +3362,30 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     mi.frame = gs->frame;
     if (!mi.shown) { mi.mi->set_visible(true); mi.shown = 1; }
 
+    // model smoothing by the model's size on the screen (its radius over its distance): from 0.25 the set level,
+    // from 0.08 level 2, smaller ones as they are (the change is too small to see there, the cost the same); the
+    // player-view weapon always. A model keeps its level until it's 15% past the threshold (no flicker at one).
+    // The radius: half its mesh's diagonal as last built (the model's global radius until then: that one covers all
+    // of its animations - 388 for Malelabtech.abc, 5 times the drawn one)
+    int level = smooth_level();
+    if ((level >= 2) && !close)
+    {
+        float dist = (world.origin - cam.origin).length();
+        float radius = (mi.extent >= 0.0f) ? mi.extent : gf(model + MD_GLOBALRADIUS);
+        float size = radius * fabsf(gf(o + OB_SCALE)) / fmaxf(dist, 1.0f);
+        float k = (mi.smooth >= level) ? 0.85f : 1.0f, k2 = (mi.smooth >= 2) ? 0.85f : 1.0f;
+        level = (size >= 0.25f * k) ? level : ((size >= 0.08f * k2) ? 2 : 0);
+    }
+    // debugging: AVP2_R3D_SMOOTHLOG=1 logs a model's level when it changes
+    static const char *smooth_log = getenv("AVP2_R3D_SMOOTHLOG");
+    if ((smooth_log != NULL) && (mi.smooth != level))
+        eprintf("render3d: smoothing %08x \"%s\" level %d -> %d (%s, radius %.0f, distance %.0f)\n", o, g32(model + 4) ? (const char *)G2H(g32(model + 4)) : "?",
+                mi.smooth, level, close ? "really close" : "", ((mi.extent >= 0.0f) ? mi.extent : gf(model + MD_GLOBALRADIUS)) * fabsf(gf(o + OB_SCALE)), (world.origin - cam.origin).length());
+    mi.smooth = level;
+
     // rebuilt only when the pose, the light, the skins or the hidden pieces changed
     uint64_t key = 0xcbf29ce484222325ull;
+    key = hash_bytes(key, &level, sizeof(level));
     key = hash_bytes(key, (const void *)G2H(tr), (size_t)nnodes * 0x40);
     key = hash_bytes(key, base, sizeof(base));
     key = hash_bytes(key, (const void *)G2H(o + MI_SKINS), 16);
@@ -3095,9 +3409,24 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     // a surface per skin
     // (kept between calls: the arrays keep their capacity)
     static dyn_arrays s[4];
-    for (int t = 0; t < 4; t++) { s[t].v.clear(); s[t].uv.clear(); s[t].col.clear(); }
+    for (int t = 0; t < 4; t++) { s[t].v.clear(); s[t].uv.clear(); s[t].col.clear(); s[t].ind.clear(); }
     uint32_t hidden = g32(o + MI_HIDDENPIECES);
-    static std::vector<float> pos, col;
+    static std::vector<float> pos, col, gn;
+    // the vertex light, in the rest pose (rest position and normal) -> 0..1
+    auto light_at = [&](const float n[3], const float rp[3], float out[3]) {
+        float c[3] = { base[0], base[1], base[2] };
+        float d = dir[0] * n[0] + dir[1] * n[1] + dir[2] * n[2];
+        if (d > 0.0f) for (int j = 0; j < 3; j++) c[j] = base[j] + (lit[j] - base[j]) * d;
+        for (const model_light &L : ml)
+        {
+            float ld = L.dir[0] * n[0] + L.dir[1] * n[1] + L.dir[2] * n[2];
+            if (ld <= 0.0f) continue;
+            float dx = rp[0] - L.pos[0], dy = rp[1] - L.pos[1], dz = rp[2] - L.pos[2];
+            float dist2 = dx * dx + dy * dy + dz * dz;
+            if (dist2 < L.radius2) for (int j = 0; j < 3; j++) c[j] += L.color[j] * (L.radius2 - dist2) * ld;
+        }
+        for (int j = 0; j < 3; j++) out[j] = (c[j] > 255.0f) ? 1.0f : ((c[j] < 0.0f) ? 0.0f : c[j] / 255.0f);
+    };
     for (uint32_t pi = 0; pi < npieces; pi++)
     {
         // d3d.ren's test, (1 << i) & m_HiddenPieces: x86 shifts by i mod 32 (pieces 32.. follow bits 0..)
@@ -3132,20 +3461,102 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
             pos[i * 3] = acc[0] * rw; pos[i * 3 + 1] = acc[1] * rw; pos[i * 3 + 2] = acc[2] * rw;
             // lit in the rest pose (rest position and normal)
             float n[3] = { gf(v + 0x14), gf(v + 0x18), gf(v + 0x1c) }, rp[3] = { gf(v + 8), gf(v + 12), gf(v + 16) };
-            float c[3] = { base[0], base[1], base[2] };
-            float d = dir[0] * n[0] + dir[1] * n[1] + dir[2] * n[2];
-            if (d > 0.0f) for (int j = 0; j < 3; j++) c[j] = base[j] + (lit[j] - base[j]) * d;
-            for (const model_light &L : ml)
-            {
-                float ld = L.dir[0] * n[0] + L.dir[1] * n[1] + L.dir[2] * n[2];
-                if (ld <= 0.0f) continue;
-                float dx = rp[0] - L.pos[0], dy = rp[1] - L.pos[1], dz = rp[2] - L.pos[2];
-                float dist2 = dx * dx + dy * dy + dz * dz;
-                if (dist2 < L.radius2) for (int j = 0; j < 3; j++) c[j] += L.color[j] * (L.radius2 - dist2) * ld;
-            }
-            for (int j = 0; j < 3; j++) col[i * 3 + j] = (c[j] > 255.0f) ? 1.0f : ((c[j] < 0.0f) ? 0.0f : c[j] / 255.0f);
+            light_at(n, rp, &col[i * 3]);
         }
         dyn_arrays &S = s[tex];
+        if (level >= 2)
+        {
+            const smooth_piece &sp = smooth_topology(pc, verts, nverts, tris, ntris);
+            size_t nt = sp.tri.size();
+            // the pose's normals: each smoothing group's faces (area weighted)
+            gn.assign((size_t)sp.ngroups * 3, 0.0f);
+            for (size_t k = 0; k < nt; k++)
+            {
+                uint32_t tri = tris + sp.tri[k] * 0x20;
+                const float *p0 = &pos[g16(tri) * 3], *p1 = &pos[g16(tri + 2) * 3], *p2 = &pos[g16(tri + 4) * 3];
+                float a[3] = { p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2] }, b[3] = { p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2] };
+                float n[3] = { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+                for (int j = 0; j < 3; j++) { float *g = &gn[(size_t)sp.group[k * 3 + j] * 3]; g[0] += n[0]; g[1] += n[1]; g[2] += n[2]; }
+            }
+            for (uint32_t g = 0; g < sp.ngroups; g++)
+            {
+                float *n = &gn[(size_t)g * 3];
+                float l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+                if (l > 0.0f) { n[0] /= l; n[1] /= l; n[2] /= l; }
+            }
+            // each point written once, the triangles by indices, in place (a call into Godot per element is the slow
+            // part)
+            const smooth_grid &G = smooth_grid_for(level);
+            int64_t at = S.v.size(), add = (int64_t)nt * G.np, iat = S.ind.size(), iadd = (int64_t)nt * (int64_t)G.ind.size();
+            S.v.resize(at + add); S.uv.resize(at + add); S.col.resize(at + add); S.ind.resize(iat + iadd);
+            Vector3 *pv = S.v.ptrw() + at;
+            Vector2 *puv = S.uv.ptrw() + at;
+            Color *pcol = S.col.ptrw() + at;
+            int32_t *pind = S.ind.ptrw() + iat;
+            float A = alpha / 255.0f;
+            for (size_t k = 0; k < nt; k++)
+            {
+                uint32_t tri = tris + sp.tri[k] * 0x20;
+                uint32_t idx[3] = { g16(tri), g16(tri + 2), g16(tri + 4) };
+                float P[3][3], N[3][3], UV[3][2], RP[3][3], RN[3][3];
+                for (int c = 0; c < 3; c++)
+                {
+                    uint32_t v = verts + idx[c] * 0x20;
+                    for (int j = 0; j < 3; j++)
+                    {
+                        P[c][j] = pos[idx[c] * 3 + j];
+                        N[c][j] = gn[(size_t)sp.group[k * 3 + c] * 3 + j];
+                        RP[c][j] = gf(v + 8 + 4 * j);
+                        RN[c][j] = gf(v + 0x14 + 4 * j);
+                    }
+                    UV[c][0] = gf(tri + 8 + c * 8); UV[c][1] = gf(tri + 12 + c * 8);
+                }
+                // the cubic's control points: on each edge, at its thirds, moved into the end's tangent plane when
+                // the edge is curved
+                float B[6][3];  // b210 b120 b021 b012 b102 b201
+                static const int ends[6][2] = { { 0, 1 }, { 1, 0 }, { 1, 2 }, { 2, 1 }, { 2, 0 }, { 0, 2 } };
+                for (int e = 0; e < 6; e++)
+                {
+                    int i = ends[e][0], j = ends[e][1];
+                    int curved = (sp.curved[k] >> (e / 2)) & 1;
+                    float w = curved ? ((P[j][0] - P[i][0]) * N[i][0] + (P[j][1] - P[i][1]) * N[i][1] + (P[j][2] - P[i][2]) * N[i][2]) : 0.0f;
+                    for (int c = 0; c < 3; c++) B[e][c] = (2.0f * P[i][c] + P[j][c] - w * N[i][c]) / 3.0f;
+                }
+                float b111[3];
+                for (int c = 0; c < 3; c++)
+                {
+                    float E = (B[0][c] + B[1][c] + B[2][c] + B[3][c] + B[4][c] + B[5][c]) / 6.0f, V = (P[0][c] + P[1][c] + P[2][c]) / 3.0f;
+                    b111[c] = E + (E - V) * 0.5f;
+                }
+                for (int g = 0; g < G.np; g++)
+                {
+                    const float *w = G.w[g];
+                    float q[3];
+                    for (int c = 0; c < 3; c++)
+                        q[c] = P[0][c] * w[0] + P[1][c] * w[1] + P[2][c] * w[2] + B[0][c] * w[3] + B[1][c] * w[4] + B[2][c] * w[5] +
+                               B[3][c] * w[6] + B[4][c] * w[7] + B[5][c] * w[8] + b111[c] * w[9];
+                    float u0 = w[10], u1 = w[11], u2 = w[12];
+                    *pv++ = Vector3(q[0], q[1], -q[2]);
+                    *puv++ = Vector2(UV[0][0] * u0 + UV[1][0] * u1 + UV[2][0] * u2, UV[0][1] * u0 + UV[1][1] * u1 + UV[2][1] * u2);
+                    int cn = G.corner[g];
+                    if (cn >= 0) { const float *cc = &col[idx[cn] * 3]; *pcol++ = Color(cc[0], cc[1], cc[2], A); continue; }
+                    float rn[3], rp[3], lc[3];
+                    for (int c = 0; c < 3; c++)
+                    {
+                        rn[c] = RN[0][c] * u0 + RN[1][c] * u1 + RN[2][c] * u2;
+                        rp[c] = RP[0][c] * u0 + RP[1][c] * u1 + RP[2][c] * u2;
+                    }
+                    float l = sqrtf(rn[0] * rn[0] + rn[1] * rn[1] + rn[2] * rn[2]);
+                    if (l > 0.0f) for (int c = 0; c < 3; c++) rn[c] /= l;
+                    light_at(rn, rp, lc);
+                    *pcol++ = Color(lc[0], lc[1], lc[2], A);
+                }
+                int32_t base = (int32_t)(at + (int64_t)k * G.np);
+                for (int32_t i : G.ind) *pind++ = base + i;
+            }
+            smooth_tris += nt;
+            continue;
+        }
         for (uint32_t t = 0; t < ntris; t++)
         {
             uint32_t tri = tris + t * 0x20;
@@ -3231,7 +3642,7 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     }
     // the mesh's AABB isn't updated in place: the instance's
     AABB box = dyn_update(DYN_MODEL, mi.mesh, mi.dyn, parts);
-    if (!parts.empty()) mi.mi->set_custom_aabb(box.grow(1.0f));
+    if (!parts.empty()) { mi.mi->set_custom_aabb(box.grow(1.0f)); mi.extent = (float)box.size.length() * 0.5f; }
 }
 
 // Objects attached to others (a marine's rifle and shoulder lamp) are placed by the engine when the renderer asks:
@@ -3700,6 +4111,19 @@ static void update_particles(uint32_t mw)
 // The world covers them except where its sky polies (SURF_SKY, not drawn) are.
 static void update_sky(uint32_t mw, uint32_t sd)
 {
+    // (debugging: AVP2_R3D_SKYRECT=0 - the sky everywhere behind the world, as before)
+    static int use_rect = !(getenv("AVP2_R3D_SKYRECT") && (atoi(getenv("AVP2_R3D_SKYRECT")) == 0));
+    float rect[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+    int portals = use_rect ? sky_portal_rect(mw, rect) : 1;
+    static float last[4] = { -1, -1, -1, -1 };
+    if (portals && memcmp(rect, last, sizeof(last)))
+    {
+        memcpy(last, rect, sizeof(last));
+        RenderingServer::get_singleton()->global_shader_parameter_set("lt_sky_rect", Vector4(rect[0], rect[1], rect[2], rect[3]));
+    }
+    // (DrawSky 0 or no portals: none - post_update set it for DrawSky)
+    int show = cv_drawsky && (portals > 0);
+    if (gs->sky_root->is_visible() != (show != 0)) gs->sky_root->set_visible(show != 0);
     int n = (int)g32(sd + SD_NSKYOBJECTS);
     uint32_t list = g32(sd + SD_SKYOBJECTS);
     Vector3 cam = gs->camera->get_transform().origin;
@@ -3760,6 +4184,20 @@ static void update_sky(uint32_t mw, uint32_t sd)
             wi.alpha = (uint8_t)i;      // (its place in the sky's order)
         }
         wi.mi->set_transform(lt_matrix(o + WM_TRANSFORM));
+        // debugging: AVP2_R3D_SKYLOG=1 - each sky object's distance range from the sky camera, the far plane (2 s)
+        static const char *sky_log = getenv("AVP2_R3D_SKYLOG");
+        if ((sky_log != NULL) && ((gs->frame % 120) == 0))
+        {
+            AABB b = wi.mi->get_transform().xform(mit->second->get_aabb());
+            Vector3 sc(sky[0], sky[1], -sky[2]), lo = b.position, hi = b.get_end();
+            Vector3 near_p(CLAMP(sc.x, lo.x, hi.x), CLAMP(sc.y, lo.y, hi.y), CLAMP(sc.z, lo.z, hi.z));
+            float far_d = 0.0f;
+            for (int k = 0; k < 8; k++) far_d = fmaxf(far_d, (b.get_endpoint(k) - sc).length());
+            uint32_t p0 = g32(bsp + WB_NPOLIES) ? g32(g32(bsp + WB_POLIES)) : 0, sf0 = p0 ? g32(p0 + WP_SURFACE) : 0;
+            eprintf("render3d: sky %d \"%s\" box %.0f %.0f %.0f - %.0f %.0f %.0f, from the sky camera %.0f - %.0f; sky camera %.0f %.0f %.0f, camera %.0f %.0f %.0f, far %.0f; flags %08x/%08x colour %08x, %u polies, first surface flags %08x\n", i,
+                    (const char *)G2H(bsp + 4), lo.x, lo.y, lo.z, hi.x, hi.y, hi.z, (near_p - sc).length(), far_d, sky[0], sky[1], sky[2], c[0], c[1], c[2], gf(sd + SD_FARZ),
+                    g32(o + OB_FLAGS), g32(o + OB_FLAGS2), g32(o + OB_COLOR), g32(bsp + WB_NPOLIES), sf0 ? g32(sf0 + SF_FLAGS) : 0);
+        }
         if (!wi.shown) { wi.mi->set_visible(true); wi.shown = 1; }
         wi.frame = gs->frame;
     }
@@ -4472,13 +4910,13 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     // the objects (after the camera: models are culled and lit with it)
     {
         // debugging: AVP2_R3D_SKIP=<letters> leaves object types out (w world models' movement, m models, s sprites,
-        // p particles, l lines, g poly grids, c canvases; a: the light animations stay as they were at the start,
-        // d: no dynamic lights on the world)
+        // p particles, l lines, g poly grids, c canvases, k the sky's objects; a: the light animations stay as they
+        // were at the start, d: no dynamic lights on the world)
         static const char *skip = getenv("AVP2_R3D_SKIP");
         auto on = [](char t) { return (skip == NULL) || (strchr(skip, t) == NULL); };
         update_attachments(ctx->world);
         if (on('w')) update_world_models(ctx->world);
-        update_sky(ctx->world, sd);
+        if (on('k')) update_sky(ctx->world, sd);
         if (on('d')) update_world_lights(ctx->world);
         if (on('a')) update_anims(ctx->world);
         if (on('m')) update_models(ctx->world, sd);
@@ -4510,10 +4948,11 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         for (int k = 0; k < DYN_KINDS; k++)
             len += snprintf(text + len, sizeof(text) - len, "%s%s %llu/%llu", k ? ", " : "", names[k], (unsigned long long)dyn_stats.in_place[k],
                             (unsigned long long)dyn_stats.rebuilt[k]);
-        eprintf("render3d: dynamic meshes (updated in place / rebuilt): %s; environment mapped models %llu, detail textured skins %llu\n", text,
-                (unsigned long long)env_models, (unsigned long long)detail_models);
+        eprintf("render3d: dynamic meshes (updated in place / rebuilt): %s; environment mapped models %llu, detail textured skins %llu, smoothed model triangles %llu (%zu pieces)\n", text,
+                (unsigned long long)env_models, (unsigned long long)detail_models, (unsigned long long)smooth_tris, smooth_pieces.size());
         env_models = 0;
         detail_models = 0;
+        smooth_tris = 0;
         memset(&dyn_stats, 0, sizeof(dyn_stats));
     }
     if (!gs->shown)

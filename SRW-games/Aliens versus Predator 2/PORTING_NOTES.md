@@ -887,3 +887,43 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - The Graphics page set 640x480 when it was left (also without a change) with a game resolution that isn't in the
   renderer's mode list (960x540: the page selects the first mode when the one in use isn't listed). The list now has
   the mode in use (or SR-AvP2.cfg game_resolution) at its end when it isn't one of the listed ones.
+
+### 2026-11-14 — model smoothing (a remaster experiment); a1s1's triangle of clouds (the sky only through portals)
+- Reported in play: in a1s1's opening (the smuggler ship flying past the planet) "a malformed triangle" - a big
+  triangle of clouds next to the planet. Not a model: AVP2_R3D_SKIP=k (new: the sky's objects) removes it, =m keeps
+  it; with the sky and models off it's a starless hole. The space part is a box of starfield polies (PhysicsBSP
+  6989-6994, x -12800..-4096, z -5888..7680) with no sky portals; its far corner is past FarZ (10000), so the far
+  plane cuts it, and render3d drew the sky behind everything everywhere: the planet's cloud domes (sky objects
+  clouds1..11, the sky camera inside them) showed through the cut. The original under Wine (avp2work/ref-tri-002):
+  no triangle. d3d.ren's d3d_DrawSky draws the sky only when sky portals were drawn, in the screen rectangle around
+  them (d3d_GetSkyPortalExtents, the sky lens built for that rectangle). render3d now does the same: the main
+  world's SURF_SKY polies (and world models' at their objects' transforms: m_close, p_open have 6) are clipped to
+  the view each frame (sphere test, near plane, projection) -> lt_sky_rect, the sky shader discards outside it, and
+  no portal in view hides the sky (no visibility test: the world covers the sky behind walls anyway). Portal counts
+  of all 69 levels: 0-84 (a7s1, p3s2-p4s2, p6s1-p7s1, PH exa1s1: none). The other skies unchanged (m_open, m1s1,
+  p1s1, a_open, p2s1, m2s1, the landing pad after the space part, p_open, m_close; AVP2_R3D_SKYRECT=0: the old
+  way, the same frames). Not it: the far plane for the sky (the clouds are 0-1231 from the sky camera), culling
+  the sky's back faces (the cloud triangle faces the sky camera; culling them took the landing pad's sky away).
+- Still different there: the original's ship trails long blue exhaust jets, ours shows round glows.
+- PH exh2s1 / exp1s1 crash at the exit when object.lto is unloaded (FreeLibrary -> DllMain -> a call to an unmapped
+  address 0x43a986b0): also with the previous commit's build - not from these changes (TODO).
+- model_smoothing = 2..4 (an enhancement, off by default; model_crease_angle, default 55): each model triangle is
+  drawn as N x N triangles on a PN triangle (Vlachos et al. 2001, ATI TruForm) through its corners and normals.
+  The normals are the pose's (the skinned positions' faces, area weighted) per smoothing group: the corners at a
+  vertex joined across edges whose rest-pose faces are within the crease angle (union-find over the corners, per
+  piece, cached by ModelPiece). Crease edges and open ones (piece edges, seams, more than 2 faces) stay straight, so
+  boxes keep their edges and the two sides of an edge get the same points (no cracks); the original data has one
+  normal per position and 28-38% of edges sharper than 45 degrees (research/remaster-automation.md). UVs and the
+  rest pose's position and normal (the vertex light) are interpolated; new points lit like the corners. Only the
+  drawing changes: skeleton, pieces (hidden ones), sockets and the engine's uses of the mesh are the original's.
+- Smoothing cost: first 6 ms a frame in busy scenes (p2s1 411 -> 116 fps; a call into Godot per vertex element,
+  AABB::expand_to per vertex in dyn_bounds, 27 vertices per triangle). Now: the points written in place, once each
+  with an index list (10 per triangle at level 3), plain min/max bounds, the change hash 8 bytes at a time, and the
+  level by the model's size on the screen (half its mesh's diagonal / distance: >= 0.25 the set level, >= 0.08 level
+  2, else none, 15% hysteresis; the engine's global radius only before the first build - it covers all animations,
+  388 for Malelabtech.abc). p2s1 415 -> 329 fps (+0.76 ms game), m2s1 328 -> 272 (+0.57), a1s1 426 -> 418; Godot's
+  time the same (the GPU doesn't notice 9x the model triangles).
+- Looks (level 3): the planets' outlines round (m_open, a1s1), the p1s1 scientist's cap, jaw and sleeves rounder,
+  the collar's edges sharp, no cracks; ship hulls and crates as before; tree canopies' leaf cards bend a little.
+- Debugging aids: AVP2_R3D_SMOOTHLOG=1 (a model's level changes), AVP2_R3D_SKYLOG=1 (the sky's objects, their
+  distance from the sky camera), AVP2_DUMP_GODOT_MS (the screenshot interval), AVP2_R3D_SKIP k.

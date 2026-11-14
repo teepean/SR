@@ -75,6 +75,10 @@ static const char *const avp2_rez[] = { "AVP2.REZ", "SOUNDS.REZ", "ALIEN.REZ", "
     "#hd_textures_cache_mb = 1024\n" \
     "# 3D: HD textures first used during play load in the background (the original until then; 0: at once)\n" \
     "#hd_textures_async = 1\n" \
+    "# 3D: smoother models (an enhancement): each triangle drawn as N x N on a curved surface through its corners\n" \
+    "# (2-4; 0 = off, as the original); edges sharper than the crease angle (degrees) stay sharp\n" \
+    "#model_smoothing = 0\n" \
+    "#model_crease_angle = 55\n" \
     "# LibGodot and the embedded Godot project (default: next to the program)\n" \
     "#libgodot = libgodot.so\n" \
     "#godot_project = godot/project.godot\n" \
