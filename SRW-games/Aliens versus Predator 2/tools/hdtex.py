@@ -5,13 +5,15 @@
                                     RGBA) + OUTDIR/manifest.txt. Primal Hunt also uses AvP2's REZ files: give both
                                     directories (one pack serves both games: the textures are found by content)
   hdtex.py check OUTDIR             the manifest's images: present, readable, the original's aspect ratio
-  hdtex.py upscale SRC DST MODEL [--max N] [--all]
+  hdtex.py upscale SRC DST MODEL [--max N] [--all] [--tile N] [--only TEXT]
                                     an upscaled copy of a pack: every image through a super-resolution model
                                     (.pth / .safetensors, loaded by spandrel - e.g. OpenModelDB's CC0
                                     4x-PBRify_RPLKSRd_V3 for 2000s game textures), wrap-padded (tiling textures stay
                                     seamless), RGB only (the game takes the original's alpha), at most N pixels a side
                                     (default 2048). Skipped (the original stays): interface, sprite, detail and
                                     environment map textures and those of 32 pixels or less (--all: none skipped).
+                                    --tile: the model's input in pieces of at most N pixels (default 640; less for
+                                    less video memory). --only: just the images whose path has TEXT (a trial run).
                                     Needs PyTorch and spandrel (MIT); a CUDA GPU makes it minutes instead of hours.
 
 Workflow: export from your own copy of the game, upscale / edit the PNGs (keep their names; another format with the
@@ -162,7 +164,7 @@ def skipped(rel, w, h):
     return max(w, h) <= 32
 
 
-def upscale(src, dst, model_path, max_size=2048, everything=False, pad=16, tile=640, overlap=32):
+def upscale(src, dst, model_path, max_size=2048, everything=False, pad=16, tile=640, overlap=32, only=None):
     import numpy as np, shutil, time
     import torch
     from PIL import Image
@@ -170,9 +172,12 @@ def upscale(src, dst, model_path, max_size=2048, everything=False, pad=16, tile=
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
     desc = ModelLoader(device=dev).load_from_file(model_path)
     desc.eval()
-    half = (dev == 'cuda') and desc.supports_half
-    if half:
-        desc.half()
+    dtype = torch.float32           # fp16 where the model takes it (DAT: bf16 only), on the GPU
+    if dev == 'cuda' and desc.supports_half:
+        dtype = torch.float16
+    elif dev == 'cuda' and desc.supports_bfloat16 and torch.cuda.is_bf16_supported():
+        dtype = torch.bfloat16
+    desc.to(dtype)
     sc = desc.scale
     entries = {}
     for line in open(os.path.join(src, 'manifest.txt'), encoding='utf-8'):
@@ -186,9 +191,8 @@ def upscale(src, dst, model_path, max_size=2048, everything=False, pad=16, tile=
 
     def run(x):
         t = torch.from_numpy(x).permute(2, 0, 1)[None].to(dev)
-        t = t.half() if half else t.float()
         with torch.inference_mode():
-            y = desc(t / 255.0)
+            y = desc(t.to(dtype) / 255.0)
         return (y[0].float().clamp(0, 1) * 255.0 + 0.5).byte().permute(1, 2, 0).cpu().numpy()
 
     def model_rgb(rgb):
@@ -210,6 +214,8 @@ def upscale(src, dst, model_path, max_size=2048, everything=False, pad=16, tile=
     t0 = time.time()
     for rel, (w, h) in sorted(entries.items()):
         path = os.path.join(src, *rel.split('/'))
+        if only is not None and only not in rel.lower():
+            continue
         if not os.path.exists(path) or (not everything and skipped(rel, w, h)):
             skip += 1
             continue
@@ -239,8 +245,9 @@ def main(a):
     if len(a) == 3 and a[1] == 'check':
         return check(a[2])
     if len(a) >= 5 and a[1] == 'upscale':
-        mx = int(a[a.index('--max') + 1]) if '--max' in a else 2048
-        return upscale(a[2], a[3], a[4], mx, '--all' in a)
+        opt = lambda n, d, f=int: f(a[a.index(n) + 1]) if n in a else d
+        return upscale(a[2], a[3], a[4], opt('--max', 2048), '--all' in a, tile=opt('--tile', 640),
+                       only=opt('--only', None, str.lower))
     print(__doc__)
     return 1
 

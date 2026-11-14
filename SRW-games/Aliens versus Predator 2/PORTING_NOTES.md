@@ -798,6 +798,11 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   OpenModelDB's 4x-PBRify_RPLKSRd_V3 (CC0, Kim2091; sha256 1325a088...): AvP2 + PH 3986 images in 336 s on an RTX
   3090, 5 GB of PNGs. In game: A2s3's wall panels lose the DXT blotches (crisp weathering, edges, bolts); 2.1-3.3 s
   of image work per level, 0.6-0.9 GB of textures; a4s1 walk 180 fps, GPU 3D 0.70 ms as without, no frame > 25 ms.
+- The better one: 4x-PBRify_UpscalerV4 (DAT2, CC0, Kim2091; sha256 82db39e3...; spandrel runs DAT in bf16 only, no
+  fp16): 3986 images in 1496 s (0.4 s each) on the 3090, 5.6 GB. It keeps the fine grain (rock, concrete, scratches)
+  that V3 smooths into a painted look, and the edges and pipes are crisper. The same in game: A2s3 / a4s1 / m1s1 all
+  found, 0 failed, 2.2-3.5 s per level, the same memory. hdtex.py upscale --tile N (less video memory) and
+  --only TEXT (a trial on part of the pack: walls/ = 684 images in 326 s).
 - Models: no 64-piece limit (d3d.ren has none; loaderanim.abc has 68 pieces, unreferenced); hidden pieces tested as
   d3d.ren's (1 << i) & m_HiddenPieces, i.e. bit i mod 32 (x86 shifts). AVP2_R3D_DUMPCHROMA=1 logs the chroma key
   world models (alpha tested batches, where, the camera).
