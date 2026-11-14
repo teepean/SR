@@ -1,0 +1,1 @@
+loc_1000E508,2,;push esi|PUSH esi|PUSH loc_1000E509|tcall avp2_display_build_asm2c|endp|proc loc_1000E509|add esp, esp, 4|;mov ecx, esi|mov ecx, esi ; CFolderDisplay::Build: the port's gamma slider (gamma.c) before CBaseFolder::Build (the return: a label inside the replaced instruction)

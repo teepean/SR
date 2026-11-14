@@ -41,6 +41,13 @@ void ren_screen_size(int *w, int *h);
 // are in asmsyms.h
 
 static uint32_t orig_functions, orig_create, orig_get, orig_set;
+static uint32_t client_interface;
+
+// the engine's ILTClient (the one cshell gets: CreateClientShell), 0 before it
+uint32_t camera_client_interface(void)
+{
+    return client_interface;
+}
 
 // tan(FovX / 2) is multiplied by this: the game's screen's aspect over 4:3 (1 for a 4:3 resolution)
 float camera_hor_plus(void)
@@ -98,6 +105,8 @@ uint32_t CCALL avp2_create_client_shell_c(uint32_t *args)
 {
     uint32_t de = args[0];
     uint32_t a[1] = { de };
+
+    client_interface = de;
 
     if ((de != 0) && config_get_int("hor_plus", 1))
     {

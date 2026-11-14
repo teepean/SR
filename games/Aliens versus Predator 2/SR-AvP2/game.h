@@ -25,6 +25,9 @@ typedef struct {
     const char *default_config;         // SR-AvP2.cfg written when there is none
     int primal_hunt;                    // Primal Hunt's engine: some structures differ (render3d.cpp)
     uint32_t camera_fov[2];             // ILTClient's GetCameraFOV / SetCameraFOV entries (offsets; camera.c: Hor+)
+    // cshell's CSliderCtrl (gamma.c: the gamma slider): m_nSliderPos, m_nSliderIncrement, m_pCommandHandler (offsets;
+    // SetSliderRange / SetSliderPos write them; Primal Hunt's base class is 8 bytes bigger)
+    uint32_t slider_pos, slider_increment, slider_handler;
 } game_info;
 
 extern const game_info game;

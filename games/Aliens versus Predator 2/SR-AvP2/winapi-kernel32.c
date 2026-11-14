@@ -2041,6 +2041,8 @@ static int message_table_text(const uint8_t *image, uint32_t id, char *out, size
 // _FROM_SYSTEM 0x1000, _ARGUMENT_ARRAY 0x2000, _MAX_WIDTH_MASK 0xff.
 // Arguments: a pointer to the caller's (32-bit) va_list, or to an array of dwords; inserts %1..%99 take
 // the n-th dword, formatted by !printf format! (default !s!).
+const char *gamma_string(uint32_t id);
+
 uint32_t CCALL FormatMessageA_c(uint32_t dwFlags, const void *lpSource, uint32_t dwMessageId, uint32_t dwLanguageId, char *lpBuffer, uint32_t nSize, void *Arguments)
 {
     char source[5000], *out;
@@ -2053,7 +2055,12 @@ uint32_t CCALL FormatMessageA_c(uint32_t dwFlags, const void *lpSource, uint32_t
     else
     {
         int found = 0;
-        if (dwFlags & 0x800) found = message_table_text(winapi_module_image((void *)lpSource), dwMessageId, source, sizeof(source));
+        if ((dwFlags & 0x800) && (gamma_string(dwMessageId) != NULL))
+        {
+            snprintf(source, sizeof(source), "%s", gamma_string(dwMessageId));
+            found = 1;
+        }
+        if (!found && (dwFlags & 0x800)) found = message_table_text(winapi_module_image((void *)lpSource), dwMessageId, source, sizeof(source));
         if (!found && (dwFlags & 0x1000))
         {
             snprintf(source, sizeof(source), "Error %u%%n", dwMessageId);
@@ -2204,8 +2211,17 @@ uint32_t CCALL SizeofResource_c(void *hModule, void *hResInfo)
     return size;
 }
 
+// the port's strings (gamma.c: its slider on the game's Display page), else the module's
+const char *gamma_string(uint32_t id);
+
 int32_t CCALL LoadStringA_c(void *hInstance, uint32_t uID, char *lpBuffer, int32_t cchBufferMax)
 {
+    const char *own = gamma_string(uID);
+    if ((own != NULL) && (lpBuffer != NULL) && (cchBufferMax > 0))
+    {
+        snprintf(lpBuffer, (size_t)cchBufferMax, "%s", own);
+        return (int32_t)strlen(lpBuffer);
+    }
     return pe_load_string(module_image(hInstance), uID, lpBuffer, cchBufferMax);
 }
 

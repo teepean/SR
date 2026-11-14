@@ -11,3 +11,4 @@ proc memmove external
 ; the runtime's procedures in instruction_replacements.sci (runtime-asm.llasm)
 proc avp2_time_init_asm2c external
 proc avp2_time_get_asm2c external
+proc avp2_display_build_asm2c external

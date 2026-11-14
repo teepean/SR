@@ -183,9 +183,27 @@ RMode32 * CCALL GetSupportedModes_c(void)
                                     { 1280, 800 }, { 1440, 900 }, { 1680, 1050 }, { 1920, 1200 }, { 2560, 1600 },
                                     { 2560, 1080 }, { 3440, 1440 } };
     RMode32 *head = NULL;
-    int i, d;
+    int i, d, n, cur_w = screen_w, cur_h = screen_h, list[sizeof(sizes) / sizeof(sizes[0]) + 1][2];
 
-    for (i = (int)(sizeof(sizes) / sizeof(sizes[0])) - 1; i >= 0; i--)
+    // and the resolution in use (or SR-AvP2.cfg game_resolution's) when it isn't one of them, at the end: the Graphics
+    // page selects the mode in use in this list, else the first one - and sets that one when the page is left
+    // (960x540 became 640x480x16)
+    if ((cur_w <= 0) || (cur_h <= 0))
+    {
+        const char *res = config_get("game_resolution");
+        if ((res == NULL) || (sscanf(res, "%dx%d", &cur_w, &cur_h) != 2)) cur_w = cur_h = 0;
+    }
+    n = (int)(sizeof(sizes) / sizeof(sizes[0]));
+    memcpy(list, sizes, sizeof(sizes));
+    for (i = 0; i < n; i++) if ((sizes[i][0] == cur_w) && (sizes[i][1] == cur_h)) break;
+    if ((i == n) && (cur_w >= 320) && (cur_h >= 200))
+    {
+        list[n][0] = cur_w;
+        list[n][1] = cur_h;
+        n++;
+    }
+
+    for (i = n - 1; i >= 0; i--)
     {
         for (d = 0; d < 2; d++)
         {
@@ -193,8 +211,8 @@ RMode32 * CCALL GetSupportedModes_c(void)
             m->bHardware = 1;
             strcpy(m->internalName, RENDER_DEVICE_NAME);
             strcpy(m->description, RENDER_DEVICE_DESC);
-            m->width = sizes[i][0];
-            m->height = sizes[i][1];
+            m->width = list[i][0];
+            m->height = list[i][1];
             m->bitDepth = d ? 16 : 32;
             m->pNext = head;
             head = m;

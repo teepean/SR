@@ -106,6 +106,8 @@ enum { HOST_ASPECT_STRETCH, HOST_ASPECT_KEEP, HOST_ASPECT_WIDE };    // host.h
 extern "C" int host_is_godot(void);
 extern "C" uint32_t call_game(uint32_t func, uint32_t nargs, const uint32_t *args);
 extern "C" uint32_t call_game_this(uint32_t func, uint32_t nargs, const uint32_t *args);
+extern "C" float gamma_value(void);
+extern "C" void gamma_frame(void);
 
 /* ------------------------------------------------------------------ */
 /* game memory                                                         */
@@ -381,10 +383,12 @@ static int ready(void)
                        "uniform vec3 scale = vec3(1.0);\n"
                        "uniform vec3 add = vec3(0.0);\n"
                        "uniform float invert = 0.0;\n"
+                       "uniform float inv_gamma = 1.0;\n"
                        "void fragment() {\n"
                        "  vec3 c = texture(TEXTURE, UV).rgb;\n"
                        "  c = (invert > 0.5) ? scale * (vec3(1.0) - c) : min(c * scale, vec3(1.0));\n"
-                       "  COLOR = vec4(min(c + add, vec3(1.0)), 1.0);\n"
+                       "  c = min(c + add, vec3(1.0));\n"
+                       "  COLOR = vec4(pow(c, vec3(inv_gamma)), 1.0);\n"
                        "}\n");
         gs->post.instantiate();
         gs->post->set_shader(post);
@@ -446,6 +450,12 @@ static float cvar(const char *name, float def)
     args[0] = h;
     uint32_t str = call_game(*(uint32_t *)(render_struct + RS_GETPARAMETERVALUESTRING), 1, args);
     return str ? (float)atof((const char *)G2H(str)) : def;
+}
+
+// gamma.c: a console variable, NAN while the renderer can't read them yet
+extern "C" float r3d_console_float(const char *name, float def)
+{
+    return (render_struct == NULL) ? NAN : cvar(name, def);
 }
 
 /* ------------------------------------------------------------------ */
@@ -727,6 +737,9 @@ static void post_update(uint32_t sd)
     gs->post->set_shader_parameter(p_scale, scale);
     gs->post->set_shader_parameter(p_add, add);
     gs->post->set_shader_parameter(p_invert, cv_invert ? 1.0f : 0.0f);
+    // the gamma setting (gamma.c: Options > Display), on the whole picture as a gamma ramp (and host_godot.cpp's 2D)
+    static const StringName p_inv_gamma("inv_gamma");
+    gs->post->set_shader_parameter(p_inv_gamma, 1.0f / gamma_value());
     // the models' environment map: 1 / EnvScale / 2, the pan (EnvPanSpeed x the camera's x and z (LithTech's) + 1/2)
     {
         static const StringName p_env("lt_env");
@@ -4115,6 +4128,7 @@ extern "C" void r3d_end_frame(int drawn)
 {
     // from the game's first frame on: the scene is made (and the shaders preloaded) while Godot draws the 2D frames
     if (!ready()) return;
+    gamma_frame();
     preload_update();
     if (!drawn && gs->shown)
     {

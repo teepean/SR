@@ -36,6 +36,8 @@ funcv avp2_camera_get_c *a0
 funcv avp2_camera_set_c *a0
 func avp2_create_client_shell_c *a0
 funcv avp2_get_client_shell_functions_c *a0
+funcv avp2_display_build_c *a0
+funcv avp2_gamma_changed_c *a0
 
 ; C calls recompiled code (c2asm-llasm.c: call_game): the arguments are on the emulated stack, eax = the function
 ; (ecx = this for thiscall); the global procedure pushes the return address (llasm's return procedure)
@@ -421,3 +423,20 @@ proc avp2_get_client_shell_functions_asm2c public
         tcall tmp1
 endp
 
+proc avp2_display_build_asm2c public
+; cshell CFolderDisplay::Build: the gamma slider (gamma.c; instruction_replacements.sci, cdecl: the folder)
+        add tmp0, esp, 4
+        call avp2_display_build_c tmp0
+        load tmp1, esp, 4
+        add esp, esp, 4
+        tcall tmp1
+endp
+
+proc avp2_gamma_changed_asm2c public
+; the gamma slider's notification (gamma.c: CLTGUICommandHandler::SendCommand, thiscall, 3 arguments - removed here)
+        add tmp0, esp, 4
+        call avp2_gamma_changed_c tmp0
+        load tmp1, esp, 4
+        add esp, esp, 16
+        tcall tmp1
+endp

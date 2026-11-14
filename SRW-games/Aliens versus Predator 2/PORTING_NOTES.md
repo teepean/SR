@@ -819,3 +819,27 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   llasm) names each DLL's first and end label (the PE .data's address and address + virtual size: the last label SRW
   writes) <module>_data_start / _end (asmsyms.h). Abort Game -> Continue Game, quick load from the pause menu and
   the quit all work (cshell's detach runs at the exit).
+
+### 2026-11-14 — a gamma slider (Options > Display)
+- Asked in play: the game is a little dark. The original has no brightness setting in its menus: d3d.ren's console
+  command loadgamma <file> set the video card's gamma ramp (IDirectDrawGammaControl), and its "Gamma" variable
+  (default 100; autoexec.cfg has GAMMA 1) is the exponent of a 64x64 ramp texture of the renderer, not the screen's.
+- gamma.c: the whole picture gets c^(1 / gamma) - render3d's last pass on the 3D view and host_godot's shader of the
+  2D frame (un-premultiplied) -, as a gamma ramp. The value: the engine's console variable DisplayGamma (saved in
+  autoexec.cfg; set with ILTClient::RunConsoleString, +0x240 in both games), SR-AvP2.cfg gamma overrides it.
+- The slider is cshell's own CSliderCtrl, added to the Display page: instruction_replacements.sci (both games' cshell,
+  x64 and llasm) calls avp2_display_build_c (camera-asm.asm / runtime-asm.llasm) before CFolderDisplay::Build's
+  CBaseFolder::Build, which calls CBaseFolder::CreateSlider(stringID, helpID, kGap, kWidth, &value, FALSE, NULL),
+  SetSliderRange(50, 200), the increment (5), SetNumericDisplay(TRUE), SetSliderPos and AddFixedControl (below
+  "Custom performance": Build's CustomPos is on its stack, esp+0xc; the page's list has room for two lines - a third
+  one scrolled Resolution away, without arrows) (global_aliases.sci: cshell_CreateSlider, ... - AvP2 0x100045f0 /
+  0x100319d0 / 0x100319f0 / 0x10031ee0 / 0x10003bb0, kGap / kWidth 0x101d6ef0 / f4; Primal Hunt 0x10004070 /
+  0x10034590 / 0x100345b0 / 0x10034ab0 / 0x10003620, 0x101f3b54 / 58). The label and help text: string
+  ids 0xfe00 / 0xfe01 that LoadStringA and FormatMessageA answer (gamma_string). Changes: the slider's
+  m_pCommandHandler (AvP2 +0xd8, Primal Hunt +0xe0: its base class is 8 bytes bigger - m_nSliderPos +0x6c / +0x74)
+  is an object of the port in low memory whose SendCommand (vtable +4, thiscall with 3 arguments:
+  ARGS_STUB_POP) reads the position while the slider calls it, and saves it with "+DisplayGamma <value>" (the "+":
+  saved in autoexec.cfg, as cshell's WriteConsoleFloat).
+- The Graphics page set 640x480 when it was left (also without a change) with a game resolution that isn't in the
+  renderer's mode list (960x540: the page selects the first mode when the one in use isn't listed). The list now has
+  the mode in use (or SR-AvP2.cfg game_resolution) at its end when it isn't one of the listed ones.

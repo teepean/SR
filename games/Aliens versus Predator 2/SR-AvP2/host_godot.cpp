@@ -491,7 +491,11 @@ extern "C" int ghost_load(void)
     gs->canvas_item = rs->canvas_item_create();
     rs->canvas_item_set_parent(gs->canvas_item, gs->canvas);
     gs->shader = rs->shader_create();
-    rs->shader_set_code(gs->shader, "shader_type canvas_item;\nrender_mode blend_premul_alpha;\nvoid fragment() { vec4 c = texture(TEXTURE, UV); COLOR = vec4(c.b, c.g, c.r, c.a); }\n");
+    // the 2D frame (BGRA, premultiplied alpha), with the gamma setting (gamma.c; render3d.cpp: the 3D view's)
+    rs->shader_set_code(gs->shader, "shader_type canvas_item;\nrender_mode blend_premul_alpha;\nuniform float inv_gamma = 1.0;\n"
+                                    "void fragment() { vec4 c = texture(TEXTURE, UV); vec3 rgb = c.bgr;\n"
+                                    "  if (c.a > 0.0) rgb = pow(min(rgb / c.a, vec3(1.0)), vec3(inv_gamma)) * c.a;\n"
+                                    "  COLOR = vec4(rgb, c.a); }\n");
     gs->material = rs->material_create();
     rs->material_set_shader(gs->material, gs->shader);
     rs->canvas_item_set_material(gs->canvas_item, gs->material);
@@ -518,6 +522,7 @@ static void run_iteration(void)
 }
 
 extern "C" void ghost_resize(int w, int h);
+extern "C" float gamma_value(void);
 extern "C" void ghost_set_title(const char *title);
 
 extern "C" int ghost_create_window(const char *title, int w, int h)
@@ -759,6 +764,14 @@ static void present_frame(const uint32_t *pixels, int w, int h)
         {
             rs->texture_2d_update(gs->texture, image, 0);
         }
+    }
+
+    // the gamma setting (gamma.c)
+    static float set_gamma = 1.0f;
+    if (gamma_value() != set_gamma)
+    {
+        set_gamma = gamma_value();
+        rs->material_set_param(gs->material, "inv_gamma", 1.0f / set_gamma);
     }
 
     // the canvas item: again when the window's size or the texture changed (the frame in its rectangle: ghost_frame_rect)

@@ -1,3 +1,10 @@
 loc_1016F95E,cshell_DllMainCRTStartup
 loc_101B3000,cshell_data_start
 loc_101DE53C,cshell_data_end
+loc_100045F0,cshell_CreateSlider
+loc_10003BB0,cshell_AddFixedControl
+loc_100319D0,cshell_SetSliderRange
+loc_100319F0,cshell_SetSliderPos
+loc_10031EE0,cshell_SetNumericDisplay
+loc_101D6EF0,cshell_display_kGap
+loc_101D6EF4,cshell_display_kWidth

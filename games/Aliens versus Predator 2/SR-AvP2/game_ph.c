@@ -47,6 +47,9 @@ const game_info game = {
     "# the 2D frame's filter when it is scaled: auto (nearest at whole multiples - sharp text -, bilinear otherwise),\n"
     "# linear or nearest\n"
     "#ui_filter = auto\n"
+    "# the brightness of the whole picture (gamma; 1: as the game draws it, up to 2). The game's own setting is\n"
+    "# Options > Display > Gamma (50..200, saved in autoexec.cfg as DisplayGamma); this overrides it at the start\n"
+    "#gamma = 1.0\n"
     "# a window that isn't 4:3 (full screen on a wide screen): wide = the 3D view fills the window's width (Hor+),\n"
     "# the HUD and the menus in a 4:3 frame in the middle; 4:3 = all in the 4:3 frame (bars at the sides);\n"
     "# stretch = all stretched over the window\n"
@@ -73,7 +76,8 @@ const game_info game = {
     "# network: the local address to bind to (default all)\n"
     "#net_bind_ip = 0.0.0.0\n",
     1,
-    { 0x2a4, 0x2a8 }    // lithtech.exe 0x4095b8: 0x40c2a0, 0x40c2e0
+    { 0x2a4, 0x2a8 },   // lithtech.exe 0x4095b8: 0x40c2a0, 0x40c2e0
+    0x74, 0x78, 0xe0    // CSHELL.DLL 0x100345b0 (SetSliderPos), 0x1002664c (SetSliderIncrement inlined)
 };
 
 #ifdef __cplusplus

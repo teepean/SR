@@ -19,10 +19,14 @@ extern avp2_camera_get_c
 extern avp2_camera_set_c
 extern avp2_create_client_shell_c
 extern avp2_get_client_shell_functions_c
+extern avp2_display_build_c
+extern avp2_gamma_changed_c
 global avp2_camera_get_asm2c
 global avp2_camera_set_asm2c
 global avp2_create_client_shell_asm2c
 global avp2_get_client_shell_functions_asm2c
+global avp2_display_build_asm2c
+global avp2_gamma_changed_asm2c
 
 ;; cdecl stub: name, C function (one argument: the address of the arguments)
 %macro ARGS_STUB 2
@@ -50,3 +54,31 @@ ARGS_STUB avp2_camera_get_asm2c, avp2_camera_get_c
 ARGS_STUB avp2_camera_set_asm2c, avp2_camera_set_c
 ARGS_STUB avp2_create_client_shell_asm2c, avp2_create_client_shell_c
 ARGS_STUB avp2_get_client_shell_functions_asm2c, avp2_get_client_shell_functions_c
+
+;; the same for a function that removes its arguments (stdcall, thiscall: ecx isn't passed): name, C function, the
+;; number of dword arguments
+%macro ARGS_STUB_POP 3
+align 16
+%1:
+%ifidn __OUTPUT_FORMAT__, win64
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov [r10], r11d
+        lea ecx, [r11d+4]       ; above the return address
+        call %2
+        mov r10, [rsp+FIRST_PARAMETER_OFFSET]
+        mov r11d, [r10]
+        mov r8d, [r11d]
+        add r11d, byte 4+(%3*4)
+        jmp r8
+%else
+        Call_Asm_Prologue_0
+        lea edi, [r11d+12]      ; above the saved esi, edi and the return address
+        call %2
+        Call_Asm_Epilogue_0 %3
+%endif
+%endmacro
+
+;; the gamma slider (gamma.c): cshell's CFolderDisplay::Build (instruction_replacements.sci, cdecl: the folder) and the
+;; slider's notification (CLTGUICommandHandler::SendCommand of the port's handler: thiscall, 3 arguments)
+ARGS_STUB avp2_display_build_asm2c, avp2_display_build_c
+ARGS_STUB_POP avp2_gamma_changed_asm2c, avp2_gamma_changed_c, 3

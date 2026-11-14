@@ -22,12 +22,13 @@
 
 #define ASM_SYMBOLS(X) \
     X(avp2_camera_get_asm2c) X(avp2_camera_set_asm2c) X(avp2_create_client_shell_asm2c) \
-    X(avp2_get_client_shell_functions_asm2c) X(BinkCheckCursor_asm2c) X(BinkClose_asm2c) X(BinkCopyToBuffer_asm2c) X(BinkDoFrame_asm2c) \
+    X(avp2_gamma_changed_asm2c) X(avp2_get_client_shell_functions_asm2c) X(BinkCheckCursor_asm2c) X(BinkClose_asm2c) X(BinkCopyToBuffer_asm2c) X(BinkDoFrame_asm2c) \
     X(BinkIsSoftwareCursor_asm2c) X(BinkNextFrame_asm2c) X(BinkOpen_asm2c) X(BinkOpenDirectSound_asm2c) \
     X(BinkOpenMiles_asm2c) X(BinkRestoreCursor_asm2c) X(BinkSetSoundSystem_asm2c) X(BinkSetSoundTrack_asm2c) \
     X(BinkWait_asm2c) X(canvas_DrawPrimitive_asm2c) X(canvas_GetState_asm2c) X(canvas_GetTexelSize_asm2c) \
-    X(canvas_SetState_asm2c) X(canvas_SetTexture_asm2c) X(cshell_data_end) X(cshell_data_start) \
-    X(cshell_DllMainCRTStartup) \
+    X(canvas_SetState_asm2c) X(canvas_SetTexture_asm2c) X(cshell_AddFixedControl) X(cshell_CreateSlider) X(cshell_data_end) X(cshell_data_start) \
+    X(cshell_display_kGap) X(cshell_display_kWidth) X(cshell_DllMainCRTStartup) X(cshell_SetNumericDisplay) \
+    X(cshell_SetSliderPos) X(cshell_SetSliderRange) \
     X(cshell_GetClientShellFunctions) X(cshell_GetClientShellVersion) X(cshell_SetInstanceHandle) \
     X(FreeModeList_asm2c) X(GetSupportedModes_asm2c) X(IDirectDraw7Vtbl_asm2c) X(IDirectDrawSurface7Vtbl_asm2c) \
     X(IDirectInputAVtbl_asm2c) X(IDirectInputDevice2AVtbl_asm2c) X(lithtech_DirectMusicMgr_vtbl) \
@@ -94,6 +95,14 @@ extern const uintptr_t blob_addr_c_call_asm_n, blob_addr_c_call_asm_this;
 #define canvas_GetTexelSize_asm2c ((char *)blob_addr[ASM_canvas_GetTexelSize_asm2c])
 #define canvas_SetState_asm2c ((char *)blob_addr[ASM_canvas_SetState_asm2c])
 #define canvas_SetTexture_asm2c ((char *)blob_addr[ASM_canvas_SetTexture_asm2c])
+#define avp2_gamma_changed_asm2c ((char *)blob_addr[ASM_avp2_gamma_changed_asm2c])
+#define cshell_AddFixedControl ((char *)blob_addr[ASM_cshell_AddFixedControl])
+#define cshell_CreateSlider ((char *)blob_addr[ASM_cshell_CreateSlider])
+#define cshell_display_kGap ((char *)blob_addr[ASM_cshell_display_kGap])
+#define cshell_display_kWidth ((char *)blob_addr[ASM_cshell_display_kWidth])
+#define cshell_SetNumericDisplay ((char *)blob_addr[ASM_cshell_SetNumericDisplay])
+#define cshell_SetSliderPos ((char *)blob_addr[ASM_cshell_SetSliderPos])
+#define cshell_SetSliderRange ((char *)blob_addr[ASM_cshell_SetSliderRange])
 #define cshell_data_end ((char *)blob_addr[ASM_cshell_data_end])
 #define cshell_data_start ((char *)blob_addr[ASM_cshell_data_start])
 #define cshell_DllMainCRTStartup ((char *)blob_addr[ASM_cshell_DllMainCRTStartup])
