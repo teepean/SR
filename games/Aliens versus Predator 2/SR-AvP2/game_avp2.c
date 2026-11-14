@@ -53,6 +53,10 @@ static const char *const avp2_rez[] = { "AVP2.REZ", "SOUNDS.REZ", "ALIEN.REZ", "
     "#max_fps = 0\n" \
     "# 3D: multisample anti-aliasing (0, 2, 4, 8)\n" \
     "#msaa = 0\n" \
+    "# 3D: MSAA also on the edges of cut-out textures (fences, grates): alpha to coverage (1 = on, 0 = off)\n" \
+    "#msaa_alpha = 1\n" \
+    "# 3D: screen-space anti-aliasing (none, smaa, fxaa), alone or with MSAA: also edges inside textures\n" \
+    "#screen_aa = none\n" \
     "# 3D: resolution scale (0.25-2.0) and upscaler (bilinear, fsr, fsr2, nearest; macOS arm64: metalfx_spatial,\n" \
     "# metalfx_temporal)\n" \
     "#render_scale = 1.0\n" \

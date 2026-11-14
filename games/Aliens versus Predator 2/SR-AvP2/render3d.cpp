@@ -326,11 +326,28 @@ static void fog_init(void);
 static void preload_shaders(void);
 static void update_viewport_mode(void);
 
-// SR-AvP2.cfg's 3D settings: MSAA, the resolution scale and upscaler, anisotropic filtering
+// MSAA also for the alpha tested surfaces' edges (fences, grates, foliage): alpha to coverage (SR-AvP2.cfg msaa_alpha,
+// on by default with msaa; without MSAA it's the alpha test as before). Not with gl_compatibility: Godot's OpenGL
+// renderer has no alpha to coverage (it would blend the edges, unsorted)
+static int alpha_coverage(void)
+{
+    static int v = -1;
+    if (v < 0)
+        v = (config_get_int("msaa", 0) >= 2) && config_get_int("msaa_alpha", 1) &&
+            (RenderingServer::get_singleton()->get_current_rendering_method() != String("gl_compatibility"));
+    return v;
+}
+
+// SR-AvP2.cfg's 3D settings: MSAA, screen-space anti-aliasing, the resolution scale and upscaler, anisotropic filtering
 static void viewport_settings(SubViewport *vp)
 {
     int msaa = config_get_int("msaa", 0);
     vp->set_msaa_3d((msaa >= 8) ? Viewport::MSAA_8X : ((msaa >= 4) ? Viewport::MSAA_4X : ((msaa >= 2) ? Viewport::MSAA_2X : Viewport::MSAA_DISABLED)));
+    // screen-space anti-aliasing: smaa (sharper) or fxaa, on its own or after MSAA (also the edges inside textures
+    // and of the alpha tested ones without MSAA; a little softer)
+    const char *saa = config_get("screen_aa");
+    if ((saa != NULL) && (strcasecmp(saa, "smaa") == 0)) vp->set_screen_space_aa(Viewport::SCREEN_SPACE_AA_SMAA);
+    else if ((saa != NULL) && (strcasecmp(saa, "fxaa") == 0)) vp->set_screen_space_aa(Viewport::SCREEN_SPACE_AA_FXAA);
     const char *scale = config_get("render_scale");
     float f = (scale != NULL) ? (float)atof(scale) : 1.0f;
     vp->set_scaling_3d_scale((f < 0.25f) ? 0.25f : ((f > 2.0f) ? 2.0f : f));
@@ -347,8 +364,8 @@ static void viewport_settings(SubViewport *vp)
     vp->set_anisotropic_filtering_level((aniso >= 16) ? Viewport::ANISOTROPY_16X : ((aniso >= 8) ? Viewport::ANISOTROPY_8X :
                                         ((aniso >= 4) ? Viewport::ANISOTROPY_4X : ((aniso >= 2) ? Viewport::ANISOTROPY_2X : Viewport::ANISOTROPY_DISABLED))));
     if (winapi_debug)
-        eprintf("render3d: 3D view: msaa %d, render scale %.2f (%s), anisotropy %d, debanding %d\n", msaa, (f < 0.25f) ? 0.25f : ((f > 2.0f) ? 2.0f : f), (up != NULL) ? up : "bilinear", aniso,
-                config_get_int("debanding", 0));
+        eprintf("render3d: 3D view: msaa %d (alpha to coverage %d), screen aa %s, render scale %.2f (%s), anisotropy %d, debanding %d\n", msaa, alpha_coverage(),
+                (saa != NULL) ? saa : "none", (f < 0.25f) ? 0.25f : ((f > 2.0f) ? 2.0f : f), (up != NULL) ? up : "bilinear", aniso, config_get_int("debanding", 0));
 }
 
 static int ready(void)
@@ -804,6 +821,7 @@ static const char *shader_code(int kind)
         int blend = kind & 3;
         std::string modes = "unshaded, cull_disabled";
         if (blend == MAT_ADD) modes += ", blend_add";
+        if ((blend == MAT_ALPHA_TEST) && alpha_coverage()) modes += ", alpha_to_coverage_and_one";
         if (kind & MAT_SKY) modes += ", depth_draw_never";
         // D3D's arithmetic: texture * light in the stored (sRGB) values, the lightmap 2x (MODULATE2X, or the
         // multipass blend below); the vertex colour 2x with the Saturate console variable (autoexec.cfg has 1):
@@ -992,7 +1010,12 @@ static const char *shader_code(int kind)
         c += (blend == MAT_ADD) ? "  col *= 1.0 - f;\n" : "  col = mix(col, fc, f);\n";
         c += "  ALBEDO = to_linear(col);\n";
         if ((kind & MAT_SKY) && (blend == MAT_OPAQUE)) c += "  ALPHA = 1.0;\n";
-        if (blend == MAT_ALPHA_TEST) c += "  ALPHA = t.a;\n  ALPHA_SCISSOR_THRESHOLD = 0.5;\n";
+        // with MSAA (msaa_alpha): alpha to coverage, the cut-out's edge (alpha 0.5, as the alpha test's) antialiased
+        // over a pixel by the samples it covers - Godot draws it in its transparent pass, the covered samples opaque
+        // ("and one"), its solid part in the depth prepass
+        if ((blend == MAT_ALPHA_TEST) && alpha_coverage())
+            c += "  ALPHA = t.a;\n  ALPHA_ANTIALIASING_EDGE = 0.5;\n  ALPHA_TEXTURE_COORDINATE = UV * vec2(textureSize(albedo, 0));\n";
+        else if (blend == MAT_ALPHA_TEST) c += "  ALPHA = t.a;\n  ALPHA_SCISSOR_THRESHOLD = 0.5;\n";
         // (a state change's INVSRCCOLOR, INVSRCCOLOR blend - the Alien's Hunting vision, NavAliens: src (1 - src) +
         // dest (1 - src) per channel - as src (1 - src) + dest (1 - its luminance): mix blending can't do per channel)
         if (blend == MAT_BLEND) c += "  ALPHA = t.a * COLOR.a;\n"
@@ -2167,6 +2190,15 @@ static void update_world_models(uint32_t mw)
                     wi.mi->set_surface_override_material((int)k, m);
                 }
                 wi.chromakey = chroma;
+                // debugging: AVP2_R3D_DUMPCHROMA=1: the chroma key world models (alpha tested), where they are
+                if (chroma && getenv("AVP2_R3D_DUMPCHROMA"))
+                {
+                    int n = 0;
+                    for (uint64_t key : gs->bsp_keys[bsp]) if (((key & 3) == MAT_ALPHA_TEST) && !(key & SPRITE_KEY)) n++;
+                    Vector3 p = lt_matrix(o + WM_TRANSFORM).xform(mit->second->get_aabb().get_center()), c = gs->camera->get_global_transform().origin;
+                    eprintf("render3d: chroma key world model %08x: %d alpha tested batches, at %.0f %.0f %.0f (camera %.0f %.0f %.0f)\n", o, n,
+                            p.x, p.y, p.z, c.x, c.y, c.z);
+                }
             }
             wi.mi->set_transform(lt_matrix(o + WM_TRANSFORM));
             // the object's alpha fades the whole model (translucent world models)
@@ -2532,7 +2564,8 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     if ((model == 0) || (vt == 0)) return;
     uint32_t nnodes = g32(model + MD_TRANSFORMS + 8);
     uint32_t pieces = g32(model + MD_PIECES + 4), npieces = g32(model + MD_PIECES + 8);
-    if ((pieces == 0) || (npieces == 0) || (npieces > 64) || (nnodes == 0) || (nnodes > 512)) return;
+    // (sanity limits only: d3d.ren has none - loaderanim.abc has 68 pieces)
+    if ((pieces == 0) || (npieces == 0) || (npieces > 4096) || (nnodes == 0) || (nnodes > 512)) return;
     int close = (flags & FLAG_REALLYCLOSE) != 0;
 
     // where it is (really close objects: in the camera's space)
@@ -2690,7 +2723,8 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
     static std::vector<float> pos, col;
     for (uint32_t pi = 0; pi < npieces; pi++)
     {
-        if ((pi < 32) && (hidden & (1u << pi))) continue;
+        // d3d.ren's test, (1 << i) & m_HiddenPieces: x86 shifts by i mod 32 (pieces 32.. follow bits 0..)
+        if (hidden & (1u << (pi & 31))) continue;
         uint32_t pc = g32(pieces + 4 * pi);
         if (pc == 0) continue;
         uint32_t verts = g32(pc + PC_VERTS + 4), nverts = g32(pc + PC_VERTS + 8);

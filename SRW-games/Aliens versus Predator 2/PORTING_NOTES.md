@@ -762,6 +762,17 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
 - Options (enhancements, off by default): lightmap_filter = bicubic (a B-spline over 4x4 texels from 4 bilinear taps;
   the lightmap blocks then get a 2-texel border, the light animations' block stride follows) - softer light
   gradients, no seams in a1s1; debanding = 1 (Godot's dithering of the 8-bit output).
+- Anti-aliasing (2026-11-14): with msaa = 2/4/8 the alpha tested surfaces (chroma key world models and models;
+  AVP2_R3D_WORLDALPHA=1 the main world's cut-outs) use alpha to coverage (msaa_alpha = 1, the default): ALPHA +
+  ALPHA_ANTIALIASING_EDGE 0.5 (the alpha test's threshold) + ALPHA_TEXTURE_COORDINATE, render mode
+  alpha_to_coverage_and_one. Godot then draws them in its transparent pass (the covered samples opaque) with their
+  solid part in the depth prepass (uses_depth_in_alpha_pass), and scales the alpha up with the mip level, so thin
+  distant bars don't vanish. Not with gl_compatibility (no alpha to coverage there: it would blend unsorted).
+  A2s3's far floor grating: stair-stepped slats -> smooth edges, the far rows kept (some dotting where 4 samples
+  quantise the coverage). screen_aa = smaa | fxaa: Godot's screen-space AA on the 3D view alone or with MSAA.
+- Models: no 64-piece limit (d3d.ren has none; loaderanim.abc has 68 pieces, unreferenced); hidden pieces tested as
+  d3d.ren's (1 << i) & m_HiddenPieces, i.e. bit i mod 32 (x86 shifts). AVP2_R3D_DUMPCHROMA=1 logs the chroma key
+  world models (alpha tested batches, where, the camera).
 - p3s2's blue streak + crate flash near the lift's top: a game event (in some runs only, in all builds, also with the
   light animations forced), not the renderer. New debugging aids: AVP2_R3D_ANIMLOG, AVP2_R3D_ANIMON / ANIMOFF,
   AVP2_R3D_DEBUGVIEW (light, vertex colour, light scales, lightmap, inputs).
