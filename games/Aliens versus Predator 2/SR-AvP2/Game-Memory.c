@@ -96,6 +96,11 @@ typedef struct _tlsf_block_t
 #define BLOCK_START 16 // offset of the data from the block's header (prev_phys + size)
 #define BLOCK_SIZE_MIN 24 // free block: next_free, prev_free and the next block's prev_phys
 #define POOL_OVERHEAD 16 // the first block's size field and the end sentinel's
+// the pool's first page is left unused (zeros): the games read a little before a block sometimes - AvP2's
+// CDestructible::UpdateProgressiveDamage reads the character attributes of set -1 (0x270 bytes before the array) for
+// every prop with progressive damage. Windows' heap always has headers and other blocks there; a block at the start
+// of a pool here had unmapped memory before it (a crash when the array was a new pool's first block)
+#define POOL_LEAD 4096
 
 #define TLSF_ALIGN_LOG2 3
 #define TLSF_ALIGN (1 << TLSF_ALIGN_LOG2)
@@ -470,7 +475,7 @@ static inline uint64_t adjust_size(unsigned int size)
 
 static inline tlsf_block_t *pool_first_block(const pool_t *pool)
 {
-    return (tlsf_block_t *)(pool->mem - BLOCK_OVERHEAD);
+    return (tlsf_block_t *)(pool->mem + POOL_LEAD - BLOCK_OVERHEAD);
 }
 
 static int pool_is_empty(const pool_t *pool)
@@ -491,7 +496,7 @@ static int add_pool(uint64_t size)
     if (num_pools >= MAX_POOLS) return 0;
 
     // the size class search rounds up by up to 1/32
-    bytes = size + (size >> 5) + 64;
+    bytes = size + (size >> 5) + 64 + POOL_LEAD;
     if (bytes <= POOL_SIZE)
     {
         bytes = POOL_SIZE;
@@ -515,9 +520,10 @@ static int add_pool(uint64_t size)
     if ((uintptr_t)mem < pools_low) pools_low = (uintptr_t)mem;
     if ((uintptr_t)mem + bytes > pools_high) pools_high = (uintptr_t)mem + bytes;
 
-    // one free block (its prev_phys field is before the pool: never used) and the end sentinel (size 0, used)
-    block = (tlsf_block_t *)(mem - BLOCK_OVERHEAD);
-    block->size = (bytes - POOL_OVERHEAD) | BLOCK_FREE | BLOCK_FIRST;
+    // one free block after the lead (its prev_phys field is in the lead: never used) and the end sentinel (size 0,
+    // used)
+    block = (tlsf_block_t *)(mem + POOL_LEAD - BLOCK_OVERHEAD);
+    block->size = (bytes - POOL_LEAD - POOL_OVERHEAD) | BLOCK_FREE | BLOCK_FIRST;
     last = block_link_next(block);
     last->size = BLOCK_PREV_FREE;
     block_insert(block);

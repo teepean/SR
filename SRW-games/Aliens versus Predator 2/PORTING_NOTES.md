@@ -792,3 +792,12 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   gives a 1920x1080 window with the 2D doubled and the 3D at full resolution. New: the 2D frame is drawn with nearest
   filtering at whole multiples (ui_filter = auto | linear | nearest: sharp text), and window_scale steps down when the
   window wouldn't fit on the screen (a resolution picked in the game's menu that is already the screen's).
+
+### 2026-11-14 — Continue Game crashed: a read before a new heap pool
+- Reported in play: Continue Game (the quicksave) crashed. The core: object.lto 0x1018A440, CDestructible::
+  UpdateProgressiveDamage, which looks up the object's character set (CCharacter, else BodyProp, else -1) and calls
+  g_pCharacterButeMgr->GetCanBeOnFire(nCharacter) - Check() is only an assert, so for every prop with progressive
+  damage the release game reads the attributes of set -1, 0x270 bytes before the array. On Windows that's the heap's
+  other blocks; here the array was the first block of a new pool (Game-Memory.c, 16 MB mappings in the 32-bit window)
+  with 2 MB of unmapped address space below it. It depends on the heap's layout (the same save loaded in other runs).
+  Game-Memory.c leaves a pool's first page unused (POOL_LEAD): reads up to 4 KB before a pool's first block get zeros.
