@@ -48,7 +48,8 @@
  *  AVP2_R3D_DUMPLM=<dir> (lightmap pages as PNG), AVP2_R3D_CAMERA="x y z yaw pitch" (a fixed camera),
  *  AVP2_DEBUG=2 (the objects, once), AVP2_R3D_DUMPSTATES=1 (the textures' state changes), AVP2_R3D_DUMPDETAIL=1
  *  (texture headers, detail / environment map links), AVP2_R3D_NOLINKS=1|2|3 (no links / no env maps / no detail),
- *  AVP2_R3D_SKYLOG=1 (the sky's objects and the sky camera), AVP2_R3D_SMOOTHLOG=1 (model smoothing levels).
+ *  AVP2_R3D_SKYLOG=1 (the sky's objects and the sky camera), AVP2_R3D_SMOOTHLOG=1 (model smoothing levels),
+ *  AVP2_R3D_SPRITELOG=1 / PARTLOG=1 (the sprites / particle systems drawn).
  *
  */
 
@@ -3946,6 +3947,13 @@ static void draw_sprite(uint32_t mw, uint32_t sd, uint32_t o)
     static const StringName p_half_size("half_size"), p_color("color");
     si.mi->set_instance_shader_parameter(p_half_size, Vector2(hx, hy));
     si.mi->set_instance_shader_parameter(p_color, sprite_color(mw, sd, o));
+    // debugging: AVP2_R3D_SPRITELOG=1 - the sprites drawn, every 2 s
+    static const char *sprite_log = getenv("AVP2_R3D_SPRITELOG");
+    if ((sprite_log != NULL) && ((gs->frame % 120) == 0))
+        eprintf("render3d: sprite %08x at %.0f %.0f %.0f scale %.2f %.2f %.2f rot %.2f %.2f %.2f %.2f flags %08x/%08x texture %08x %.0fx%.0f colour %08x\n", o,
+                gf(o + OB_POS), gf(o + OB_POS + 4), gf(o + OB_POS + 8), gf(o + OB_SCALE), gf(o + OB_SCALE + 4), gf(o + OB_SCALE + 8),
+                gf(o + OB_ROTATION), gf(o + OB_ROTATION + 4), gf(o + OB_ROTATION + 8), gf(o + OB_ROTATION + 12), flags, flags2, tex,
+                1.0f / te.inv_w, 1.0f / te.inv_h, g32(o + OB_COLOR));
     si.frame = gs->frame;
     if (!si.shown) { si.mi->set_visible(true); si.shown = 1; }
 }
@@ -4059,6 +4067,12 @@ static void draw_particles(uint32_t o)
         U2[i] = Vector2();
         C[i] = Color(0, 0, 0, 0);
     }
+    // debugging: AVP2_R3D_PARTLOG=1 - the particle systems drawn, every 2 s
+    static const char *part_log = getenv("AVP2_R3D_PARTLOG");
+    if ((part_log != NULL) && ((gs->frame % 120) == 0))
+        eprintf("render3d: particles %08x at %.0f %.0f %.0f: %u of %u drawn, box %.0f %.0f %.0f size %.0f %.0f %.0f, max size %.1f, flags %08x/%08x texture %08x colour %08x\n", o,
+                gf(o + OB_POS), gf(o + OB_POS + 4), gf(o + OB_POS + 8), k, n, box.position.x, box.position.y, -box.position.z, box.size.x, box.size.y, box.size.z,
+                maxsize, flags, flags2, tex, g32(o + OB_COLOR));
     std::vector<dyn_part> parts;
     if (k > 0) parts.push_back({ &a, sprite_material(tex, v) });
     (void) dyn_update(DYN_PARTICLES, si.mesh, si.dyn, parts);
