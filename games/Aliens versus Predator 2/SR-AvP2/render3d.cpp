@@ -80,6 +80,8 @@
 #include <godot_cpp/classes/texture_rect.hpp>
 #include <godot_cpp/classes/viewport_texture.hpp>
 #include <godot_cpp/classes/time.hpp>
+#include <godot_cpp/classes/hashing_context.hpp>
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/packed_vector2_array.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
@@ -478,6 +480,198 @@ extern "C" float r3d_console_float(const char *name, float def)
 /* ------------------------------------------------------------------ */
 /* textures                                                            */
 
+// HD textures (SR-AvP2.cfg hd_textures = <dir>): replacements for the game's textures, made by the user from their
+// own copy (SRW-games/.../tools/hdtex.py export: every DTX's mip 0 as a PNG + manifest.txt; then upscaled / edited).
+// The manifest maps the MD5 (8 bytes, hex) of a texture's mip data as the engine holds it to an image; a texture
+// whose mip 0 is in it gets that image (PNG, or the same name as .dds - with its mipmaps, BC1-7 -, .webp, .jpg, .tga,
+// .ktx), with the original's UV scale (the texel sizes stay the original's) and alpha test / blend decisions. An
+// image without alpha gets the original's alpha (upscaled) where the original has one; a different aspect ratio, a
+// missing or unreadable image: the original. hd_textures_max (default 4096) halves bigger images; the replacements
+// are kept between levels up to hd_textures_cache_mb (default 1024 MB) - the engine rebinds textures often.
+struct hd_cached
+{
+    Ref<ImageTexture> texture;
+    uint64_t bytes, used;
+};
+
+static struct
+{
+    int state;                                  // 0: not read yet, 1: on, -1: off
+    std::string dir;
+    std::map<std::string, std::string> files;   // hash -> image (relative)
+    std::map<std::string, hd_cached> cache;
+    std::map<std::string, int> bad;             // images that failed (reported once)
+    uint64_t cache_bytes, budget, clock;
+    int max_size;
+    uint64_t replaced, cached, missing, absent, failed;
+    uint64_t load_us;                           // the time the loads took
+} hd;
+
+static int hd_on(void)
+{
+    if (hd.state) return hd.state > 0;
+    hd.state = -1;
+    const char *dir = config_get("hd_textures");
+    if ((dir == NULL) || (dir[0] == 0)) return 0;
+    hd.dir = dir;
+    while ((hd.dir.size() > 1) && ((hd.dir.back() == '/') || (hd.dir.back() == '\\'))) hd.dir.pop_back();
+    PackedByteArray m = FileAccess::get_file_as_bytes(String::utf8((hd.dir + "/manifest.txt").c_str()));
+    if (m.is_empty())
+    {
+        eprintf("render3d: HD textures: no %s/manifest.txt (tools/hdtex.py export makes it)\n", hd.dir.c_str());
+        return 0;
+    }
+    std::string text((const char *)m.ptr(), (size_t)m.size());
+    size_t pos = 0;
+    while (pos < text.size())
+    {
+        size_t end = text.find('\n', pos);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(pos, end - pos);
+        pos = end + 1;
+        if (!line.empty() && (line.back() == '\r')) line.pop_back();
+        if (line.empty() || (line[0] == '#')) continue;
+        size_t t1 = line.find('\t'), t2 = (t1 == std::string::npos) ? t1 : line.find('\t', t1 + 1);
+        if ((t1 != 16) || (t2 == std::string::npos)) continue;
+        hd.files[line.substr(0, 16)] = line.substr(t1 + 1, t2 - t1 - 1);
+    }
+    hd.max_size = config_get_int("hd_textures_max", 4096);
+    if (hd.max_size < 16) hd.max_size = 16;
+    hd.budget = (uint64_t)config_get_int("hd_textures_cache_mb", 1024) << 20;
+    hd.state = hd.files.empty() ? -1 : 1;
+    eprintf("render3d: HD textures: %zu entries from %s/manifest.txt\n", hd.files.size(), hd.dir.c_str());
+    return hd.state > 0;
+}
+
+// the first 8 bytes of the MD5 of the mip data, hex (hdtex.py's key)
+static std::string hd_hash(const PackedByteArray &data)
+{
+    Ref<HashingContext> hc;
+    hc.instantiate();
+    hc->start(HashingContext::HASH_MD5);
+    hc->update(data);
+    PackedByteArray r = hc->finish();
+    char text[17];
+    for (int i = 0; i < 8; i++) snprintf(text + 2 * i, 3, "%02x", (unsigned)r[i]);
+    return std::string(text, 16);
+}
+
+// the image (the manifest's name, or the same name with another extension); *found: a file was there
+static Ref<Image> hd_load(const std::string &rel, std::string &path, int *found)
+{
+    *found = 0;
+    static const char *const exts[] = { "", ".png", ".dds", ".webp", ".jpg", ".jpeg", ".tga", ".ktx", ".ktx2" };
+    std::string base = hd.dir + "/" + rel, stem = base.substr(0, base.rfind('.'));
+    for (const char *e : exts)
+    {
+        path = e[0] ? stem + e : base;
+        if (!FileAccess::file_exists(String::utf8(path.c_str()))) continue;
+        *found = 1;
+        PackedByteArray b = FileAccess::get_file_as_bytes(String::utf8(path.c_str()));
+        std::string x = path.substr(path.rfind('.') + 1);
+        for (char &c : x) c = (char)tolower((unsigned char)c);
+        Ref<Image> im;
+        im.instantiate();
+        Error err = ERR_FILE_UNRECOGNIZED;
+        if (x == "png") err = im->load_png_from_buffer(b);
+        else if (x == "dds") err = im->load_dds_from_buffer(b);
+        else if (x == "webp") err = im->load_webp_from_buffer(b);
+        else if ((x == "jpg") || (x == "jpeg")) err = im->load_jpg_from_buffer(b);
+        else if (x == "tga") err = im->load_tga_from_buffer(b);
+        else if ((x == "ktx") || (x == "ktx2")) err = im->load_ktx_from_buffer(b);
+        if ((err == OK) && !im->is_empty()) return im;
+        return Ref<Image>();
+    }
+    path = base;
+    return Ref<Image>();
+}
+
+// the replacement for a texture (orig: its mip 0 as RGBA8, w x h), null: none
+static Ref<ImageTexture> hd_texture(const std::string &key, const Ref<Image> &orig, int has_alpha, uint32_t w, uint32_t h)
+{
+    auto it = hd.files.find(key);
+    if (it == hd.files.end()) { hd.missing++; return Ref<ImageTexture>(); }
+    auto c = hd.cache.find(key);
+    if (c != hd.cache.end())
+    {
+        c->second.used = ++hd.clock;
+        hd.cached++;
+        return c->second.texture;
+    }
+    if (hd.bad.count(it->second)) return Ref<ImageTexture>();
+    std::string path;
+    int found;
+    uint64_t t0 = Time::get_singleton()->get_ticks_usec();
+    struct timer { uint64_t t0; ~timer() { hd.load_us += Time::get_singleton()->get_ticks_usec() - t0; } } tm = { t0 };
+    Ref<Image> im = hd_load(it->second, path, &found);
+    const char *why = NULL;
+    // (a pack with some of the images: the others are the originals, silently)
+    if (!found)
+    {
+        hd.bad[it->second] = 1;
+        hd.absent++;
+        return Ref<ImageTexture>();
+    }
+    if (im.is_null()) why = "unreadable";
+    else if ((uint64_t)im->get_width() * h != (uint64_t)im->get_height() * w) why = "not the original's aspect ratio";
+    if (why != NULL)
+    {
+        hd.bad[it->second] = 1;
+        hd.failed++;
+        eprintf("render3d: HD texture %s: %s - the original is used\n", path.c_str(), why);
+        return Ref<ImageTexture>();
+    }
+    // too big: halved
+    while ((im->get_width() > hd.max_size) || (im->get_height() > hd.max_size))
+    {
+        if (im->is_compressed()) im->decompress();
+        im->clear_mipmaps();
+        im->resize((im->get_width() + 1) / 2, (im->get_height() + 1) / 2, Image::INTERPOLATE_LANCZOS);
+    }
+    // the original's alpha (cut-outs, blended skins) for an image without one (detect_alpha knows DXT3/5 and the
+    // uncompressed formats; other compressed ones than DXT1 - BC7, ... - are taken to have theirs)
+    Image::Format f = im->get_format();
+    int keep = im->is_compressed() && (f != Image::FORMAT_DXT1) && (f != Image::FORMAT_DXT3) && (f != Image::FORMAT_DXT5);
+    if (has_alpha && orig.is_valid() && !keep && (im->detect_alpha() == Image::ALPHA_NONE))
+    {
+        if (im->is_compressed()) im->decompress();
+        im->clear_mipmaps();
+        im->convert(Image::FORMAT_RGBA8);
+        Ref<Image> a = Image::create_from_data(orig->get_width(), orig->get_height(), false, orig->get_format(), orig->get_data());
+        a->convert(Image::FORMAT_RGBA8);
+        a->resize(im->get_width(), im->get_height(), Image::INTERPOLATE_BILINEAR);
+        PackedByteArray d = im->get_data(), ad = a->get_data();
+        uint8_t *dp = d.ptrw();
+        const uint8_t *ap = ad.ptr();
+        for (int64_t i = 3; i < d.size(); i += 4) dp[i] = ap[i];
+        im = Image::create_from_data(im->get_width(), im->get_height(), false, Image::FORMAT_RGBA8, d);
+    }
+    if (!im->has_mipmaps())
+    {
+        if (im->is_compressed()) im->decompress();
+        im->generate_mipmaps();
+    }
+    hd_cached e;
+    e.texture = ImageTexture::create_from_image(im);
+    e.bytes = (uint64_t)im->get_data_size();
+    e.used = ++hd.clock;
+    hd.cache[key] = e;
+    hd.cache_bytes += e.bytes;
+    hd.replaced++;
+    if (getenv("AVP2_R3D_DUMPHD")) eprintf("render3d: HD texture %s: %dx%d for %ux%u\n", path.c_str(), im->get_width(), im->get_height(), w, h);
+    // over the budget: the least recently used ones go (the materials keep theirs while they use them)
+    while ((hd.cache_bytes > hd.budget) && (hd.cache.size() > 1))
+    {
+        auto old = hd.cache.begin();
+        for (auto i = hd.cache.begin(); i != hd.cache.end(); ++i)
+            if (i->second.used < old->second.used) old = i;
+        if (old->first == key) break;
+        hd.cache_bytes -= old->second.bytes;
+        hd.cache.erase(old);
+    }
+    return e.texture;
+}
+
 static texture_entry make_texture(uint32_t shared)
 {
     texture_entry e;
@@ -508,6 +702,26 @@ static texture_entry make_texture(uint32_t shared)
     e.uv_h = ui_scale / (float)h;
     if (getenv("AVP2_R3D_DUMPDETAIL"))
         eprintf("render3d: texture %08x: base %ux%u mip0 %ux%u ui mip offset %u scale %.2f angle %d cmd \"%.60s\"\n", shared, base_w, base_h, w, h, g8(td + 0x24), e.detail_scale, (int)(int16_t)g16(td + TD_DETAILANGLE), (const char *)G2H(td + 0x2c));
+
+    // the HD replacement's key: the mip data as the engine holds it (rows without the pitch's padding)
+    std::string hd_key;
+    if (hd_on() && ((bpp == BPP_32) || (bpp == BPP_16) || (bpp == BPP_S3TC_DXT1) || (bpp == BPP_S3TC_DXT3) || (bpp == BPP_S3TC_DXT5)))
+    {
+        PackedByteArray raw;
+        if ((bpp == BPP_32) || (bpp == BPP_16))
+        {
+            uint32_t row = w * ((bpp == BPP_32) ? 4 : 2);
+            raw.resize((int64_t)row * h);
+            for (uint32_t y = 0; y < h; y++) memcpy(raw.ptrw() + (size_t)y * row, (const void *)G2H(data + y * pitch), row);
+        }
+        else
+        {
+            uint32_t size = ((w + 3) / 4) * ((h + 3) / 4) * ((bpp == BPP_S3TC_DXT1) ? 8 : 16);
+            raw.resize(size);
+            memcpy(raw.ptrw(), (const void *)G2H(data), size);
+        }
+        hd_key = hd_hash(raw);
+    }
 
     Ref<Image> img;
     PackedByteArray px;
@@ -567,6 +781,11 @@ static texture_entry make_texture(uint32_t shared)
         return e;
     }
     if (img.is_null() || img->is_empty()) return e;
+    if (!hd_key.empty())
+    {
+        e.texture = hd_texture(hd_key, img, e.has_alpha, w, h);
+        if (e.texture.is_valid()) return e;
+    }
     img->generate_mipmaps();
     e.texture = ImageTexture::create_from_image(img);
     return e;
@@ -4121,6 +4340,10 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         eprintf("render3d: env map texture %08x %s %.0f x %.0f cmd \"%.40s\"\n", et, e.texture.is_valid() ? "ok" : "none", e.inv_w ? 1.0f / e.inv_w : 0.0f,
                 e.inv_h ? 1.0f / e.inv_h : 0.0f, ((cl > 0x10000) && (cl < 0x80000000u)) ? (const char *)G2H(cl) : "");
     }
+    if (winapi_debug && ((gs->frame % 1200) == 600) && (hd.state > 0))
+        eprintf("render3d: HD textures: %llu loaded, %llu from the cache, %llu not in the manifest, %llu without an image, %llu failed (%.0f ms); cache %llu MB\n",
+                (unsigned long long)hd.replaced, (unsigned long long)hd.cached, (unsigned long long)hd.missing, (unsigned long long)hd.absent, (unsigned long long)hd.failed, hd.load_us / 1000.0,
+                (unsigned long long)(hd.cache_bytes >> 20));
     if (winapi_debug && ((gs->frame % 1200) == 600))
     {
         static const char *const names[DYN_KINDS] = { "models", "particles", "lines", "poly grids", "canvases" };

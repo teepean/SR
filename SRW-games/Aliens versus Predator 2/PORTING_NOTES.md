@@ -770,6 +770,23 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   distant bars don't vanish. Not with gl_compatibility (no alpha to coverage there: it would blend unsorted).
   A2s3's far floor grating: stair-stepped slats -> smooth edges, the far rows kept (some dotting where 4 samples
   quantise the coverage). screen_aa = smaa | fxaa: Godot's screen-space AA on the 3D view alone or with MSAA.
+- HD textures (2026-11-14): hd_textures = <dir> with manifest.txt + images. tools/hdtex.py export GAMEDIR...
+  OUTDIR writes every DTX's mip 0 as a PNG (Pillow decodes DXT through a DDS header) and the manifest: MD5[0:8] hex
+  of each mip level's data as the engine holds it (DXT blocks / 32-bit BGRA rows without pitch padding) -> image.
+  All DTX in AvP2/PH are version -5, a 164-byte header and the mips back to back, DXT1/3/5 or 32-bit (5080 + 511;
+  one pack serves both games: export both directories). render3d make_texture hashes mip 0 (HashingContext MD5)
+  and uses the image instead (FileAccess: UTF-8 paths on every platform; png, or the same name as dds/webp/jpg/tga/
+  ktx): the original's UV texel sizes, has_alpha and material choice stay; an image without alpha gets the
+  original's alpha resized (bilinear) - compressed images other than DXT1/3/5 (BC7, ...) are taken to have
+  theirs; a different aspect ratio or an unreadable file: the original + one warning; an image that isn't there:
+  the original, silently (partial packs). Mipmaps generated unless the file has them; bigger than hd_textures_max
+  (4096) halved; an LRU cache by hash up to hd_textures_cache_mb (1024) for the engine's rebinds and level reloads.
+  Tests: the untouched export = the same picture (a4s1 0 px, m1s1 knife animation only), 272/352 textures found in
+  m1s1/a4s1, 0 missing; a 2x Lanczos RGB-only pack: the same picture within 6% (the cut-outs keep the original's
+  alpha; at normal distances the 2x texture's mip 1 is the original), m2s1 328 textures in 1.0 s; a pack inverting
+  only WorldTextures: the world inverted, models as they were (63 skins without an image, no warnings); PH exa1s1 /
+  exa2s1 with the combined pack 199 / 352 found. Loads happen on the game thread when a texture is first used
+  (models mid-level too): big PNGs cost tens of ms each - DDS with mipmaps loads fastest.
 - Models: no 64-piece limit (d3d.ren has none; loaderanim.abc has 68 pieces, unreferenced); hidden pieces tested as
   d3d.ren's (1 << i) & m_HiddenPieces, i.e. bit i mod 32 (x86 shifts). AVP2_R3D_DUMPCHROMA=1 logs the chroma key
   world models (alpha tested batches, where, the camera).

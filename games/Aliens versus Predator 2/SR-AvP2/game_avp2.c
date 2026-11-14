@@ -67,6 +67,12 @@ static const char *const avp2_rez[] = { "AVP2.REZ", "SOUNDS.REZ", "ALIEN.REZ", "
     "#lightmap_filter = bilinear\n" \
     "# 3D: dithering against colour banding (0 = off, as the original; 1 = on)\n" \
     "#debanding = 0\n" \
+    "# 3D: an HD texture pack: a directory with manifest.txt and images (tools/hdtex.py export makes one from your\n" \
+    "# own game's textures, to upscale or edit); textures without an image in it stay as they are\n" \
+    "#hd_textures = /path/to/pack\n" \
+    "# 3D: HD textures bigger than this (pixels per side) are halved; the memory for them kept between levels (MB)\n" \
+    "#hd_textures_max = 4096\n" \
+    "#hd_textures_cache_mb = 1024\n" \
     "# LibGodot and the embedded Godot project (default: next to the program)\n" \
     "#libgodot = libgodot.so\n" \
     "#godot_project = godot/project.godot\n" \
