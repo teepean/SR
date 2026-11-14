@@ -933,3 +933,31 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   the collar's edges sharp, no cracks; ship hulls and crates as before; tree canopies' leaf cards bend a little.
 - Debugging aids: AVP2_R3D_SMOOTHLOG=1 (a model's level changes), AVP2_R3D_SKYLOG=1 (the sky's objects, their
   distance from the sky camera), AVP2_DUMP_GODOT_MS (the screenshot interval), AVP2_R3D_SKIP k.
+
+### 2026-11-15 — models lit by the world's static lights (a1s1's black ship); remodelled pieces not smoothed
+- User report: "the spaceship models seem to be dark now". a1s1's cargo ship (models\props\smuggler_ship.abc) was a
+  black silhouette against the nebula - with or without smoothing / HD textures, and before the previous commits
+  too; the original (Wine) lights it dark blue. The light table there is 0, the sun's rays end on no sky poly (the
+  space room has none) and no dynamic light reaches it. d3d.ren's SetupModelLight (0x1001cd54) has a fourth source
+  the port never had: after the dynamic lights it asks the world tree for its light list (FindObjectsInBox2, vtable
+  slot 2 of world +0x6c, list 1) in a box of the model's radius (Model +0xa8) round the model, callback 0x1001c9d0.
+  Those are the level's static lights for objects - avp2src commonmodel.cpp w_ReadWorldLights keeps every Light /
+  DirLight / ObjectLight with LightObjects (default on) that isn't FastLightObjects (those go into the light table)
+  as a CWorldLight: position +0x68, radius +0x74, colour +0x78, direction +0x84, FOV cosine +0x90, outer colour
+  +0x94. The callback takes one when its distance less the model's radius is under its radius; a spot (-1 < FOV
+  cosine < 1) only inside its cone, its colour from inner on the axis to outer at the edge, t = (1 - (dot/2 + 1/2))
+  / (1 - (cos/2 + 1/2)); then lit like a dynamic light.
+- render3d walks the tree as wt_FindInRect does (a node's light list in order - a light once, the engine's touch
+  codes - then the children the box reaches by the node's centre in x and z, 0 1 2 3) and adds them after the
+  dynamic lights, at most MaxModelLights in all (d3d.ren: min(MaxModelLights, 16); the console variable's default is
+  4 - the port took up to 16 dynamic lights). The dynamic lights' reach is the model's radius too (was 128 units).
+- (A first try read the lights from a list at world +0xe8 - CServerWorldFull's m_LightHead in avp2src - and lit the
+  ship bright cyan with 16 "lights": in the client world that isn't the light list; walking it to its end crashed.
+  The tree's answer for the ship: two lights, radius 8100, colours 0 11 32 and 16 73 177.)
+- Results: the ship dark blue as in the original; a1s1's marines at the dropship and the doctor's face lit as in
+  the Wine frames (darker and flatter before); p1s1's two officers by the door, black silhouettes before, lit as
+  the original lights the officer there. Primal Hunt reads the same structures (exp1s1: the Predator ship and its
+  light, radius 1600, colour 204). AVP2_R3D_NOSTATICLIGHTS=1: without; AVP2_R3D_LIGHTLOG=<model file name part>:
+  a model's light every 60th frame (light table, sun, the lights it got, the tree's static lights).
+- model_smoothing skips pieces over 3000 triangles (the game's own go up to 2007, ExoSuit's pelvis): a remodelled
+  piece in custom\ (an AI-refined head of 4160) is drawn as it is.

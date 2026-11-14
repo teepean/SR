@@ -2841,10 +2841,59 @@ static Transform3D lt_object_transform(uint32_t o)
 
 struct model_light { float pos[3], dir[3], radius2, color[3]; };
 
+// the world's static lights for objects: CWorldLight (avp2src commonmodel.cpp: w_ReadWorldLights keeps each
+// Light / DirLight / ObjectLight with LightObjects that isn't FastLightObjects - those go into the light table),
+// in the world tree's light list
+#define WL_POS 0x68
+#define WL_RADIUS 0x74
+#define WL_COLOR 0x78
+#define WL_DIR 0x84
+#define WL_FOVCOS 0x90
+#define WL_OUTERCOLOR 0x94
+#define MD_RADIUS 0xa8          // the model's radius d3d.ren tests lights against (Model +0xa8)
+
 // the engine's i_IntersectSegment (cdecl: IntersectQuery*, IntersectInfo*, WorldTree*, bServer), recompiled
 #define MW_WORLDTREE 0x6c
 #define WT_ROOT 0x0c
 #define WTN_RADIUS 0x40
+
+#define WTN_NUMOBJECTS 0x44
+#define WTN_CENTER 0x30
+#define WTN_CHILDREN 0x4c
+#define WT_LIST_LIGHTS 1
+
+// the world tree's static lights whose boxes (position +- radius) touch a box, in the order the engine's
+// FindObjectsInBox2 reports them (avp2src worldtree.cpp wt_FindInRect_F: a node's list, then the children the box
+// reaches by the node's centre in x and z, 0 1 2 3); each once (the engine's touch codes)
+static void static_lights_in_box(uint32_t mw, const float mn[3], const float mx[3], std::vector<uint32_t> &out)
+{
+    static std::vector<uint32_t> stack, seen;
+    stack.clear(); seen.clear();
+    stack.push_back(mw + MW_WORLDTREE + WT_ROOT);
+    while (!stack.empty() && (stack.size() < 4096))
+    {
+        uint32_t node = stack.back();
+        stack.pop_back();
+        if ((node == 0) || (g32(node + WTN_NUMOBJECTS) == 0)) continue;
+        uint32_t head = node + 8 * WT_LIST_LIGHTS, n = 0;
+        for (uint32_t link = g32(head + 4); (link != 0) && (link != head) && (n < 65536); link = g32(link + 4), n++)
+        {
+            uint32_t wl = g32(link + 8);
+            if ((wl == 0) || (std::find(seen.begin(), seen.end(), wl) != seen.end())) continue;
+            seen.push_back(wl);
+            float r = gf(wl + WL_RADIUS), x = gf(wl + WL_POS), y = gf(wl + WL_POS + 4), z = gf(wl + WL_POS + 8);
+            if ((x - r > mx[0]) || (y - r > mx[1]) || (z - r > mx[2]) || (x + r < mn[0]) || (y + r < mn[1])) continue;
+            if (z + r >= mn[2]) out.push_back(wl);
+        }
+        if (g32(node + WTN_CHILDREN) == 0) continue;
+        float cx = gf(node + WTN_CENTER), cz = gf(node + WTN_CENTER + 8);
+        uint32_t kids[4];
+        int nk = 0;
+        if (mn[0] < cx) { if (mn[2] < cz) kids[nk++] = g32(node + WTN_CHILDREN); if (mx[2] > cz) kids[nk++] = g32(node + WTN_CHILDREN + 4); }
+        if (mx[0] > cx) { if (mn[2] < cz) kids[nk++] = g32(node + WTN_CHILDREN + 8); if (mx[2] > cz) kids[nk++] = g32(node + WTN_CHILDREN + 12); }
+        for (int k = nk - 1; k >= 0; k--) stack.push_back(kids[k]);     // depth first, child 0 first
+    }
+}
 
 // CastRayAtSky: does the segment from p along d end on a sky poly? (the query and its result in 32-bit memory)
 static int ray_at_sky(uint32_t mw, const float p[3], const float d[3])
@@ -3123,6 +3172,8 @@ static const smooth_grid &smooth_grid_for(int level)
 }
 static void smooth_clear(void) { smooth_pieces.clear(); }
 
+static const uint32_t SMOOTH_MAX_TRIS = 3000;      // pieces with more triangles are not smoothed (see draw_model)
+
 static int smooth_level(void)
 {
     static int level = -1;
@@ -3298,13 +3349,17 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
                 for (int c = 0; c < 3; c++) lit[c] = sc[c] * tint[c] * objc[c] + add[c];
             }
         }
-        // dynamic lights that light objects
+        // dynamic lights that light objects, then the world's static ones: at most MaxModelLights (4; d3d.ren's
+        // SetupModelLight: min(MaxModelLights, 16)), a light when its distance less the model's radius is under
+        // its own radius
+        size_t max_lights = (size_t)std::min(std::max((int)cvar("MaxModelLights", 4.0f), 0), 16);
+        float mrad = gf(model + MD_RADIUS);
         for (uint32_t l : lights)
         {
-            if (ml.size() >= 16) break;
+            if (ml.size() >= max_lights) break;
             Vector3 lp = lt_pos(l + OB_POS);
             float radius = gf(l + DL_RADIUS);
-            if (!(radius > 0.0f) || ((lp - world.origin).length() - 128.0f > radius)) continue;
+            if (!(radius > 0.0f) || !((lp - world.origin).length() - mrad < radius)) continue;
             Vector3 m = inv_world.xform(lp);    // in the model's space (Godot axes) -> LithTech's
             model_light L;
             L.pos[0] = m.x; L.pos[1] = m.y; L.pos[2] = -m.z;
@@ -3315,6 +3370,72 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
             L.color[1] = g8(l + OB_COLOR + 1) * tint[1] * objc[1];
             L.color[2] = g8(l + OB_COLOR + 2) * tint[2] * objc[2];
             ml.push_back(L);
+        }
+        // then the world's static lights that light objects (d3d.ren SetupModelLight's FindObjectsInBox2 for the
+        // tree's light list, callback 0x1001c9d0): those that reach the model's radius; a spot only inside its cone,
+        // its colour from inner (the axis) to outer (the edge)
+        static const char *no_static = getenv("AVP2_R3D_NOSTATICLIGHTS");
+        if ((no_static == NULL) && (ml.size() < max_lights))
+        {
+            float bmin[3] = { p[0] - mrad, p[1] - mrad, p[2] - mrad }, bmax[3] = { p[0] + mrad, p[1] + mrad, p[2] + mrad };
+            static std::vector<uint32_t> found;
+            found.clear();
+            static_lights_in_box(mw, bmin, bmax, found);
+            for (uint32_t wl : found)
+            {
+                if (ml.size() >= max_lights) break;
+                float lpos[3] = { gf(wl + WL_POS), gf(wl + WL_POS + 4), gf(wl + WL_POS + 8) }, radius = gf(wl + WL_RADIUS);
+                float d[3] = { p[0] - lpos[0], p[1] - lpos[1], p[2] - lpos[2] };
+                float dist = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+                if (!(dist - mrad < radius) || !(radius > 0.0f)) continue;
+                float c[3] = { gf(wl + WL_COLOR), gf(wl + WL_COLOR + 4), gf(wl + WL_COLOR + 8) };
+                float fov = gf(wl + WL_FOVCOS);
+                if ((fov > -1.0f) && (fov < 1.0f) && (dist != 0.0f))
+                {
+                    float dot = (d[0] * gf(wl + WL_DIR) + d[1] * gf(wl + WL_DIR + 4) + d[2] * gf(wl + WL_DIR + 8)) / dist;
+                    if (fov > dot) continue;
+                    float t = (1.0f - (dot * 0.5f + 0.5f)) / (1.0f - (fov * 0.5f + 0.5f));
+                    for (int k = 0; k < 3; k++) c[k] = c[k] * (1.0f - t) + gf(wl + WL_OUTERCOLOR + 4 * k) * t;
+                }
+                Vector3 m = inv_world.xform(Vector3(lpos[0], lpos[1], -lpos[2]));
+                model_light L;
+                L.pos[0] = m.x; L.pos[1] = m.y; L.pos[2] = -m.z;
+                L.radius2 = radius * radius;
+                float len = sqrtf(L.pos[0] * L.pos[0] + L.pos[1] * L.pos[1] + L.pos[2] * L.pos[2]);
+                for (int k = 0; k < 3; k++) L.dir[k] = ((len > 0.0f) ? L.pos[k] / len : 0.0f) / L.radius2;
+                for (int k = 0; k < 3; k++) L.color[k] = c[k] * tint[k] * objc[k];
+                ml.push_back(L);
+            }
+        }
+        // debugging: AVP2_R3D_LIGHTLOG=<file name part> logs those models' light (every 60th frame)
+        static const char *light_log = getenv("AVP2_R3D_LIGHTLOG");
+        if ((light_log != NULL) && g32(model + 4) && strstr((const char *)G2H(g32(model + 4)), light_log) && ((gs->frame % 60) == 0))
+        {
+            const float *sc = render_struct ? (const float *)(render_struct + RS_LIGHTCOLOR) : NULL;
+            const float *ld = render_struct ? (const float *)(render_struct + RS_LIGHTDIR) : NULL;
+            eprintf("render3d: light %08x \"%s\" at %.0f %.0f %.0f radius %.0f (light radius %.0f): base %.0f %.0f %.0f, sun %.2f (colour %.0f %.0f %.0f dir %.2f %.2f %.2f), add %.0f %.0f %.0f, tint %.2f %.2f %.2f, obj %.2f %.2f %.2f, %zu of %zu lights\n",
+                    o, (const char *)G2H(g32(model + 4)), world.origin.x, world.origin.y, -world.origin.z, gf(model + MD_GLOBALRADIUS) * fabsf(gf(o + OB_SCALE)), gf(model + MD_RADIUS),
+                    base[0], base[1], base[2], gs->models[o].sun, sc ? sc[0] : 0, sc ? sc[1] : 0, sc ? sc[2] : 0, ld ? ld[0] : 0, ld ? ld[1] : 0, ld ? ld[2] : 0,
+                    add[0], add[1], add[2], tint[0], tint[1], tint[2], objc[0], objc[1], objc[2], ml.size(), lights.size());
+            for (uint32_t l : lights)
+            {
+                Vector3 lp = lt_pos(l + OB_POS);
+                eprintf("render3d:   light %08x at %.0f %.0f %.0f radius %.0f colour %u %u %u: %.0f from the model\n", l, lp.x, lp.y, -lp.z, gf(l + DL_RADIUS),
+                        g8(l + OB_COLOR), g8(l + OB_COLOR + 1), g8(l + OB_COLOR + 2), (lp - world.origin).length());
+            }
+            // the world's static lights the tree reports
+            {
+                float mrad2 = gf(model + MD_RADIUS);
+                float bmin[3] = { world.origin.x - mrad2, world.origin.y - mrad2, -world.origin.z - mrad2 }, bmax[3] = { world.origin.x + mrad2, world.origin.y + mrad2, -world.origin.z + mrad2 };
+                std::vector<uint32_t> tree;
+                static_lights_in_box(mw, bmin, bmax, tree);
+                for (uint32_t wl : tree)
+                {
+                    float d[3] = { world.origin.x - gf(wl + WL_POS), world.origin.y - gf(wl + WL_POS + 4), -world.origin.z - gf(wl + WL_POS + 8) };
+                    eprintf("render3d:   static %08x at %.0f %.0f %.0f radius %.0f colour %.0f %.0f %.0f fov %.2f: %.0f from the model\n", wl, gf(wl + WL_POS), gf(wl + WL_POS + 4), gf(wl + WL_POS + 8),
+                            gf(wl + WL_RADIUS), gf(wl + WL_COLOR), gf(wl + WL_COLOR + 4), gf(wl + WL_COLOR + 8), gf(wl + WL_FOVCOS), sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]));
+                }
+            }
         }
     }
 
@@ -3465,7 +3586,9 @@ static void draw_model(uint32_t mw, uint32_t sd, uint32_t o, const Transform3D &
             light_at(n, rp, &col[i * 3]);
         }
         dyn_arrays &S = s[tex];
-        if (level >= 2)
+        // pieces already finer than any of the game's own (those go up to 2007 triangles: ExoSuit's pelvis), as
+        // a remodelled piece in the custom directory, drawn as they are: smoothing them changes nothing to see
+        if ((level >= 2) && (ntris <= SMOOTH_MAX_TRIS))
         {
             const smooth_piece &sp = smooth_topology(pc, verts, nverts, tris, ntris);
             size_t nt = sp.tri.size();
