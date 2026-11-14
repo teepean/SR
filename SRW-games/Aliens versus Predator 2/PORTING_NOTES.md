@@ -905,8 +905,14 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   way, the same frames). Not it: the far plane for the sky (the clouds are 0-1231 from the sky camera), culling
   the sky's back faces (the cloud triangle faces the sky camera; culling them took the landing pad's sky away).
 - Still different there: the original's ship trails long blue exhaust jets, ours shows round glows.
-- PH exh2s1 / exp1s1 crash at the exit when object.lto is unloaded (FreeLibrary -> DllMain -> a call to an unmapped
-  address 0x43a986b0): also with the previous commit's build - not from these changes (TODO).
+- PH exh2s1 / exp1s1 crashed when object.lto was unloaded (the quit, Abort Game; also with the previous commit's
+  build): DLL_PROCESS_DETACH -> _cexit -> the atexit destructor of a static list (0x10337410: CTList-like, its
+  destructor deletes each object; 0x10142a40 adds objects of a type in these two levels) -> a virtual destructor
+  call through freed memory. The list is emptied only by the server shell's PreStartWorld (vtable 0x10287df8 slot
+  7, 0x10057f20 -> 0x1014b9b0), for the next world: after the last one it holds the objects the engine deleted with
+  that world (on Windows the freed blocks evidently still had their vtables). FreeLibrary_c now empties it as
+  PreStartWorld does (head = tail = the list, count and iterator 0) before the detach. exh2s1 / exp1s1 quit with
+  6 / 13 objects left in it: clean; Abort Game in exp1s1 -> the main menu -> quit: clean.
 - model_smoothing = 2..4 (an enhancement, off by default; model_crease_angle, default 55): each model triangle is
   drawn as N x N triangles on a PN triangle (Vlachos et al. 2001, ATI TruForm) through its corners and normals.
   The normals are the pose's (the skinned positions' faces, area weighted) per smoothing group: the corners at a

@@ -24,6 +24,7 @@
 #include "platform.h"
 #include "camera.h"
 #include "config.h"
+#include "game.h"
 #include "vfs.h"
 #include "winapi.h"
 #include "display.h"
@@ -1582,6 +1583,23 @@ uint32_t CCALL FreeLibrary_c(void *hLibModule)
     if ((m->refs == 0) && m->loaded && (m->entry != NULL) && (m->data_initial != NULL))
     {
         uint32_t args[3] = { H2G(m), 0, 0 };
+        // Primal Hunt's object.lto has a static list of objects (0x10337410; its destructor, run by the detach,
+        // deletes each one) that only the server shell's PreStartWorld (0x10057f20: 0x1014b9b0) empties, for the
+        // next world. After the last world (the quit, Abort Game) it still holds that world's objects, deleted with
+        // the world by the engine: the detach deleted them again, a virtual call through freed memory (exh2s1,
+        // exp1s1: the objects that 0x10142a40 adds). Emptied here as PreStartWorld does (the nodes go with the DLL's
+        // heap).
+        if (game.primal_hunt && (strcmp(m->name, "object.lto") == 0))
+        {
+            uint32_t *list = (uint32_t *)(m->data_start + (0x10337410 - 0x102cb000));
+            uint32_t self = H2G(list);
+            if ((m->data_start + (0x10337424 - 0x102cb000) <= m->data_end) && (list[1] != self) && (list[1] != 0) && (list[2] != 0))
+            {
+                if (winapi_debug) eprintf("FreeLibrary: object.lto's object list emptied (%u left from the last world)\n", list[3]);
+                list[1] = list[2] = self;
+                list[3] = list[4] = 0;
+            }
+        }
         call_game(H2G(m->entry), 3, args);
         m->loaded = 0;
     }
