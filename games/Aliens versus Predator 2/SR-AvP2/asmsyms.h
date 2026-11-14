@@ -1,7 +1,8 @@
 /**
  *
  *  The recompiled code's symbols the C runtime uses (the asm2c stubs whose addresses go into the game's tables,
- *  the modules' entry points, vtables in their data, c2asm's calls into the game).
+ *  the modules' entry points, vtables in their data, c2asm's calls into the game, the game DLLs' data sections:
+ *  <module>_data_start/end, global_aliases.sci).
  *
  *  Normally the recompiled modules are linked into the program and these are ordinary external symbols. With
  *  SR_BLOB (macOS; on Linux with blob=1, to test it) the recompiled code is a separate image loaded at a fixed low
@@ -25,7 +26,8 @@
     X(BinkIsSoftwareCursor_asm2c) X(BinkNextFrame_asm2c) X(BinkOpen_asm2c) X(BinkOpenDirectSound_asm2c) \
     X(BinkOpenMiles_asm2c) X(BinkRestoreCursor_asm2c) X(BinkSetSoundSystem_asm2c) X(BinkSetSoundTrack_asm2c) \
     X(BinkWait_asm2c) X(canvas_DrawPrimitive_asm2c) X(canvas_GetState_asm2c) X(canvas_GetTexelSize_asm2c) \
-    X(canvas_SetState_asm2c) X(canvas_SetTexture_asm2c) X(cshell_DllMainCRTStartup) \
+    X(canvas_SetState_asm2c) X(canvas_SetTexture_asm2c) X(cshell_data_end) X(cshell_data_start) \
+    X(cshell_DllMainCRTStartup) \
     X(cshell_GetClientShellFunctions) X(cshell_GetClientShellVersion) X(cshell_SetInstanceHandle) \
     X(FreeModeList_asm2c) X(GetSupportedModes_asm2c) X(IDirectDraw7Vtbl_asm2c) X(IDirectDrawSurface7Vtbl_asm2c) \
     X(IDirectInputAVtbl_asm2c) X(IDirectInputDevice2AVtbl_asm2c) X(lithtech_DirectMusicMgr_vtbl) \
@@ -36,6 +38,7 @@
     X(music_PlayMotif3_asm2c) X(music_PlaySecondary_asm2c) X(music_SetVolume_asm2c) X(music_Stop_asm2c) \
     X(music_StopMotif2_asm2c) X(music_StopMotif3_asm2c) X(music_StopSecondary_asm2c) \
     X(music_StringToEnactType_asm2c) X(music_Term_asm2c) X(music_TermLevel_asm2c) X(music_UnPause_asm2c) \
+    X(object_data_end) X(object_data_start) \
     X(object_DllMainCRTStartup) X(object_GetServerShellFunctions) X(object_GetServerShellVersion) \
     X(object_ObjectDLLSetup) X(object_SetInstanceHandle) X(ren_BindTexture_asm2c) X(ren_BlitFromScreen_asm2c) \
     X(ren_BlitToScreen_asm2c) X(ren_Clear_asm2c) X(ren_CreateContext_asm2c) X(ren_CreateSurface_asm2c) \
@@ -48,7 +51,8 @@
     X(ren_SetOptimized2DBlend_asm2c) X(ren_SetOptimized2DColor_asm2c) X(ren_Start3D_asm2c) \
     X(ren_StartOptimized2D_asm2c) X(ren_SwapBuffers_asm2c) X(ren_Term_asm2c) X(ren_UnbindTexture_asm2c) \
     X(ren_UnlockScreen_asm2c) X(ren_UnlockSurface_asm2c) X(ren_UnoptimizeSurface_asm2c) X(ren_WarpToScreen_asm2c) \
-    X(RenderDLLSetup_asm2c) X(server_CreateServer) X(server_DeleteServer) X(server_DllMainCRTStartup)
+    X(RenderDLLSetup_asm2c) X(server_CreateServer) X(server_data_end) X(server_data_start) X(server_DeleteServer) \
+    X(server_DllMainCRTStartup)
 
 #ifdef __cplusplus
 extern "C" {
@@ -90,6 +94,8 @@ extern const uintptr_t blob_addr_c_call_asm_n, blob_addr_c_call_asm_this;
 #define canvas_GetTexelSize_asm2c ((char *)blob_addr[ASM_canvas_GetTexelSize_asm2c])
 #define canvas_SetState_asm2c ((char *)blob_addr[ASM_canvas_SetState_asm2c])
 #define canvas_SetTexture_asm2c ((char *)blob_addr[ASM_canvas_SetTexture_asm2c])
+#define cshell_data_end ((char *)blob_addr[ASM_cshell_data_end])
+#define cshell_data_start ((char *)blob_addr[ASM_cshell_data_start])
 #define cshell_DllMainCRTStartup ((char *)blob_addr[ASM_cshell_DllMainCRTStartup])
 #define cshell_GetClientShellFunctions ((char *)blob_addr[ASM_cshell_GetClientShellFunctions])
 #define cshell_GetClientShellVersion ((char *)blob_addr[ASM_cshell_GetClientShellVersion])
@@ -126,6 +132,8 @@ extern const uintptr_t blob_addr_c_call_asm_n, blob_addr_c_call_asm_this;
 #define music_Term_asm2c ((char *)blob_addr[ASM_music_Term_asm2c])
 #define music_TermLevel_asm2c ((char *)blob_addr[ASM_music_TermLevel_asm2c])
 #define music_UnPause_asm2c ((char *)blob_addr[ASM_music_UnPause_asm2c])
+#define object_data_end ((char *)blob_addr[ASM_object_data_end])
+#define object_data_start ((char *)blob_addr[ASM_object_data_start])
 #define object_DllMainCRTStartup ((char *)blob_addr[ASM_object_DllMainCRTStartup])
 #define object_GetServerShellFunctions ((char *)blob_addr[ASM_object_GetServerShellFunctions])
 #define object_GetServerShellVersion ((char *)blob_addr[ASM_object_GetServerShellVersion])
@@ -172,6 +180,8 @@ extern const uintptr_t blob_addr_c_call_asm_n, blob_addr_c_call_asm_this;
 #define RenderDLLSetup_asm2c ((char *)blob_addr[ASM_RenderDLLSetup_asm2c])
 #define server_CreateServer ((char *)blob_addr[ASM_server_CreateServer])
 #define server_DeleteServer ((char *)blob_addr[ASM_server_DeleteServer])
+#define server_data_end ((char *)blob_addr[ASM_server_data_end])
+#define server_data_start ((char *)blob_addr[ASM_server_data_start])
 #define server_DllMainCRTStartup ((char *)blob_addr[ASM_server_DllMainCRTStartup])
 
 #define c_call_asm_n ((uint32_t (*)(void *, uint32_t, uint32_t, const uint32_t *))blob_addr_c_call_asm_n)

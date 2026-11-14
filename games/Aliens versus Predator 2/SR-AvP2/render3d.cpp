@@ -3922,6 +3922,21 @@ extern "C" int r3d_render_scene(uint8_t *scene)
         gs->current = ctx;
         build_world(ctx);
     }
+    // a scene without a world (its context deleted: the main menu after Abort Game, the client keeps rendering the
+    // camera): nothing is drawn and the 3D view is hidden (r3d_end_frame). The last level's meshes and materials stay
+    // until the next world is built, with the addresses of its freed surfaces and textures: the textures' states and
+    // the sprite-animated surfaces read them (a crash at Abort Game after a save: a surface's texture from freed
+    // memory), and the 3D view showed the old level behind the menu
+    if ((ctx == NULL) || (ctx->world == 0) || (ctx != gs->current))
+    {
+        static int logged;
+        if (winapi_debug && !logged)
+        {
+            logged = 1;
+            eprintf("render3d: a scene without a world (context %u): not drawn\n", g32(sd + 0x34));
+        }
+        return 0;
+    }
 
     // the camera
     Vector3 pos = lt_pos(sd + SD_POS);
@@ -4031,7 +4046,6 @@ extern "C" int r3d_render_scene(uint8_t *scene)
     }
 
     // the objects (after the camera: models are culled and lit with it)
-    if ((ctx != NULL) && (ctx->world != 0) && (ctx == gs->current))
     {
         // debugging: AVP2_R3D_SKIP=<letters> leaves object types out (w world models' movement, m models, s sprites,
         // p particles, l lines, g poly grids, c canvases; a: the light animations stay as they were at the start,

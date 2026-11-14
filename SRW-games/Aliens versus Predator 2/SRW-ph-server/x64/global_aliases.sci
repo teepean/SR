@@ -1,1 +1,3 @@
 loc_10063F55,server_DllMainCRTStartup
+loc_1007D000,server_data_start
+loc_1009001C,server_data_end

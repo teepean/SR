@@ -1386,6 +1386,10 @@ typedef struct {
     void *entry;        // the DLL's entry point (its C runtime's _DllMainCRTStartup), recompiled
     int loaded;
     uint8_t *image;     // the DLL file mapped as data (its resources)
+    // the DLL's data section (initialized data and bss: <module>_data_start/end, global_aliases.sci) and a copy of it
+    // from before its first DllMain: put back when the DLL is loaded again after FreeLibrary
+    uint8_t *data_start, *data_end, *data_initial;
+    int refs;           // LoadLibrary - FreeLibrary
 } module_info;
 
 // recompiled game DLLs (stand-ins until the native builds from Monolith's source replace them)
@@ -1444,12 +1448,14 @@ static const module_export bink_exports[] = {
 
 // AvP2's modules: the engine loads the game DLLs from temporary copies (any path, matched by name)
 // the game sees the modules' addresses (HMODULE): LOW_OBJ
+// (the engine frees object.lto and server.dll when a game ends - Abort Game, a saved game loaded from the menu - and
+// loads them again for the next one: as on Windows, they start again from their data as in the file)
 static module_info modules_init[] = {
-    { 0, "cshell.dll", cshell_exports, (void *) cshell_DllMainCRTStartup, 0, NULL },
-    { 0, "object.lto", object_exports, (void *) object_DllMainCRTStartup, 0, NULL },
-    { 0, "server.dll", server_exports, (void *) server_DllMainCRTStartup, 0, NULL },
-    { 0, "d3d.ren", render_exports, NULL, 0, NULL },
-    { 0, "binkw32.dll", bink_exports, NULL, 0, NULL },
+    { 0, "cshell.dll", cshell_exports, (void *) cshell_DllMainCRTStartup, 0, NULL, (uint8_t *) cshell_data_start, (uint8_t *) cshell_data_end, NULL, 0 },
+    { 0, "object.lto", object_exports, (void *) object_DllMainCRTStartup, 0, NULL, (uint8_t *) object_data_start, (uint8_t *) object_data_end, NULL, 0 },
+    { 0, "server.dll", server_exports, (void *) server_DllMainCRTStartup, 0, NULL, (uint8_t *) server_data_start, (uint8_t *) server_data_end, NULL, 0 },
+    { 0, "d3d.ren", render_exports, NULL, 0, NULL, NULL, NULL, NULL, 0 },
+    { 0, "binkw32.dll", bink_exports, NULL, 0, NULL, NULL, NULL, NULL, 0 },
 };
 
 LOW_SLOT(modules)
@@ -1489,11 +1495,28 @@ void * CCALL LoadLibraryA_c(const char *lpLibFileName)
     }
     if (winapi_debug) eprintf("LoadLibraryA: %s -> recompiled module\n", lpLibFileName);
 
+    m->refs++;
     if (!m->loaded)
     {
         m->loaded = 1;
         // its resources (the code is the recompiled one)
         if (m->image == NULL) m->image = pe_image_load(lpLibFileName, 0);
+        // its data as Windows maps it: as in the file, also when it's loaded again (the last game's globals - pointers
+        // to its freed objects - made the next game crash: Continue Game after Abort Game)
+        if ((m->data_start != NULL) && (m->data_end > m->data_start))
+        {
+            size_t n = (size_t)(m->data_end - m->data_start);
+            if (m->data_initial == NULL)
+            {
+                m->data_initial = (uint8_t *) malloc(n);
+                if (m->data_initial != NULL) memcpy(m->data_initial, m->data_start, n);
+            }
+            else
+            {
+                memcpy(m->data_start, m->data_initial, n);
+                if (winapi_debug) eprintf("LoadLibraryA: %s loaded again: its data (%zu bytes) as in the file\n", m->name, n);
+            }
+        }
         // DllMain(hModule, DLL_PROCESS_ATTACH, NULL): the DLL's C runtime initializes itself and runs its C++
         // static constructors
         if (m->entry != NULL)
@@ -1503,6 +1526,7 @@ void * CCALL LoadLibraryA_c(const char *lpLibFileName)
             {
                 eprintf("LoadLibraryA: %s: DllMain failed\n", m->name);
                 m->loaded = 0;
+                m->refs--;
                 last_error = 1114;  // ERROR_DLL_INIT_FAILED
                 return NULL;
             }
@@ -1541,8 +1565,26 @@ void * CCALL GetProcAddress_c(module_info *hModule, const char *lpProcName)
     return NULL;
 }
 
+// a game DLL's last FreeLibrary: DllMain(DLL_PROCESS_DETACH) (its C runtime runs the static destructors and frees its
+// heap), and the next LoadLibrary starts it again from its data as in the file. DLLs used for their resources stay.
 uint32_t CCALL FreeLibrary_c(void *hLibModule)
 {
+    module_info *m = NULL;
+    unsigned int i;
+
+    for (i = 0; i < sizeof(modules) / sizeof(modules[0]); i++)
+    {
+        if (hLibModule == &modules[i]) m = &modules[i];
+    }
+    if (m == NULL) return 1;
+    if (m->refs > 0) m->refs--;
+    if (winapi_debug) eprintf("FreeLibrary: %s (%d references left)\n", m->name, m->refs);
+    if ((m->refs == 0) && m->loaded && (m->entry != NULL) && (m->data_initial != NULL))
+    {
+        uint32_t args[3] = { H2G(m), 0, 0 };
+        call_game(H2G(m->entry), 3, args);
+        m->loaded = 0;
+    }
     return 1;
 }
 

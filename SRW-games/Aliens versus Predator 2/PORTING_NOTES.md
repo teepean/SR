@@ -801,3 +801,21 @@ One Linux x64 executable, non-PIE, everything that touches engine data below 4 G
   other blocks; here the array was the first block of a new pool (Game-Memory.c, 16 MB mappings in the 32-bit window)
   with 2 MB of unmapped address space below it. It depends on the heap's layout (the same save loaded in other runs).
   Game-Memory.c leaves a pool's first page unused (POOL_LEAD): reads up to 4 KB before a pool's first block get zeros.
+
+### 2026-11-14 — Abort Game crashed; the next game after it too (the game DLLs weren't unloaded)
+- Reported in play: Abort Game (after a manual save) crashed. The core: render3d's update_animated_surfaces read a
+  sprite-animated surface's texture from freed memory. The engine deletes the world's render context when the game
+  ends but keeps rendering the camera at the main menu; render3d keeps the last level's meshes and materials (with the
+  freed surfaces' and textures' addresses) until the next world is built. A scene without a live world is now not
+  drawn (r3d_render_scene returns 0: the 3D view is hidden, as at the start - before, the old level stayed behind the
+  main menu) and nothing reads the old world's memory.
+- Continue Game after Abort Game then crashed in object.lto (a virtual call through a global left from the last game:
+  its vtable slot 0). The engine frees object.lto (and server.dll) when a game ends and loads it again for the next
+  one: on Windows the DLL starts again from its data as in the file. FreeLibrary did nothing and LoadLibrary of a
+  loaded module only returned it, so the next game ran with the last one's globals. Now: LoadLibrary / FreeLibrary
+  count references; the last FreeLibrary calls DllMain(DLL_PROCESS_DETACH) (the DLL's C runtime: static destructors,
+  its heap), and the next LoadLibrary puts back the DLL's data section (initialized data and bss, copied before its
+  first DllMain) before DllMain(DLL_PROCESS_ATTACH). The data sections: global_aliases.sci (both games, x64 and
+  llasm) names each DLL's first and end label (the PE .data's address and address + virtual size: the last label SRW
+  writes) <module>_data_start / _end (asmsyms.h). Abort Game -> Continue Game, quick load from the pause menu and
+  the quit all work (cshell's detach runs at the exit).

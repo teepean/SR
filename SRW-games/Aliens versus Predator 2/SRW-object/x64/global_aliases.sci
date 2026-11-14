@@ -1,1 +1,3 @@
 loc_1022AE87,object_DllMainCRTStartup
+loc_1029D000,object_data_start
+loc_10312BAC,object_data_end

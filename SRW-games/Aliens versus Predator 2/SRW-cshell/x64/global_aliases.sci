@@ -1,1 +1,3 @@
 loc_1016F95E,cshell_DllMainCRTStartup
+loc_101B3000,cshell_data_start
+loc_101DE53C,cshell_data_end
