@@ -1,0 +1,6 @@
+loc_1068A,main_
+loc_AD8E8,clib_InitRtns
+loc_AD899,clib_CMain
+loc_A0912,clib_exit
+loc_D0000,guest_data_start
+loc_2B6F6,map_scroll_by

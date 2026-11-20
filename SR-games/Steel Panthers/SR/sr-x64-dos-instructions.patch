@@ -1,0 +1,231 @@
+diff --git a/SR/SR_full_dos.c b/SR/SR_full_dos.c
+index 01853ac..f2d0c17 100644
+--- a/SR/SR_full_dos.c
++++ b/SR/SR_full_dos.c
+@@ -632,6 +632,7 @@ int SR_disassemble_offset_dos(unsigned int Entry, uint_fast32_t offset)
+                 }
+                 else
+                 {
++                    printf("unsupported operand at 0x%x\n", (unsigned int)(section[Entry].start + offset));
+                     printf("fixup: %i\n", (int)(intptr_t)fixup);
+                     printf("op type: %i - %i - %i\n", ud_obj.operand[0].type, ud_obj.operand[1].type, ud_obj.operand[2].type);
+                     printf("op size: %i - %i - %i\n", ud_obj.operand[0].size, ud_obj.operand[1].size, ud_obj.operand[2].size);
+@@ -711,6 +712,7 @@ int SR_disassemble_offset_dos(unsigned int Entry, uint_fast32_t offset)
+                 }
+                 else
+                 {
++                    printf("unsupported operand at 0x%x\n", (unsigned int)(section[Entry].start + offset));
+                     printf("fixup: %i\n", (int)(intptr_t)fixup);
+                     printf("op type: %i - %i - %i\n", ud_obj.operand[0].type, ud_obj.operand[1].type, ud_obj.operand[2].type);
+                     printf("op size: %i - %i - %i\n", ud_obj.operand[0].size, ud_obj.operand[1].size, ud_obj.operand[2].size);
+@@ -841,6 +843,7 @@ int SR_disassemble_offset_dos(unsigned int Entry, uint_fast32_t offset)
+                 }
+                 else
+                 {
++                    printf("unsupported operand at 0x%x\n", (unsigned int)(section[Entry].start + offset));
+                     printf("fixup: %i\n", (int)(intptr_t)fixup);
+                     printf("op type: %i - %i - %i\n", ud_obj.operand[0].type, ud_obj.operand[1].type, ud_obj.operand[2].type);
+                     printf("op size: %i - %i - %i\n", ud_obj.operand[0].size, ud_obj.operand[1].size, ud_obj.operand[2].size);
+@@ -881,6 +884,7 @@ int SR_disassemble_offset_dos(unsigned int Entry, uint_fast32_t offset)
+                 }
+                 else
+                 {
++                    printf("unsupported operand at 0x%x\n", (unsigned int)(section[Entry].start + offset));
+                     printf("fixup: %i\n", (int)(intptr_t)fixup);
+                     printf("op type: %i - %i - %i\n", ud_obj.operand[0].type, ud_obj.operand[1].type, ud_obj.operand[2].type);
+                     printf("op size: %i - %i - %i\n", ud_obj.operand[0].size, ud_obj.operand[1].size, ud_obj.operand[2].size);
+diff --git a/SR/SR_full_win32.c b/SR/SR_full_win32.c
+index e501efd..8cf2deb 100644
+--- a/SR/SR_full_win32.c
++++ b/SR/SR_full_win32.c
+@@ -309,6 +309,9 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
+             return 1;
+         }
+ 
++        /* addresses listed in fixup_interpret_as_code.sci always get a label */
++        if (section_code_list_CanFindEntryEqual(Entry, offset)) output->has_label = 1;
++
+         if (output->type > 0)
+         {
+             /*if (output->str != NULL)
+@@ -537,6 +540,7 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
+                 }
+                 else
+                 {
++                    printf("unsupported operand at 0x%x\n", (unsigned int)(section[Entry].start + offset));
+                     printf("fixup: %i\n", (int)(intptr_t)fixup);
+                     printf("op type: %i - %i - %i\n", ud_obj.operand[0].type, ud_obj.operand[1].type, ud_obj.operand[2].type);
+                     printf("op size: %i - %i - %i\n", ud_obj.operand[0].size, ud_obj.operand[1].size, ud_obj.operand[2].size);
+@@ -680,6 +684,7 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
+                 }
+                 else
+                 {
++                    printf("unsupported operand at 0x%x\n", (unsigned int)(section[Entry].start + offset));
+                     printf("fixup: %i\n", (int)(intptr_t)fixup);
+                     printf("op type: %i - %i - %i\n", ud_obj.operand[0].type, ud_obj.operand[1].type, ud_obj.operand[2].type);
+                     printf("op size: %i - %i - %i\n", ud_obj.operand[0].size, ud_obj.operand[1].size, ud_obj.operand[2].size);
+@@ -801,6 +806,7 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
+                 }
+                 else
+                 {
++                    printf("unsupported operand at 0x%x\n", (unsigned int)(section[Entry].start + offset));
+                     printf("fixup: %i\n", (int)(intptr_t)fixup);
+                     printf("op type: %i - %i - %i\n", ud_obj.operand[0].type, ud_obj.operand[1].type, ud_obj.operand[2].type);
+                     printf("op size: %i - %i - %i\n", ud_obj.operand[0].size, ud_obj.operand[1].size, ud_obj.operand[2].size);
+@@ -864,6 +870,7 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
+                 }
+                 else
+                 {
++                    printf("unsupported operand at 0x%x\n", (unsigned int)(section[Entry].start + offset));
+                     printf("fixup: %i\n", (int)(intptr_t)fixup);
+                     printf("op type: %i - %i - %i\n", ud_obj.operand[0].type, ud_obj.operand[1].type, ud_obj.operand[2].type);
+                     printf("op size: %i - %i - %i\n", ud_obj.operand[0].size, ud_obj.operand[1].size, ud_obj.operand[2].size);
+diff --git a/SR/SR_full_x64_instr.c b/SR/SR_full_x64_instr.c
+index a8732f1..4cea855 100644
+--- a/SR/SR_full_x64_instr.c
++++ b/SR/SR_full_x64_instr.c
+@@ -417,6 +417,7 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
+         case UD_Ior:
+         case UD_Ixor:
+             /* CF,OF cleared, AF undefined, SF,ZF,PF - modified */
++        case UD_Ibsf:
+         case UD_Ibsr:
+             /* CF,OF,AF,SF,PF undefined, ZF - modified */
+         case UD_Ibswap:
+@@ -595,6 +596,60 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
+                 }
+             }
+ 
++            break;
++        case UD_Iaam:
++            /* SF,ZF,PF - modified, OF,AF,CF - undefined; aam is invalid in 64-bit mode */
++            {
++                unsigned int imm = (ud_obj.operand[0].type == UD_OP_IMM) ? (ud_obj.operand[0].lval.ubyte) : 10;
++                OUTPUT_STRING("mov r9d, eax\n");
++                OUTPUT_STRING("movzx eax, al\n");
++                OUTPUT_PARAMSTRING("mov r8b, %u\n", imm);
++                OUTPUT_STRING("div r8b\n");
++                OUTPUT_STRING("xchg al, ah\n");
++                OUTPUT_STRING("and r9d, 0xffff0000\n");
++                OUTPUT_STRING("movzx eax, ax\n");
++                OUTPUT_STRING("or eax, r9d\n");
++                OUTPUT_STRING("test al, al");
++            }
++
++            break;
++        case UD_Iaad:
++            /* SF,ZF,PF - modified, OF,AF,CF - undefined; aad is invalid in 64-bit mode */
++            {
++                unsigned int imm = (ud_obj.operand[0].type == UD_OP_IMM) ? (ud_obj.operand[0].lval.ubyte) : 10;
++                OUTPUT_STRING("mov r9d, eax\n");
++                OUTPUT_STRING("shr r9d, 8\n");
++                OUTPUT_STRING("movzx r9d, r9b\n");
++                OUTPUT_PARAMSTRING("imul r9d, r9d, %u\n", imm);
++                OUTPUT_STRING("add r9b, al\n");
++                OUTPUT_STRING("and eax, 0xffff0000\n");
++                OUTPUT_STRING("movzx r9d, r9b\n");
++                OUTPUT_STRING("or eax, r9d\n");
++                OUTPUT_STRING("test al, al");
++            }
++
++            break;
++        case UD_Ifldlpi:
++            /* udis86 1.6 names fldpi "fldlpi" */
++            /* no flags affected */
++
++            OUTPUT_STRING("fldpi");
++
++            break;
++        case UD_Icmpsw:
++        case UD_Icmpsd:
++            /* OS,SF,ZF,AF,PF,CF - modified */
++            {
++                const char *suffix = (ud_obj.mnemonic == UD_Icmpsw) ? "cmpsw" : "cmpsd";
++                const char *prefix = "";
++
++                if (ud_obj.pfx_rep) prefix = "rep ";
++                else if (ud_obj.pfx_repe) prefix = "repe ";
++                else if (ud_obj.pfx_repne) prefix = "repne ";
++
++                OUTPUT_PARAMSTRING("%sa32 %s", prefix, suffix);
++            }
++
+             break;
+         case UD_Icwd:
+             /* no flags affected */
+@@ -697,6 +752,7 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
+         case UD_Ijnz:
+         case UD_Ijs:
+         case UD_Ijz:
++        case UD_Ijecxz: /* valid in 64-bit mode (67 E3 rel8), tests ecx */
+             /* no flags affected */
+             break;
+         case UD_Ijmp:
+@@ -1484,6 +1540,22 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
+                 }
+             }
+ 
++            break;
++        case UD_Iscasw:
++        case UD_Iscasd:
++            /* OS,SF,ZF,AF,PF,CF - modified */
++            /* used by Watcom switch statements: repne scasw + jmp cs:[ecx*4+table] */
++            {
++                const char *suffix = (ud_obj.mnemonic == UD_Iscasw) ? "scasw" : "scasd";
++                const char *prefix = "";
++
++                if (ud_obj.pfx_rep) prefix = "rep ";
++                else if (ud_obj.pfx_repe) prefix = "repe ";
++                else if (ud_obj.pfx_repne) prefix = "repne ";
++
++                OUTPUT_PARAMSTRING("%sa32 %s", prefix, suffix);
++            }
++
+             break;
+         case UD_Iseta:
+         case UD_Isetb:
+@@ -1605,6 +1677,30 @@ int SR_disassemble_x64_instruction(unsigned int Entry, output_data *output, regi
+         case UD_Ifsqrt:
+         case UD_Ifucompp:
+         case UD_Ifyl2x:
++        /* remaining x87 instructions used by the Watcom math library (Steel Panthers) */
++        case UD_Iftst:
++        case UD_Ifxam:
++        case UD_Ifprem:
++        case UD_Ifprem1:
++        case UD_Ifpatan:
++        case UD_Ifscale:
++        case UD_If2xm1:
++        case UD_Ifxtract:
++        case UD_Ifincstp:
++        case UD_Ifdecstp:
++        case UD_Iffree:
++        case UD_Ificom:
++        case UD_Ificomp:
++        case UD_Ifldl2e:
++        case UD_Ifldl2t:
++        case UD_Ifnclex:
++        case UD_Ifnstenv:
++        case UD_Ifldenv:
++        case UD_Ifnop:
++        case UD_Ifyl2xp1:
++        case UD_Ifsincos:
++        case UD_Ifbld:
++        case UD_Ifbstp:
+             /* no flags affected */
+         case UD_Ifcom:
+         case UD_Ifcomp:
+diff --git a/SR/SR_source_code_information.c b/SR/SR_source_code_information.c
+index e11a1a3..b4fd967 100644
+--- a/SR/SR_source_code_information.c
++++ b/SR/SR_source_code_information.c
+@@ -57,6 +57,9 @@ static int SR_LoadSCI_fixup_interpret_as_code(FILE *file)
+         if (SR_get_section_reladr(address, &SecNum, &RelAdr))
+         {
+             section_code_list_Insert(SecNum, RelAdr);
++            /* also disassemble from here when no fixup points at the address
++               (e.g. targets of computed jumps that instruction_replacements.sci turns into tables) */
++            if (section[SecNum].type == ST_CODE) section_entry_list_Insert(SecNum, RelAdr);
+         }
+     }
+ 

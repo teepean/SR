@@ -1,0 +1,6 @@
+loc_10684,main_
+loc_A427E,clib_InitRtns
+loc_A422E,clib_CMain
+loc_97842,clib_exit
+loc_C0000,guest_data_start
+loc_2A29E,map_scroll_by

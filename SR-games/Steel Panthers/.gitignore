@@ -1,0 +1,16 @@
+# analysis outputs (contain extracted game code/data)
+work/
+tools/__pycache__/
+# SR run logs and generated output
+SR/a.a
+SR/b.a
+SR/steel-asm.asm
+SR/*.inctmp
+work12/
+# the game's executables and SR's output (copies of the game code)
+SR/STEEL.EXE
+SR/v1.1/STEEL.EXE
+SR/seg01.inc
+SR/seg02.inc
+SR/steel-asm.o
+SR/SR.exe
