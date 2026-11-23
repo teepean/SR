@@ -1413,7 +1413,7 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
 
                         SR_get_label(cLabel, address);
                         // short jump can't be used for jumps to absolute addresses (Linux executables: original code)
-                        sprintf(cResult, "jmp %s%s", ((ud_obj.operand[0].size == 32 || strncmp(cLabel, "srw_abs_", 8) == 0)?"":"short "), cLabel);
+                        sprintf(cResult, "jmp %s%s", ((ud_obj.operand[0].size == 32 || strncmp(cLabel, "srw_abs_", 8) == 0 || strncmp(cLabel, "srw_orig_", 9) == 0)?"":"short "), cLabel);
                     }
 
                     text = cResult;
@@ -1524,7 +1524,7 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
                 }
 
                 if (ud_obj.operand[0].size == 32 ||
-                    ((extrn != NULL || strncmp(cLabel, "srw_abs_", 8) == 0) &&
+                    ((extrn != NULL || strncmp(cLabel, "srw_abs_", 8) == 0 || strncmp(cLabel, "srw_orig_", 9) == 0) &&
                      ud_obj.mnemonic != UD_Ijcxz && ud_obj.mnemonic != UD_Ijecxz && ud_obj.mnemonic != UD_Ijrcxz &&
                      ud_obj.mnemonic != UD_Iloop && ud_obj.mnemonic != UD_Iloope && ud_obj.mnemonic != UD_Iloopne
                     )

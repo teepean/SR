@@ -61,6 +61,10 @@ while :; do
 done
 
 # link (sections are placed by the generated linker script)
-"$LD" -static -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" || { echo "linking failed"; exit 1; }
+# (--eh-frame-hdr: the unwinder finds the new .eh_frame of the recompiled code using PT_GNU_EH_FRAME)
+"$LD" -static --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
+if [ -s ld.err ]; then
+    cat ld.err >&2
+fi
 
 echo "$WORK_DIR/${NAME}_srw64"

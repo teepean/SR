@@ -127,6 +127,14 @@ int SR_write_linker_script(const char *fname);
 void SR_elf_output_section_name(char *buf, unsigned int Entry);
 void SR_elf_free(void);
 
+// SRW64_elf_eh.c
+int SR_elf_eh_prescan(uint64_t **ranges, unsigned int *num_ranges);
+int SR_elf_eh_add_entries(void);
+int SR_elf_eh_post_process(void);
+int SR_elf_eh_write(FILE *fout);
+int SR_elf_eh_present(void);
+void SR_elf_eh_free(void);
+
 // SRW64_pdata.c
 const pdata_entry *SR_find_pdata(uint_fast32_t rva);
 const pdata_entry *SR_find_pdata_begin(uint_fast32_t rva);

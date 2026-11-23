@@ -315,6 +315,7 @@ static void deinitialize_values(void)
 	}
 
 	SR_fh4_free();
+	SR_elf_eh_free();
 	SR_elf_free();
 }
 
@@ -569,6 +570,15 @@ int main (int argc, char *argv[])
 		}
 
 		ret = SR_fh4_post_process();
+		if (ret != 0)
+		{
+			fprintf(stderr, "Error: %i\n", ret);
+			deinitialize_values();
+			return 6;
+		}
+
+		// Linux executables: new .eh_frame and LSDAs for recompiled code
+		ret = SR_elf_eh_post_process();
 		if (ret != 0)
 		{
 			fprintf(stderr, "Error: %i\n", ret);

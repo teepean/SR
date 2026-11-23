@@ -179,7 +179,28 @@ else
 fi
 
 
-# test 5 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
+# test 5: statically linked Linux C++ program (exceptions: .eh_frame and .gcc_except_table are generated again)
+mkdir -p "$WORK/linux_cpp"
+cd "$WORK/linux_cpp" || exit 1
+for OPT in O0 O2; do
+    if g++ -$OPT -static -no-pie -pthread -o test_exceptions_$OPT "$TESTS_DIR/linux_cpp/test_exceptions.cpp" 2> gcc.err; then
+        ./test_exceptions_$OPT > expected_$OPT.txt 2>&1; echo "exit code $?" >> expected_$OPT.txt
+        if RESULT=$("$TESTS_DIR/roundtrip_elf.sh" test_exceptions_$OPT "$WORK/linux_cpp/srw64_$OPT"); then
+            "$RESULT" > actual_$OPT.txt 2>&1; echo "exit code $?" >> actual_$OPT.txt
+            compare expected_$OPT.txt actual_$OPT.txt "statically linked Linux C++ program with exceptions (-$OPT, elf64)"
+        else
+            echo "$RESULT"
+            echo "FAIL: statically linked Linux C++ program (-$OPT) - recompilation failed"
+            FAILED=1
+        fi
+    else
+        echo "SKIP: statically linked Linux C++ program - static libstdc++ not available ($(head -1 gcc.err))"
+        break
+    fi
+done
+
+
+# test 6 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
 if [ -n "$FH4_EXECUTABLES" ]; then
     mkdir -p "$WORK/fh4_executables"
     cd "$WORK/fh4_executables" || exit 1
@@ -202,7 +223,7 @@ if [ -n "$FH4_EXECUTABLES" ]; then
 fi
 
 
-# test 6 (optional): Windows executables (built by Microsoft with MSVC)
+# test 7 (optional): Windows executables (built by Microsoft with MSVC)
 if [ -n "$WINDOWS_DIR" ]; then
     mkdir -p "$WORK/windows"
     cd "$WORK/windows" || exit 1

@@ -835,6 +835,12 @@ int SR_write_output(const char *fname)
 
             section_output_list_ForEach(EF.Entry, &SR_write_output_line, (void *) &EF);
 
+            // Linux executables: label at end of code section (end of address ranges in exception handling data)
+            if (InputFormat == INPUT_ELF && section[EF.Entry].type == ST_CODE)
+            {
+                fprintf(EF.fout, "srw_end_%u:\n", (unsigned int)EF.Entry);
+            }
+
             fclose(EF.fout);
 
             EF.fout = fmain;
@@ -872,10 +878,17 @@ int SR_write_output(const char *fname)
             SR_elf_output_section_name(outname, EF.Entry);
             slash = strrchr(binname, '/');
             fprintf(EF.fout, "\nsection %s.orig progbits alloc exec nowrite align=%u\n", outname, (unsigned int)section[EF.Entry].align);
+            fprintf(EF.fout, "srw_orig_%u:\n", (unsigned int)EF.Entry);
             fprintf(EF.fout, "incbin \"%s\"\n", (slash != NULL)?(slash + 1):binname);
 
             free(binname);
         }
+    }
+
+    // exception handling data of Linux executables (new .eh_frame for recompiled code)
+    if (InputFormat == INPUT_ELF)
+    {
+        if (SR_elf_eh_write(EF.fout)) return -1;
     }
 
     // C++ exception handling data (version 4) generated again

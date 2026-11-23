@@ -232,6 +232,84 @@ static int elf_add_fixup(uint64_t source, uint64_t target)
     return 1;
 }
 
+static int elf_pdata_compare(const void *p1, const void *p2)
+{
+    const pdata_entry *e1 = (const pdata_entry *)p1;
+    const pdata_entry *e2 = (const pdata_entry *)p2;
+
+    if (e1->begin < e2->begin) return -1;
+    if (e1->begin > e2->begin) return 1;
+    if (e1->end > e2->end) return -1;
+    if (e1->end < e2->end) return 1;
+    return 0;
+}
+
+static int elf_add_eh_functions(void)
+{
+    uint64_t *ranges;
+    unsigned int num_ranges, index, added, count;
+    pdata_entry *new_list;
+
+    if (SR_elf_eh_prescan(&ranges, &num_ranges)) return -1;
+    if (num_ranges == 0) return 0;
+
+    new_list = (pdata_entry *) realloc(pdata_list, (pdata_count + num_ranges) * sizeof(pdata_entry) + 1);
+    if (new_list == NULL)
+    {
+        free(ranges);
+        return -1;
+    }
+    pdata_list = new_list;
+
+    added = 0;
+    for (index = 0; index < num_ranges; index++)
+    {
+        uint_fast32_t SecNum, RelAdr;
+        uint64_t begin, end;
+        pdata_entry *entry;
+
+        begin = ranges[2 * index];
+        end = ranges[2 * index + 1];
+        if (end <= begin) continue;
+        if (!SR_get_section_reladr_exact(begin, &SecNum, &RelAdr) || section[SecNum].type != ST_CODE) continue;
+        if (end > section[SecNum].start + section[SecNum].size) end = section[SecNum].start + section[SecNum].size;
+
+        // functions from symbol table (pdata_count entries are sorted)
+        if (SR_find_pdata((uint_fast32_t)(begin - ImageBase)) != NULL) continue;
+
+        entry = &(pdata_list[pdata_count + added]);
+        memset(entry, 0, sizeof(pdata_entry));
+        entry->begin = (uint_fast32_t)(begin - ImageBase);
+        entry->end = (uint_fast32_t)(end - ImageBase);
+        entry->primary = entry->begin;
+        added++;
+    }
+
+    free(ranges);
+
+    if (added == 0) return 0;
+
+    pdata_count += added;
+    qsort(pdata_list, pdata_count, sizeof(pdata_entry), elf_pdata_compare);
+
+    // remove duplicates, cut overlapping functions
+    count = 0;
+    for (index = 0; index < pdata_count; index++)
+    {
+        if (count != 0 && pdata_list[count - 1].begin == pdata_list[index].begin) continue;
+        if (count != 0 && pdata_list[count - 1].end > pdata_list[index].begin)
+        {
+            pdata_list[count - 1].end = pdata_list[index].begin;
+        }
+        pdata_list[count++] = pdata_list[index];
+    }
+    pdata_count = count;
+
+    fprintf(stderr, "\tFunctions from .eh_frame (not in symbol table): %u\n", added);
+
+    return 0;
+}
+
 static int elf_function_name_compare(const void *p1, const void *p2)
 {
     const elf_function *f1 = *(const elf_function * const *)p1;
@@ -429,6 +507,8 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
     // sections
     num_sections = 0;
     import_list = NULL;
+    pdata_list = NULL;
+    pdata_count = 0;
     FirstSectionRVA = SizeOfImage;
     max_section_end = 0;
     for (index = 0; index < header->e_shnum; index++)
@@ -650,6 +730,9 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
         }
     }
 
+    // functions from exception handling data (.eh_frame), which are not in symbol table (e.g. stripped executable)
+    if (elf_add_eh_functions()) return -1;
+
     // addresses of IFUNC resolvers in IRELATIVE relocations
     {
         unsigned int count;
@@ -724,8 +807,10 @@ static int elf_register_absolute(uint64_t address)
     return 0;
 }
 
-// label for address which is not recompiled: original code (functions which are kept) or address outside of sections (e.g. undefined weak function)
-// - symbol srw_abs_<address> with absolute value (NASM doesn't create relocations for jumps to numbers)
+// label for address which is not recompiled:
+//  - original code (functions which are kept): label in section with original code (srw_orig_<section>+offset)
+//  - address outside of sections (e.g. undefined weak function): symbol srw_abs_<address> with absolute value defined in linker script
+//    (NASM doesn't create relocations for jumps to numbers)
 int SR_elf_absolute_label(char *cbuf, uint64_t address)
 {
     uint_fast32_t SecNum, RelAdr;
@@ -736,6 +821,10 @@ int SR_elf_absolute_label(char *cbuf, uint64_t address)
     {
         if (section[SecNum].type != ST_CODE || !keep_original_code) return 0;
         if (!SR_is_ignored(SecNum, RelAdr)) return 0;
+
+        // original code is kept in section srw.<name>.orig (at original address)
+        sprintf(cbuf, "srw_orig_%u+0x%x", (unsigned int)SecNum, (unsigned int)RelAdr);
+        return 1;
     }
 
     sprintf(cbuf, "srw_abs_%" PRIX64, address);
@@ -980,10 +1069,9 @@ int SR_elf_process(void)
             if (ignored_area_value == NULL) return -1;
             *ignored_area_value = (int)(pdata_list[index].end - pdata_list[index].begin);
 
-            // references to the function use original address
-            sprintf(name, "srw_abs_%" PRIX64, ImageBase + pdata_list[index].begin);
+            // references to the function use original code
+            sprintf(name, "srw_orig_%u+0x%x", (unsigned int)SecNum, (unsigned int)RelAdr);
             if (section_extrn_list_Insert(SecNum, RelAdr, name, NULL) == NULL) return -1;
-            elf_register_absolute(ImageBase + pdata_list[index].begin);
 
             {
                 uint_fast32_t InvSec, InvOfs, byte;
@@ -1020,6 +1108,9 @@ int SR_elf_process(void)
         output = section_output_list_FindEntryEqual(SecNum, RelAdr);
         if (output != NULL) output->has_label = 1;
     }
+
+    // landing pads of C++ exception handlers
+    if (SR_elf_eh_add_entries()) return -1;
 
     // entry point gets global name (used in linker script)
     alias = section_alias_list_FindEntryEqual(EIPObjectNum, EIP);
@@ -1210,11 +1301,19 @@ int SR_write_linker_script(const char *fname)
     }
     fprintf(fout, "        *(.text .text.*)\n    }\n\n");
 
+    if (SR_elf_eh_present())
+    {
+        fprintf(fout, "    /* exception handling data for recompiled code (link with --eh-frame-hdr) */\n");
+        fprintf(fout, "    .eh_frame_hdr : { *(.eh_frame_hdr) }\n");
+        fprintf(fout, "    .eh_frame : { KEEP(*(.eh_frame)) }\n");
+        fprintf(fout, "    .gcc_except_table : { KEEP(*(srw.except)) *(.gcc_except_table .gcc_except_table.*) }\n\n");
+    }
+
     fprintf(fout, "    /* sections of other object files */\n");
     fprintf(fout, "    .rodata : { *(.rodata .rodata.*) }\n");
     fprintf(fout, "    .data : { *(.data .data.*) }\n");
     fprintf(fout, "    .bss : { *(.bss .bss.*) *(COMMON) }\n\n");
-    fprintf(fout, "    /DISCARD/ : { *(.comment) *(.note.gnu.property) *(.eh_frame) }\n");
+    fprintf(fout, "    /DISCARD/ : { *(.comment) *(.note.gnu.property)%s }\n", (SR_elf_eh_present())?"":" *(.eh_frame)");
     fprintf(fout, "}\n");
 
     fclose(fout);

@@ -33,8 +33,8 @@ For a statically linked Linux executable: `tests/roundtrip_elf.sh program /tmp/w
    Link (elf64): `gcc -no-pie` with replacement implementations of all imported functions (`__attribute__((ms_abi))`), see `tests/msvc_patterns/runtime_linux.c`.
 6. Run and compare with the original. Fix problems with SCI files (see below), iterate.
 
-Linux executables (statically linked, not PIE): steps 3-5 are replaced by `nasm -f elf64 ...` and `ld -static -T game.ld game.o -o game_srw64` (no imports, no entry point alias -- the entry point is `srw_entry`).
-Read the notes: functions kept in original code (AVX-512), cold parts of functions, IRELATIVE relocations.
+Linux executables (statically linked, not PIE): steps 3-5 are replaced by `nasm -f elf64 ...` and `ld -static --eh-frame-hdr -T game.ld game.o -o game_srw64` (no imports, no entry point alias -- the entry point is `srw_entry`).
+Read the notes: functions kept in original code (AVX-512), cold parts of functions, IRELATIVE relocations, FDEs in `.eh_frame` (converted / original code / failed) and converted LSDAs.
 
 ## Diagnosing problems
 
@@ -54,6 +54,8 @@ Read the notes: functions kept in original code (AVX-512), cold parts of functio
 | Wrong results with `[reg+index*4+0x...]` | image relative displacement not converted (or converted wrongly) -- `--list_rva_displacements=file`, fix with `rva_displacements.sci` |
 | ELF: `Note: function is kept in original code` | the function contains an instruction which udis86 can't decode (the bytes are printed, usually AVX-512 `62 ...`) -- OK, the original code is used |
 | ELF: crash in original code (address below the recompiled code) | the program jumped to original code through a pointer which wasn't converted -- find the jump (see below), check jump tables and pointers in data |
+| ELF: C++ exception terminates the program (`terminate called after throwing`) | the new `.eh_frame` is missing an FDE (`Warning: unable to convert .eh_frame FDE`) or the program wasn't linked with `--eh-frame-hdr`; a crash in raw bytes after a throw = landing pad not disassembled |
+| ELF: ld `.eh_frame_hdr refers to overlapping FDEs` / NASM `expression is not simple or relocatable` in `.eh_frame` | an address range end was converted wrongly -- check `eh_label` / `eh_end_label` in `SRW64_elf_eh.c` (ends are rounded up to the next recompiled instruction, end of section = `srw_end_<section>`) |
 | ELF: glibc reports a fatal error at startup (e.g. `unexpected reloc type in static binary`) | a reference to the end of a data section was converted to the start of the next (code) section -- immediates at data/code boundaries are not converted (`SR_elf_is_function_start`) |
 
 Runtime debugging (Linux executables): the linked program contains the `loc_<original address>` symbols, so gdb shows original addresses (`loc_4C6840+3`).
@@ -72,7 +74,8 @@ Runtime debugging (Wine):
 |---|---|
 | `SR_main.c` | command line, `SR.cfg`, order of passes, address -> section lookup |
 | `SRW64_loader.c` | PE32+ loader: sections (long names, debug sections), relocations (DIR64, HIGHLOW, `relocations.csv`, guessing), imports (64-bit thunks, ordinals), exports, splitting of import/export/IAT ranges, notes about large address awareness; ELF files are passed to `SRW64_LoadElf` |
-| `SRW64_elf.c` | Linux executables (ELF64): loader (sections, functions from symbol table, cold parts, noreturn names, IRELATIVE relocations), prescan (instruction starts, data addresses referenced by code), functions kept in original code, pointers to code in data, `srw_abs_` symbols, linker script |
+| `SRW64_elf.c` | Linux executables (ELF64): loader (sections, functions from symbol table and `.eh_frame`, cold parts, noreturn names, IRELATIVE relocations), prescan (instruction starts, data addresses referenced by code), functions kept in original code, pointers to code in data, `srw_orig_`/`srw_abs_` labels, linker script |
+| `SRW64_elf_eh.c` | Linux executables: `.eh_frame` parser (CIEs, FDEs, LSDAs), landing pads as code entries, new `.eh_frame` and LSDAs (section `srw.except`) for recompiled code |
 | `SRW64_pdata.c` | exception directory: function list (`SR_find_pdata`), code entries, image relative fixups in .pdata, unwind info, SEH scope tables, C++ FuncInfo (FH3), delay load descriptors, prolog offsets as label differences (after disassembly), prescan of `lea reg, [__ImageBase]` |
 | `SRW64_eh4.c` | C++ exception handling data version 4 (`__CxxFrameHandler4`): in place conversion of RVAs, regenerated IP to state maps and handler maps (section `srweh4`, offsets as `dd (((loc_A - loc_B) << 4) \| 7)`), copies for functions sharing the data |
 | `SR_source_code_information.c` | loading SCI files |
@@ -95,7 +98,7 @@ Key internal conventions:
 * Code entries come from: exception directory, exports, aliases, fixups from data, call/jump targets, `lea` of function addresses, jump tables, SCI files. `SR_check_code_reference` decides whether `lea reg, [rip+code]` is a function.
 * Image relative addressing is only converted when the base (or unscaled index) register is known to contain the image base (`run_state.ib_mask`); hints for jump targets are stored in `hint_list` (register mask + jump table bound).
 * The `int3` instruction ends linear disassembly (it is used as padding after calls to functions which don't return).
-* `InputFormat` (`INPUT_PE` / `INPUT_ELF`) selects input specific behavior. ELF: `ImageBase` is the address of the first loaded segment, `CodeBase` the address of recompiled code, `section[].tls` marks TLS sections (`.tbss` is excluded from address lookups); `SR_get_label` returns `srw_abs_<address>` for addresses which are not recompiled.
+* `InputFormat` (`INPUT_PE` / `INPUT_ELF`) selects input specific behavior. ELF: `ImageBase` is the address of the first loaded segment, `CodeBase` the address of recompiled code, `section[].tls` marks TLS sections (`.tbss` is excluded from address lookups); `SR_get_label` returns `srw_orig_<section>+<offset>` for original code which is kept (label in section `srw.<name>.orig`) and `srw_abs_<address>` for addresses outside of sections (defined in the linker script); `srw_end_<section>` is the end of a recompiled code section.
 * udis86 must be initialized with `ud_set_vendor(&ud, UD_VENDOR_ANY)` (the default vendor makes Intel only instructions like `endbr64` invalid).
 
 ## Coding style

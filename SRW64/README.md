@@ -120,16 +120,19 @@ Therefore all sections except code keep their original addresses and only the re
   * addresses of IFUNC resolvers in IRELATIVE relocations (`.rela.plt`).
 * Functions (and their sizes) are taken from the symbol table, so the executable should not be stripped (without symbols, the code is found only from the entry point and from references).
   Cold parts of functions (`foo.cold`) are considered to be parts of the functions.
-* Functions which can't be decoded (AVX-512/EVEX instructions are not supported by udis86 -- glibc contains such variants of string and math functions) are not recompiled: the original code is kept at its original address (sections `srw.<name>.orig` with contents from *output.origNN.bin*) and references to it use absolute symbols `srw_abs_<address>` defined in the linker script.
+* Functions which can't be decoded (AVX-512/EVEX instructions are not supported by udis86 -- glibc contains such variants of string and math functions) are not recompiled: the original code is kept at its original address (sections `srw.<name>.orig` with contents from *output.origNN.bin*) and references to it use labels in these sections (`srw_orig_<section>+<offset>`). Addresses outside of sections (e.g. undefined weak functions with address 0) use symbols `srw_abs_<address>` defined in the linker script.
   The functions are listed by SRW64 (`Note: function is kept in original code`). This can be disabled with `keep_original_code=no` in *SR.cfg* (then such functions must be handled using SCI files).
 * Thread local storage keeps its layout (`.tdata`, `.tbss`), so offsets relative to `fs:` stay valid.
 * The entry point gets the name `srw_entry` (used in the linker script).
 * Calls of known functions which don't return (`exit`, `abort`, `__libc_fatal`, `__assert_fail`, `__cxa_throw`, `_Unwind_Resume`, ...) are recognized by name.
+* Exception handling data: the original `.eh_frame` stays at its original address (it describes the original code). A new `.eh_frame` is generated for the whole program -- FDEs of recompiled code use labels (code offsets in call frame instructions are written as `DW_CFA_advance_loc4` with label differences), FDEs of original code which is kept are copied. C++ exception tables (LSDAs) of recompiled functions are generated again (section `srw.except`, call-site table with label differences).
+  The program must be linked with `--eh-frame-hdr`, so the unwinder finds the new FDEs using `PT_GNU_EH_FRAME` (C++ exceptions, `pthread_cancel`, backtraces).
+  Landing pads from the exception tables are code entries and FDEs which are not in the symbol table are used as functions (useful for stripped executables).
 
 The recompiled program contains the recompiled C library (glibc) code of the original executable, so no replacement functions are needed:
 
     nasm -f elf64 -O1 -w-number-overflow -i<path to SRW64/x64-support>/ output.asm -o output.o
-    ld -static -T output.ld output.o -o program
+    ld -static --eh-frame-hdr -T output.ld output.o -o program
 
 The script [tests/roundtrip_elf.sh](tests/roundtrip_elf.sh) does all steps.
 
@@ -141,7 +144,7 @@ Executables with 32-bit absolute relocations must be linked below 2 GB on Window
 
 ## Known limitations
 
-* C++ exception handling data of GCC (`.gcc_except_table`, `.eh_frame`) is not converted -- in recompiled Linux executables, C++ exceptions thrown through recompiled code terminate the program.
+* C++ exception handling data of GCC in Windows executables (MinGW: `.gcc_except_table`, `.eh_frame`) is not converted (in Linux executables it is).
 * `__CxxFrameHandler4` data of functions with separated code segments is converted only for the first function which uses the data.
 * AVX-512 (EVEX) instructions are not supported.
 * Self-modifying code, code which jumps into the middle of instructions and similar code must be handled using SCI files (or patched).
