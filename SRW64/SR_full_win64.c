@@ -88,7 +88,9 @@ typedef enum _table_kind_ {
     TBL_RVA_LOADED  = 1,    // mov r32, [imagebase + index*4 + RVA(table)]
     TBL_RVA_READY   = 2,    // add r64, imagebase
     TBL_DIFF_LOADED = 3,    // movsxd r64, [table + index*4]
-    TBL_DIFF_READY  = 4     // add r64, table
+    TBL_DIFF_READY  = 4,    // add r64, table
+    TBL_ABS_READY   = 5,    // jmp [index*8 + table] (table with absolute addresses)
+    TBL_ABS_LOADED  = 6     // mov r64, [index*8 + table]
 } table_kind;
 
 typedef struct _run_state_ {
@@ -98,6 +100,8 @@ typedef struct _run_state_ {
     int cmp_valid;              // previous instruction was cmp with immediate value
     int64_t cmp_imm;            // immediate value of previous cmp instruction
     int bound;                  // number of jump table entries (from cmp/ja), -1 = unknown
+    int bound_mask;             // registers containing the index checked by cmp/ja
+    int cmp_reg;                // register compared by previous cmp instruction (-1 = not register)
     table_kind tbl_kind;        // pending jump table
     int tbl_reg;                // register containing value from jump table
     int tbl_basereg;            // register containing image base / table address
@@ -140,6 +144,8 @@ static void SR_init_run_state(unsigned int Entry, uint_fast32_t offset, run_stat
 
     memset(state, 0, sizeof(run_state));
     state->bound = -1;
+    state->bound_mask = 0;
+    state->cmp_reg = -1;
     state->tbl_kind = TBL_NONE;
 
     hint = section_hint_list_FindEntryEqual(Entry, offset);
@@ -147,6 +153,8 @@ static void SR_init_run_state(unsigned int Entry, uint_fast32_t offset, run_stat
     {
         state->ib_mask = HINT_MASK(*hint);
         state->bound = HINT_BOUND(*hint);
+        // register containing the index is not known
+        state->bound_mask = (state->bound >= 0)?0xffff:0;
         return;
     }
 
@@ -191,6 +199,24 @@ static void SR_add_jump_target(unsigned int Entry, uint64_t address, const run_s
         old_bound = HINT_BOUND(*hint);
         *hint = HINT_MAKE(mask, (old_bound >= 0)?old_bound:bound);
     }
+}
+
+// bound of table index (from cmp/ja), if the index register was checked
+static int SR_index_bound(const run_state *state, const struct ud_operand *op)
+{
+    int index;
+
+    if (state->bound < 0) return -1;
+
+    index = reg64_index(op->index);
+    if (index < 0)
+    {
+        // jmp [index*8 + table] - index in base register
+        index = reg64_index(op->base);
+    }
+    if (index < 0 || !(state->bound_mask & BIT(index))) return -1;
+
+    return state->bound;
 }
 
 // registers written by current instruction
@@ -443,6 +469,7 @@ static int SR_looks_like_function_start(unsigned int sec, uint_fast32_t ofs)
 
     ud_init(&ud_tmp);
     ud_set_mode(&ud_tmp, 64);
+    ud_set_vendor(&ud_tmp, UD_VENDOR_ANY);
     ud_set_input_buffer(&ud_tmp, &(section[sec].adr[ofs]), section[sec].size_in_file - ofs);
     ud_set_pc(&ud_tmp, section[sec].start + ofs);
 
@@ -590,6 +617,12 @@ static int SR_convert_memory_operand(unsigned int Entry, uint_fast32_t offset, c
             mi->kind = MEMK_HEADER;
             SR_get_label_expr(expr, SEC_HEADER, (int_fast64_t)(mi->target - ImageBase), 0);
         }
+        else if (InputFormat == INPUT_ELF)
+        {
+            // address outside of sections (e.g. ELF header, undefined weak symbol with address 0) - original address (srw_abs_<address>)
+            mi->kind = MEMK_OUTSIDE;
+            SR_get_label(expr, mi->target);
+        }
         else if (SR_get_section_reladr(mi->target, &sec, &ofs))
         {
             mi->kind = MEMK_LABEL;
@@ -673,6 +706,35 @@ static int SR_convert_memory_operand(unsigned int Entry, uint_fast32_t offset, c
     return 1;
 }
 
+// replaces hexadecimal value in instruction text by label, returns 0 on success
+static int SR_replace_value_text(const char *ostr, char *dst, uint64_t value, const char *label)
+{
+    char cbuf[32];
+    const char *str1, *str2;
+
+    sprintf(cbuf, "0x%" PRIx64, value);
+
+    str1 = strstr(ostr, cbuf);
+    while (str1 != NULL)
+    {
+        str2 = str1 + strlen(cbuf);
+        if ((*str2 >= '0' && *str2 <= '9') || (*str2 >= 'a' && *str2 <= 'f'))
+        {
+            str1 = strstr(str2, cbuf);
+            continue;
+        }
+        break;
+    }
+    if (str1 == NULL) return 1;
+    if (strstr(str1 + strlen(cbuf), cbuf) != NULL) return 2;
+
+    memcpy(dst, ostr, str1 - ostr);
+    strcpy(&(dst[str1 - ostr]), label);
+    strcat(dst, str1 + strlen(cbuf));
+
+    return 0;
+}
+
 // is the address a thunk (jmp [rip+IAT]) to imported function which doesn't return ?
 static int SR_is_noret_thunk(uint64_t address)
 {
@@ -693,7 +755,7 @@ static int SR_is_noret_thunk(uint64_t address)
 static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, const run_state *state)
 {
     uint_fast32_t tsec, tofs, eofs, esec, etofs;
-    int count, max_count, index, k, is_rva;
+    int count, max_count, index, k, is_rva, is_abs, esize;
     const pdata_entry *function, *target_function;
     output_data *output, *output2;
     int32_t value;
@@ -701,6 +763,8 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
     char cLabel[64], cTable[64], cbuf[256];
 
     is_rva = (state->tbl_kind == TBL_RVA_READY)?1:0;
+    is_abs = (state->tbl_kind == TBL_ABS_READY || state->tbl_kind == TBL_ABS_LOADED)?1:0;
+    esize = (is_abs)?8:4;
 
     if (!SR_get_section_reladr_exact(state->tbl_address, &tsec, &tofs))
     {
@@ -732,29 +796,41 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
 
     SR_get_label(cTable, state->tbl_address);
 
+    // table was already converted (table used by more jumps) or contains relocations (or code pointers found in data)
+    output = section_output_list_FindEntryEqual(tsec, tofs);
+    if (output != NULL && output->type == OT_OFFSET) return 0;
+
     for (index = 0; index < max_count; index++)
     {
-        eofs = tofs + 4 * index;
-        if (eofs + 4 > section[tsec].size) break;
+        eofs = tofs + esize * index;
+        if (eofs + esize > section[tsec].size) break;
 
         output = section_output_list_FindEntryEqual(tsec, eofs);
         if (output == NULL || output->type != OT_UNKNOWN || output->str != NULL) break;
         if (index > 0 && count <= 0 && output->has_label) break;
 
-        for (k = 1; k < 4; k++)
+        for (k = 1; k < esize; k++)
         {
             output2 = section_output_list_FindEntryEqual(tsec, eofs + k);
             if (output2 == NULL || output2->type != OT_UNKNOWN || output2->has_label || output2->str != NULL) break;
         }
-        if (k < 4) break;
+        if (k < esize) break;
 
-        memcpy(&value, &(section[tsec].adr[eofs]), 4);
-        target = (is_rva)?(ImageBase + (uint32_t)value):(state->tbl_address + (int64_t)value);
+        if (is_abs)
+        {
+            memcpy(&target, &(section[tsec].adr[eofs]), 8);
+        }
+        else
+        {
+            memcpy(&value, &(section[tsec].adr[eofs]), 4);
+            target = (is_rva)?(ImageBase + (uint32_t)value):(state->tbl_address + (int64_t)value);
+        }
 
         if (!SR_get_section_reladr_exact(target, &esec, &etofs) ||
             section[esec].type != ST_CODE ||
             section_nocode_list_CanFindEntryEqual(esec, etofs) ||
-            SR_is_ignored(esec, etofs)
+            SR_is_ignored(esec, etofs) ||
+            (count <= 0 && !SR_elf_is_instruction_start(target))
            )
         {
             if (count > 0)
@@ -777,13 +853,17 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
             }
         }
 
-        for (k = 1; k < 4; k++)
+        for (k = 1; k < esize; k++)
         {
             section_output_list_Delete(tsec, eofs + k);
         }
 
         SR_get_label(cLabel, target);
-        if (is_rva)
+        if (is_abs)
+        {
+            sprintf(cbuf, "dq %s", cLabel);
+        }
+        else if (is_rva)
         {
             sprintf(cbuf, "dd RVA(%s)", cLabel);
         }
@@ -792,7 +872,7 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
             sprintf(cbuf, "dd %s - %s", cLabel, cTable);
         }
 
-        output->len = 3;
+        output->len = esize - 1;
         output->type = OT_OFFSET;
         output->str = strdup(cbuf);
 
@@ -820,7 +900,7 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
 static void SR_update_run_state(run_state *state, const memory_info *mi)
 {
     const struct ud_operand *op0, *op1;
-    int written, r0, r1, base, was_cmp, old_ib_mask, old_lea_mask, table_written, table_kept;
+    int written, r0, r1, base, was_cmp, old_ib_mask, old_lea_mask, old_bound_mask, table_written, table_kept;
     int64_t was_cmp_imm;
 
     op0 = &(ud_obj.operand[0]);
@@ -832,6 +912,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
 
     old_ib_mask = state->ib_mask;
     old_lea_mask = state->lea_mask;
+    old_bound_mask = state->bound_mask;
 
     r0 = (op0->type == UD_OP_REG)?reg_index(op0->base):-1;
     r1 = (op1->type == UD_OP_REG)?reg_index(op1->base):-1;
@@ -840,6 +921,23 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
     written = SR_written_registers();
     state->ib_mask &= ~written;
     state->lea_mask &= ~written;
+    state->bound_mask &= ~written;
+
+    // checked index is kept by zero/sign extension of itself (mov r32, r32 / movsxd r64, r32 / cdqe) and copied by mov
+    if (r0 >= 0 && r1 >= 0 && (old_bound_mask & BIT(r1)) && op0->size >= 32 &&
+        (((ud_obj.mnemonic == UD_Imov || ud_obj.mnemonic == UD_Imovsxd) && op1->size >= 32) || ud_obj.mnemonic == UD_Imovzx)
+       )
+    {
+        state->bound_mask |= BIT(r0);
+    }
+    else if (ud_obj.mnemonic == UD_Icdqe && (old_bound_mask & BIT(0)))
+    {
+        state->bound_mask |= BIT(0);
+    }
+    if (state->bound_mask == 0)
+    {
+        state->bound = -1;
+    }
 
     table_written = (state->tbl_kind != TBL_NONE && (written & (BIT(state->tbl_reg) | BIT(state->tbl_basereg))))?1:0;
     table_kept = 0;
@@ -874,6 +972,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
 
                 state->cmp_valid = 1;
                 state->cmp_imm = value;
+                state->cmp_reg = (op0->type == UD_OP_REG)?reg_index(op0->base):-1;
             }
             break;
 
@@ -881,6 +980,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
             if (was_cmp)
             {
                 state->bound = (was_cmp_imm >= 0 && was_cmp_imm < MAX_TABLE_ENTRIES)?(int)(was_cmp_imm + 1):-1;
+                state->bound_mask = (state->cmp_reg >= 0)?BIT(state->cmp_reg):0xffff;
             }
             break;
 
@@ -888,6 +988,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
             if (was_cmp)
             {
                 state->bound = (was_cmp_imm > 0 && was_cmp_imm <= MAX_TABLE_ENTRIES)?(int)was_cmp_imm:-1;
+                state->bound_mask = (state->cmp_reg >= 0)?BIT(state->cmp_reg):0xffff;
             }
             break;
 
@@ -903,6 +1004,17 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                     state->lea_mask |= BIT(r0);
                     state->lea_target[r0] = mi->target;
                 }
+                else if (mi->kind == MEMK_NONE && state->tbl_kind == TBL_DIFF_LOADED && op1->offset == 0 && op1->scale <= 1 &&
+                         ((reg64_index(op1->base) == state->tbl_reg && reg64_index(op1->index) == state->tbl_basereg) ||
+                          (reg64_index(op1->base) == state->tbl_basereg && reg64_index(op1->index) == state->tbl_reg)
+                         )
+                        )
+                {
+                    // lea r64, [table + value]
+                    state->tbl_kind = TBL_DIFF_READY;
+                    state->tbl_reg = r0;
+                    table_kept = 1;
+                }
             }
             break;
 
@@ -917,6 +1029,17 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                     state->lea_target[r0] = state->lea_target[r1];
                 }
             }
+            else if (r0 >= 0 && op0->size == 64 && mi->kind == MEMK_NONE && mi->opnum == 1 && op1->base == UD_NONE && op1->index != UD_NONE && op1->scale == 8 && op1->offset == 32)
+            {
+                // mov r64, [index*8 + table] (table with absolute addresses)
+                state->tbl_kind = TBL_ABS_LOADED;
+                state->tbl_reg = r0;
+                state->tbl_basereg = r0;
+                state->tbl_address = (uint64_t)(int64_t)op1->lval.sdword;
+                state->tbl_bound = SR_index_bound(state, op1);
+                state->tbl_uses_bt = 0;
+                table_kept = 1;
+            }
             else if (r0 >= 0 && op0->size == 32 && mi->kind == MEMK_RVA && mi->opnum == 1 && op1->scale == 4 && op1->size == 32)
             {
                 // mov r32, [imagebase + index*4 + RVA(table)]
@@ -924,7 +1047,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                 state->tbl_reg = r0;
                 state->tbl_basereg = (reg64_index(op1->base) >= 0)?reg64_index(op1->base):r0;
                 state->tbl_address = mi->target;
-                state->tbl_bound = state->bound;
+                state->tbl_bound = SR_index_bound(state, op1);
                 state->tbl_uses_bt = (state->bt_valid && reg64_index(op1->index) == state->bt_reg)?1:0;
                 table_kept = 1;
             }
@@ -942,7 +1065,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                     state->tbl_reg = r0;
                     state->tbl_basereg = base;
                     state->tbl_address = state->lea_target[base];
-                    state->tbl_bound = state->bound;
+                    state->tbl_bound = SR_index_bound(state, op1);
                     state->tbl_uses_bt = 0;
                     table_kept = 1;
                 }
@@ -953,7 +1076,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                     state->tbl_reg = r0;
                     state->tbl_basereg = (base >= 0)?base:r0;
                     state->tbl_address = mi->target;
-                    state->tbl_bound = state->bound;
+                    state->tbl_bound = SR_index_bound(state, op1);
                     state->tbl_uses_bt = (state->bt_valid && reg64_index(op1->index) == state->bt_reg)?1:0;
                     table_kept = 1;
                 }
@@ -967,7 +1090,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                 state->bt_valid = 1;
                 state->bt_reg = r0;
                 state->bt_address = mi->target;
-                state->bt_bound = state->bound;
+                state->bt_bound = SR_index_bound(state, op1);
             }
             break;
 
@@ -1024,7 +1147,7 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
     uint64_t address;
     const char *text;
     char cLabel[256];
-    static char cResult[16384], cMem[16384], cFix[16384], cFix2[16384];
+    static char cResult[16384], cMem[16384], cFix[16384], cFix2[16384], cImm[16384], inner_labels[2048];
     memory_info mi;
     run_state state;
 
@@ -1039,6 +1162,14 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
     {
         output = section_output_list_FindEntryEqual(Entry, offset);
 
+        if (output == NULL && SR_is_ignored(Entry, offset))
+        {
+            // code continues into ignored area (e.g. after call to function which doesn't return)
+            fprintf(stderr, "Note: code continues into ignored area: 0x%" PRIx64 "\n", section[Entry].start + offset);
+            finished = 1;
+            break;
+        }
+
         if (output == NULL)
         {
             fprintf(stderr, "Error: output not found - %i - 0x%" PRIx64 "\n", Entry, section[Entry].start + offset);
@@ -1050,6 +1181,22 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
         {
             finished = 1;
             break;
+        }
+
+        // lock prefix is a separate instruction in Linux executables (glibc jumps over the prefix in single threaded programs)
+        if (InputFormat == INPUT_ELF && section[Entry].adr[offset] == 0xf0 && offset + 1 < section[Entry].size)
+        {
+            output2 = section_output_list_FindEntryEqual(Entry, offset + 1);
+            if (output2 != NULL)
+            {
+                output = SR_disassemble_offset_init_output(Entry, offset, 1);
+                output->str = strdup("db 0xf0 ; lock");
+
+                offset++;
+                ud_set_input_buffer(&ud_obj, &(section[Entry].adr[offset]), section[Entry].size - offset);
+                ud_set_pc(&ud_obj, section[Entry].start + offset);
+                continue;
+            }
         }
 
         decoded_length = ud_disassemble(&ud_obj);
@@ -1101,6 +1248,7 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
         }
 
         // check if the instruction overlaps already processed instructions or labels
+        inner_labels[0] = 0;
         for (index = 1; index < decoded_length; index++)
         {
             if ((fixup != NULL && offset + index == fixup->sofs) || (fixup2 != NULL && offset + index == fixup2->sofs)) continue;
@@ -1116,7 +1264,17 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
 
             if (output2->has_label)
             {
-                fprintf(stderr, "Warning: label inside instruction: 0x%" PRIx64 " - 0x%" PRIx64 "\n", section[Entry].start + offset, section[Entry].start + offset + index);
+                // label inside instruction is defined relative to the instruction
+                char label1[64], label2[64];
+
+                fprintf(stderr, "Note: label inside instruction: 0x%" PRIx64 " - 0x%" PRIx64 "\n", section[Entry].start + offset, section[Entry].start + offset + index);
+
+                SR_get_label(label1, section[Entry].start + offset + index);
+                SR_get_label(label2, section[Entry].start + offset);
+                if (strlen(inner_labels) + 160 < sizeof(inner_labels))
+                {
+                    sprintf(&(inner_labels[strlen(inner_labels)]), "\n%s equ %s+%i", label1, label2, index);
+                }
             }
         }
 
@@ -1143,6 +1301,44 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
                 ret = SR_disassemble_convert_fixup(text, cFix2, fixup2, extrn, Entry, offset, decoded_length);
                 if (ret) return ret;
                 text = cFix2;
+            }
+        }
+
+        // immediate values with addresses of functions (executables without relocations)
+        if (InputFormat == INPUT_ELF && fixup == NULL && (ud_obj.mnemonic == UD_Imov || ud_obj.mnemonic == UD_Icmp || ud_obj.mnemonic == UD_Ipush))
+        {
+            for (index = 0; index < 4; index++)
+            {
+                const struct ud_operand *op;
+                uint64_t value;
+
+                op = &(ud_obj.operand[index]);
+                if (op->type != UD_OP_IMM || (op->size != 32 && op->size != 64)) continue;
+
+                value = (op->size == 64)?op->lval.uqword:(uint64_t)op->lval.udword;
+                if (SR_disassemble_find_proc(Entry, value) != NULL) continue;
+
+                if (!SR_elf_is_function_start(value))
+                {
+                    if (ud_obj.mnemonic != UD_Imov) continue;
+
+                    // address inside the same function (e.g. computed jump in varargs prologue of older GCC)
+                    const pdata_entry *function;
+                    uint_fast32_t vsec, vofs;
+
+                    function = SR_find_pdata(section[Entry].virtaddr + offset);
+                    if (function == NULL || value < ImageBase + function->begin || value >= ImageBase + function->end) continue;
+                    if (!SR_get_section_reladr_exact(value, &vsec, &vofs) || section[vsec].type != ST_CODE) continue;
+                }
+
+                SR_get_label(cLabel, value);
+                ret = SR_replace_value_text(text, cImm, value, cLabel);
+                if (ret == 0)
+                {
+                    SR_disassemble_add_address(Entry, value);
+                    text = cImm;
+                }
+                break;
             }
         }
 
@@ -1216,7 +1412,8 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
                         SR_add_jump_target(Entry, address, &state, -1);
 
                         SR_get_label(cLabel, address);
-                        sprintf(cResult, "jmp %s%s", ((ud_obj.operand[0].size == 32)?"":"short "), cLabel);
+                        // short jump can't be used for jumps to absolute addresses (Linux executables: original code)
+                        sprintf(cResult, "jmp %s%s", ((ud_obj.operand[0].size == 32 || strncmp(cLabel, "srw_abs_", 8) == 0)?"":"short "), cLabel);
                     }
 
                     text = cResult;
@@ -1236,11 +1433,33 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
 
                     if (ud_obj.operand[0].type == UD_OP_REG &&
                         detect_jump_tables &&
-                        (state.tbl_kind == TBL_RVA_READY || state.tbl_kind == TBL_DIFF_READY) &&
+                        (state.tbl_kind == TBL_RVA_READY || state.tbl_kind == TBL_DIFF_READY || state.tbl_kind == TBL_ABS_LOADED) &&
                         reg_index(ud_obj.operand[0].base) == state.tbl_reg
                        )
                     {
                         ret = SR_process_jump_table(Entry, offset, &state);
+                        if (ret) return ret;
+                    }
+                    else if (ud_obj.operand[0].type == UD_OP_MEM &&
+                             detect_jump_tables &&
+                             fixup == NULL &&
+                             mi.kind == MEMK_NONE &&
+                             ud_obj.operand[0].base == UD_NONE &&
+                             ud_obj.operand[0].index != UD_NONE &&
+                             ud_obj.operand[0].scale == 8 &&
+                             ud_obj.operand[0].offset == 32
+                            )
+                    {
+                        // jmp [index*8 + table] (table with absolute addresses)
+                        run_state table_state;
+
+                        table_state = state;
+                        table_state.tbl_kind = TBL_ABS_READY;
+                        table_state.tbl_address = (uint64_t)(int64_t)ud_obj.operand[0].lval.sdword;
+                        table_state.tbl_bound = SR_index_bound(&state, &(ud_obj.operand[0]));
+                        table_state.tbl_uses_bt = 0;
+
+                        ret = SR_process_jump_table(Entry, offset, &table_state);
                         if (ret) return ret;
                     }
                 }
@@ -1299,8 +1518,19 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
                     SR_add_jump_target(Entry, address, &state, bound);
                 }
 
-                if (ud_obj.operand[0].size == 32)
+                if (extrn == NULL)
                 {
+                    SR_get_label(cLabel, address);
+                }
+
+                if (ud_obj.operand[0].size == 32 ||
+                    ((extrn != NULL || strncmp(cLabel, "srw_abs_", 8) == 0) &&
+                     ud_obj.mnemonic != UD_Ijcxz && ud_obj.mnemonic != UD_Ijecxz && ud_obj.mnemonic != UD_Ijrcxz &&
+                     ud_obj.mnemonic != UD_Iloop && ud_obj.mnemonic != UD_Iloope && ud_obj.mnemonic != UD_Iloopne
+                    )
+                   )
+                {
+                    // near jump (short jump can't be used for jumps to external procedures or absolute addresses)
                     ret = SR_disassemble_convert_cjump(cResult, " near", address, extrn);
                 }
                 else if (ud_obj.mnemonic == UD_Ijcxz || ud_obj.mnemonic == UD_Ijecxz || ud_obj.mnemonic == UD_Ijrcxz ||
@@ -1367,6 +1597,21 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
 
                 output->str = strdup(text);
                 break;
+        }
+
+        if (inner_labels[0] != 0 && output->str != NULL)
+        {
+            char *new_str;
+
+            output->has_label = 1;
+            new_str = (char *) malloc(strlen(output->str) + strlen(inner_labels) + 1);
+            if (new_str != NULL)
+            {
+                strcpy(new_str, output->str);
+                strcat(new_str, inner_labels);
+                free(output->str);
+                output->str = new_str;
+            }
         }
 
         SR_update_run_state(&state, &mi);

@@ -86,6 +86,16 @@ static void SR_write_output_line(output_data *item, void *data)
         return;
     }
 
+    // uninitialized thread local storage (ELF .tbss) doesn't occupy address space - no labels
+    if (section[DATA->Entry].tls && section[DATA->Entry].type == ST_UDATA)
+    {
+        if (item->type != OT_NONE)
+        {
+            fprintf(DATA->fout, "resb 1\n");
+        }
+        return;
+    }
+
     if ( (item->str != NULL) || (item->type <= 0) || (item->type == OT_NONE))
     {
         if ( item->align != 0 )
@@ -531,10 +541,49 @@ static int SR_write_resources(const char *fname, unsigned int Entry)
     return 0;
 }
 
+// section of Linux executable - sections (except code) are placed at original addresses by linker script
+static int SR_write_elf_section_header(FILE *fout, unsigned int Entry)
+{
+    char name[96];
+    const char *tls;
+    unsigned int align;
+
+    SR_elf_output_section_name(name, Entry);
+    tls = (section[Entry].tls)?" tls":"";
+    align = (unsigned int)section[Entry].align;
+    if (align == 0) align = 1;
+
+    switch (section[Entry].type)
+    {
+        case ST_CODE:
+            fprintf(fout, "\nsection %s progbits alloc exec nowrite align=16\n", name);
+            break;
+        case ST_DATA:
+        case ST_STACK:
+            fprintf(fout, "\nsection %s progbits alloc noexec write%s align=%u\n", name, tls, align);
+            break;
+        case ST_UDATA:
+            fprintf(fout, "\nsection %s nobits alloc noexec write%s align=%u\n", name, tls, align);
+            break;
+        case ST_RDATA:
+            fprintf(fout, "\nsection %s progbits alloc noexec nowrite%s align=%u\n", name, tls, align);
+            break;
+        default:
+            return 1;
+    }
+
+    return 0;
+}
+
 static int SR_write_section_header(FILE *fout, unsigned int Entry, int first)
 {
     char name[96];
     unsigned int align;
+
+    if (InputFormat == INPUT_ELF)
+    {
+        return SR_write_elf_section_header(fout, Entry);
+    }
 
     SR_output_section_name(name, Entry);
 
@@ -684,6 +733,13 @@ int SR_write_output(const char *fname)
     fprintf(EF.fout, "\n");
     import_list_ForEach(&SR_write_output_import, (void *) &EF);
 
+#if (OUTPUT_TYPE != OUT_ORIG)
+    if (InputFormat == INPUT_ELF)
+    {
+        SR_elf_write_externs(EF.fout);
+    }
+#endif
+
     fprintf(EF.fout, "\n%%ifidn __OUTPUT_FORMAT__, elf64\n");
     fprintf(EF.fout, "section .note.GNU-stack noalloc noexec nowrite progbits\n");
     fprintf(EF.fout, "%%endif\n");
@@ -786,6 +842,42 @@ int SR_write_output(const char *fname)
     }
 
 #if (OUTPUT_TYPE != OUT_ORIG)
+    // original code of Linux executable (functions which are not recompiled are executed there)
+    if (InputFormat == INPUT_ELF && keep_original_code)
+    {
+        for (EF.Entry = 0; EF.Entry < num_sections; EF.Entry++)
+        {
+            char outname[96], *binname, *dotptr, *slash;
+            FILE *fbin;
+
+            if (section[EF.Entry].type != ST_CODE) continue;
+
+            binname = (char *) malloc(strlen(fname) + 32);
+            if (binname == NULL) return -1;
+            strcpy(binname, fname);
+            dotptr = strrchr(binname, '.');
+            slash = strrchr(binname, '/');
+            if (dotptr != NULL && (slash == NULL || dotptr > slash)) *dotptr = 0;
+            sprintf(&(binname[strlen(binname)]), ".orig%.2u.bin", (unsigned int)(EF.Entry + 1));
+
+            fbin = fopen(binname, "wb");
+            if (fbin == NULL)
+            {
+                free(binname);
+                return -1;
+            }
+            fwrite(section[EF.Entry].adr, 1, section[EF.Entry].size_in_file, fbin);
+            fclose(fbin);
+
+            SR_elf_output_section_name(outname, EF.Entry);
+            slash = strrchr(binname, '/');
+            fprintf(EF.fout, "\nsection %s.orig progbits alloc exec nowrite align=%u\n", outname, (unsigned int)section[EF.Entry].align);
+            fprintf(EF.fout, "incbin \"%s\"\n", (slash != NULL)?(slash + 1):binname);
+
+            free(binname);
+        }
+    }
+
     // C++ exception handling data (version 4) generated again
     if (SR_fh4_get_data() != NULL)
     {
@@ -806,6 +898,13 @@ int SR_write_output(const char *fname)
 #endif
 
     fclose(EF.fout);
+
+#if (OUTPUT_TYPE != OUT_ORIG)
+    if (InputFormat == INPUT_ELF)
+    {
+        if (SR_write_linker_script(fname)) return -1;
+    }
+#endif
 
     return 0;
 }

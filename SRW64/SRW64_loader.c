@@ -354,6 +354,16 @@ static void unload_file(memory_file *mem_file)
 }
 
 
+void SR_add_orig_section(uint_fast32_t virtaddr, uint_fast32_t size, uint8_t *adr)
+{
+    if (num_orig_sections >= MAX_SECTIONS) return;
+
+    orig_sections[num_orig_sections].virtaddr = virtaddr;
+    orig_sections[num_orig_sections].size = size;
+    orig_sections[num_orig_sections].adr = adr;
+    num_orig_sections++;
+}
+
 void *SR_rva_to_ptr(uint_fast32_t rva, uint_fast32_t size)
 {
     unsigned int Entry;
@@ -1257,6 +1267,19 @@ int SRW64_LoadFile(const char *fname)
         fprintf(stderr, "Error: File too small\n");
         return -1;
     }
+
+    // Linux executable
+    if (MZfile[0] == 0x7f && MZfile[1] == 'E' && MZfile[2] == 'L' && MZfile[3] == 'F')
+    {
+        int ret;
+
+        InputFormat = INPUT_ELF;
+        ret = SRW64_LoadElf(MZfile, SR_FileSize);
+        unload_file(&mf);
+        return ret;
+    }
+
+    InputFormat = INPUT_PE;
 
     // check MZ signature
     if (*((uint16_t *)MZfile) != 0x5a4d)

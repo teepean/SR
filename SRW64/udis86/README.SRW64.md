@@ -31,7 +31,16 @@ no build system).
   * `prefetchw` / `prefetch` don't get operand size
 * `libudis86/extern.h`: removed `register` keyword from the prototype of
   `ud_clear_insn` (C++17 doesn't allow it).
+* `libudis86/decode.c`: operand size tables (`/o`) of instructions with 3-byte
+  VEX prefix use VEX.W (previously REX.W was always 0 during the table lookup,
+  so `vpextrq` was invalid).
 * `libudis86/itab.c`, `libudis86/itab.h`: generated files (see below).
+
+## Usage notes
+
+* `ud_init()` sets the vendor to AMD, which makes Intel only instructions
+  (CET instructions like `endbr64`, `rdsspq`, `incsspq`, VMX instructions)
+  invalid -- SRW64 calls `ud_set_vendor(&ud, UD_VENDOR_ANY)` after `ud_init()`.
 
 ## Regenerating opcode tables
 

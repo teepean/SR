@@ -77,6 +77,9 @@ int SR_initial_disassembly(void)
 
 void SR_get_label(char *cbuf, uint64_t Address)
 {
+    // Linux executables: original code which is not recompiled, addresses outside of sections
+    if (InputFormat == INPUT_ELF && SR_elf_absolute_label(cbuf, Address)) return;
+
     sprintf(cbuf, "loc_%" PRIX64, Address);
 }
 
@@ -120,6 +123,9 @@ int SR_get_label_expr(char *cbuf, uint_fast32_t SecNum, int_fast64_t RelAdr, int
     }
 
     target = section[SecNum].start + RelAdr;
+
+    // Linux executables: original code which is not recompiled (absolute address)
+    if (InputFormat == INPUT_ELF && SR_elf_absolute_label(cbuf, target)) return 1;
 
     label_value = (RelAdr >= 0)?section_label_list_FindEntryEqual(SecNum, (Word_t)RelAdr):NULL;
 

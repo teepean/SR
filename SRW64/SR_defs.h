@@ -42,6 +42,9 @@
 #define OUT_ORIG 0
 #define OUT_X64 8
 
+#define INPUT_PE  0             // Windows executable (PE32+)
+#define INPUT_ELF 1             // Linux executable (ELF64)
+
 #define OUTPUT_TYPE  OUT_X64
 
 
@@ -166,6 +169,7 @@ typedef struct _section_data_ {
     Pvoid_t hint_list;          // list of disassembly hints (register state, jump table bounds) for code entries
     Pvoid_t rvadisp_list;       // list of forced/suppressed image relative displacements
     section_type type;          // section type: 0 - code, 1 - data, 2 - stack, 3 - uninitialized data
+    int tls;                    // section contains thread local storage (ELF)
     char name[64];              // section name
 } section_data;
 

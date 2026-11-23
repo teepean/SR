@@ -2,10 +2,11 @@
 #
 # SRW64 tests
 #
-# Each test compiles a 64-bit Windows program, recompiles it with SRW64,
+# Each test compiles a 64-bit Windows (or Linux) program, recompiles it with SRW64,
 # builds the recompiled program and compares its output with the output of the original program.
 #
-# Requirements: nasm, MinGW-w64 (x86_64-w64-mingw32-gcc, dlltool, windres), wine, gcc, python3
+# Requirements: nasm, MinGW-w64 (x86_64-w64-mingw32-gcc, dlltool, windres), wine, gcc, ld, python3
+#               (static glibc for the Linux test - it is skipped when not available)
 #
 # Environment variables:
 #   SRW64       - path to SRW64 executable (default: ../SRW64.exe relative to this script)
@@ -160,7 +161,25 @@ else
 fi
 
 
-# test 4 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
+# test 4: statically linked Linux executable (glibc: IFUNC, TLS, threads, CET, AVX-512 functions kept in original code)
+mkdir -p "$WORK/linux_c"
+cd "$WORK/linux_c" || exit 1
+if gcc -O2 -static -no-pie -pthread -o test_linux "$TESTS_DIR/linux_c/test_linux.c" -lm 2> gcc.err; then
+    ./test_linux arg1 > expected.txt 2>&1; echo "exit code $?" >> expected.txt
+    if RESULT=$("$TESTS_DIR/roundtrip_elf.sh" test_linux "$WORK/linux_c/srw64"); then
+        "$RESULT" arg1 > actual.txt 2>&1; echo "exit code $?" >> actual.txt
+        compare expected.txt actual.txt "statically linked Linux C program (elf64)"
+    else
+        echo "$RESULT"
+        echo "FAIL: statically linked Linux C program - recompilation failed"
+        FAILED=1
+    fi
+else
+    echo "SKIP: statically linked Linux C program - static glibc not available ($(head -1 gcc.err))"
+fi
+
+
+# test 5 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
 if [ -n "$FH4_EXECUTABLES" ]; then
     mkdir -p "$WORK/fh4_executables"
     cd "$WORK/fh4_executables" || exit 1
@@ -183,7 +202,7 @@ if [ -n "$FH4_EXECUTABLES" ]; then
 fi
 
 
-# test 5 (optional): Windows executables (built by Microsoft with MSVC)
+# test 6 (optional): Windows executables (built by Microsoft with MSVC)
 if [ -n "$WINDOWS_DIR" ]; then
     mkdir -p "$WORK/windows"
     cd "$WORK/windows" || exit 1

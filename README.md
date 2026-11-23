@@ -30,7 +30,7 @@ The projects consists of following subprojects (read the readme files in subproj
   * It takes the original executable as an input together with information about the original executable and produces x86 / llasm / x64 assembler version of the executable.
   * The generated x86/llasm/x64 assembler version of the executable is not part of the project.
 * **SRW64**
-  * The static recompiler (for 64-bit Windows executables) itself.
+  * The static recompiler (for 64-bit Windows executables and statically linked 64-bit Linux executables) itself.
   * It takes the original 64-bit executable as an input together with information about the original executable and produces x64 assembler version of the executable, which can be compiled into Windows (x64) or Linux (x64) version.
   * The generated x64 assembler version of the executable is not part of the project.
 * **llasm**

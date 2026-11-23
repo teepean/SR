@@ -163,9 +163,9 @@ static void SR_disassemble_create_aligns_code(output_data *item, void *data)
     case 0: // data
         if (item->type == OT_INSTRUCTION)
         {
-            if (item->align == 0)
+            if (item->align == 0 && InputFormat != INPUT_ELF)
             {
-                // first instruction after data gets aligned
+                // first instruction after data gets aligned (not in Linux executables - undecoded bytes are code)
                 item->align = 4;
             }
             DATA->isregion = 1;
@@ -211,7 +211,7 @@ static void SR_disassemble_create_aligns_code(output_data *item, void *data)
                 // remove nops before alignment
                 SR_remove_nops(DATA->Entry, DATA->begin_ofs, item->ofs);
             }
-            else if (item->align == 0)
+            else if (item->align == 0 && InputFormat != INPUT_ELF)
             {
                 // first instruction after data gets aligned
                 item->align = 4;
@@ -255,7 +255,7 @@ static void SR_disassemble_create_aligns_code(output_data *item, void *data)
         {
             if (item->type == OT_INSTRUCTION)
             {
-                if (item->align == 0)
+                if (item->align == 0 && InputFormat != INPUT_ELF)
                 {
                     // first instruction after data gets aligned
                     item->align = 4;
@@ -353,6 +353,13 @@ int SR_full_disassembly(void)
 
                 offset = (uint_fast32_t)entry_index;
                 section_entry_list_Delete(index, entry_index);
+
+                // code in ignored area (e.g. function which is not recompiled)
+                if (section_output_list_FindEntryEqual(index, offset) == NULL && SR_is_ignored(index, offset))
+                {
+                    fprintf(stderr, "Warning: code entry in ignored area: 0x%" PRIx64 "\n", section[index].start + offset);
+                    continue;
+                }
 
                 ret = SR_disassemble_offset_win64(index, offset);
 

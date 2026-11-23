@@ -843,7 +843,8 @@ int SR_process_unwind_offsets(void)
     output_data *function_output;
     uint_fast32_t *unwind_list, num_unwind;
 
-    if (pdata_count == 0) return 0;
+    // functions of Linux executables (from symbol table) don't have unwind info
+    if (pdata_count == 0 || InputFormat != INPUT_PE) return 0;
 
     unwind_list = (uint_fast32_t *) malloc(2 * pdata_count * sizeof(uint_fast32_t) + 1);
     if (unwind_list == NULL)

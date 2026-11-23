@@ -44,6 +44,8 @@ EXTERNAL_VARIABLE section_data section[MAX_SECTIONS];   // array of sections
 EXTERNAL_VARIABLE unsigned int num_sections;            // number of sections
 EXTERNAL_VARIABLE uint8_t *SR_CodeBase;                 // allocated data
 
+EXTERNAL_VARIABLE int InputFormat;                      // INPUT_PE or INPUT_ELF
+EXTERNAL_VARIABLE uint64_t CodeBase;                    // address of recompiled code (ELF)
 EXTERNAL_VARIABLE uint64_t ImageBase;                   // image base
 EXTERNAL_VARIABLE uint_fast32_t SizeOfImage;            // size of image
 EXTERNAL_VARIABLE uint_fast32_t SizeOfHeaders;          // size of headers
@@ -83,6 +85,7 @@ EXTERNAL_VARIABLE int use_pdata;                        // use exception directo
 EXTERNAL_VARIABLE int convert_exception_data;           // convert exception directory and unwind/exception handling data
 EXTERNAL_VARIABLE int detect_jump_tables;               // detect jump tables which are not relocated (image relative, label differences)
 EXTERNAL_VARIABLE int detect_image_relative;            // detect image relative addressing (register containing image base + RVA)
+EXTERNAL_VARIABLE int keep_original_code;               // ELF: original code is kept at original addresses (functions which can't be recompiled)
 
 EXTERNAL_VARIABLE Pvoid_t import_list;
 
@@ -111,6 +114,18 @@ int SR_apply_fixup_info(void);
 // SRW64_loader.c
 int SRW64_LoadFile(const char *fname);
 void *SR_rva_to_ptr(uint_fast32_t rva, uint_fast32_t size);
+void SR_add_orig_section(uint_fast32_t virtaddr, uint_fast32_t size, uint8_t *adr);
+
+// SRW64_elf.c
+int SRW64_LoadElf(const uint8_t *file, int64_t file_size);
+int SR_elf_process(void);
+int SR_elf_is_function_start(uint64_t address);
+int SR_elf_is_instruction_start(uint64_t address);
+int SR_elf_absolute_label(char *cbuf, uint64_t address);
+void SR_elf_write_externs(FILE *fout);
+int SR_write_linker_script(const char *fname);
+void SR_elf_output_section_name(char *buf, unsigned int Entry);
+void SR_elf_free(void);
 
 // SRW64_pdata.c
 const pdata_entry *SR_find_pdata(uint_fast32_t rva);

@@ -2,6 +2,7 @@
 
 SRW64 statically recompiles 64-bit Windows executables (PE32+, x86-64) into relocatable NASM x64 source.
 The output can be built into a new Windows executable (win64) or linked into a Linux program (elf64) together with replacement code.
+Statically linked 64-bit Linux executables (ELF64, not PIE) are supported too: data stays at original addresses, only code is moved (see "Linux executables" in README.md).
 User documentation (formats of SCI files, options, output conventions) is in [README.md](README.md) -- read it before changing behavior.
 
 ## Build
@@ -20,6 +21,7 @@ The build must stay warning-free with `-Wall` (gcc) and must keep working with `
 
 All tests must print PASS. The tests need NASM, MinGW-w64, Wine, GCC and Python 3 (see [tests/README.md](tests/README.md)).
 To try any 64-bit executable: `tests/roundtrip_win64.sh program.exe /tmp/work [console|windows]`, then run the result with Wine and compare with the original.
+For a statically linked Linux executable: `tests/roundtrip_elf.sh program /tmp/work`, then run the result natively.
 
 ## Workflow: recompiling a new executable
 
@@ -30,6 +32,9 @@ To try any 64-bit executable: `tests/roundtrip_win64.sh program.exe /tmp/work [c
 5. Link (win64): import libraries for the used DLLs (`tests/mkimplibs.py game.asm .` creates them from the `extern` lines), resources (`windres -i game.res -O coff -o res.o`), `-nostartfiles -nostdlib -Wl,-e,entry_name`.
    Link (elf64): `gcc -no-pie` with replacement implementations of all imported functions (`__attribute__((ms_abi))`), see `tests/msvc_patterns/runtime_linux.c`.
 6. Run and compare with the original. Fix problems with SCI files (see below), iterate.
+
+Linux executables (statically linked, not PIE): steps 3-5 are replaced by `nasm -f elf64 ...` and `ld -static -T game.ld game.o -o game_srw64` (no imports, no entry point alias -- the entry point is `srw_entry`).
+Read the notes: functions kept in original code (AVX-512), cold parts of functions, IRELATIVE relocations.
 
 ## Diagnosing problems
 
@@ -47,6 +52,12 @@ To try any 64-bit executable: `tests/roundtrip_win64.sh program.exe /tmp/work [c
 | Crash in raw bytes (`db ...`) in code section | a function was not disassembled (its address is used only by code and it has no unwind info) -- run with `--list_invalid_code_fixups=file` and add the address to `fixup_interpret_as_code.sci` |
 | Crash on `movdqa`/`movaps` with address -1 | misaligned data -- data sections must keep the original offset in page (see `SR_write_section_header`) |
 | Wrong results with `[reg+index*4+0x...]` | image relative displacement not converted (or converted wrongly) -- `--list_rva_displacements=file`, fix with `rva_displacements.sci` |
+| ELF: `Note: function is kept in original code` | the function contains an instruction which udis86 can't decode (the bytes are printed, usually AVX-512 `62 ...`) -- OK, the original code is used |
+| ELF: crash in original code (address below the recompiled code) | the program jumped to original code through a pointer which wasn't converted -- find the jump (see below), check jump tables and pointers in data |
+| ELF: glibc reports a fatal error at startup (e.g. `unexpected reloc type in static binary`) | a reference to the end of a data section was converted to the start of the next (code) section -- immediates at data/code boundaries are not converted (`SR_elf_is_function_start`) |
+
+Runtime debugging (Linux executables): the linked program contains the `loc_<original address>` symbols, so gdb shows original addresses (`loc_4C6840+3`).
+To find where the program leaves the recompiled code, single-step it with a gdb Python script until `$pc` is below the address of recompiled code and print the previous instruction.
 
 Runtime debugging (Wine):
 
@@ -60,7 +71,8 @@ Runtime debugging (Wine):
 | File | Purpose |
 |---|---|
 | `SR_main.c` | command line, `SR.cfg`, order of passes, address -> section lookup |
-| `SRW64_loader.c` | PE32+ loader: sections (long names, debug sections), relocations (DIR64, HIGHLOW, `relocations.csv`, guessing), imports (64-bit thunks, ordinals), exports, splitting of import/export/IAT ranges, notes about large address awareness |
+| `SRW64_loader.c` | PE32+ loader: sections (long names, debug sections), relocations (DIR64, HIGHLOW, `relocations.csv`, guessing), imports (64-bit thunks, ordinals), exports, splitting of import/export/IAT ranges, notes about large address awareness; ELF files are passed to `SRW64_LoadElf` |
+| `SRW64_elf.c` | Linux executables (ELF64): loader (sections, functions from symbol table, cold parts, noreturn names, IRELATIVE relocations), prescan (instruction starts, data addresses referenced by code), functions kept in original code, pointers to code in data, `srw_abs_` symbols, linker script |
 | `SRW64_pdata.c` | exception directory: function list (`SR_find_pdata`), code entries, image relative fixups in .pdata, unwind info, SEH scope tables, C++ FuncInfo (FH3), delay load descriptors, prolog offsets as label differences (after disassembly), prescan of `lea reg, [__ImageBase]` |
 | `SRW64_eh4.c` | C++ exception handling data version 4 (`__CxxFrameHandler4`): in place conversion of RVAs, regenerated IP to state maps and handler maps (section `srweh4`, offsets as `dd (((loc_A - loc_B) << 4) \| 7)`), copies for functions sharing the data |
 | `SR_source_code_information.c` | loading SCI files |
@@ -83,6 +95,8 @@ Key internal conventions:
 * Code entries come from: exception directory, exports, aliases, fixups from data, call/jump targets, `lea` of function addresses, jump tables, SCI files. `SR_check_code_reference` decides whether `lea reg, [rip+code]` is a function.
 * Image relative addressing is only converted when the base (or unscaled index) register is known to contain the image base (`run_state.ib_mask`); hints for jump targets are stored in `hint_list` (register mask + jump table bound).
 * The `int3` instruction ends linear disassembly (it is used as padding after calls to functions which don't return).
+* `InputFormat` (`INPUT_PE` / `INPUT_ELF`) selects input specific behavior. ELF: `ImageBase` is the address of the first loaded segment, `CodeBase` the address of recompiled code, `section[].tls` marks TLS sections (`.tbss` is excluded from address lookups); `SR_get_label` returns `srw_abs_<address>` for addresses which are not recompiled.
+* udis86 must be initialized with `ud_set_vendor(&ud, UD_VENDOR_ANY)` (the default vendor makes Intel only instructions like `endbr64` invalid).
 
 ## Coding style
 

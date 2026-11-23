@@ -1,8 +1,9 @@
 # SRW64
 
-The static recompiler for 64-bit Windows executables (PE32+, x86-64).
+The static recompiler for 64-bit Windows executables (PE32+, x86-64) and statically linked 64-bit Linux executables (ELF64, x86-64).
 
-This utility takes an original 64-bit Windows executable (or DLL) and information about the original executable as an input and produces x64 assembler version (NASM syntax) of the executable. The generated assembler version contains labels instead of addresses, so it can be modified and compiled into a new Windows executable (win64) or into an object file for Linux (elf64) together with replacement code (for example, replacements of Windows API functions).
+This utility takes an original 64-bit Windows executable (or DLL) and information about the original executable as an input and produces x64 assembler version (NASM syntax) of the executable.
+Statically linked Linux executables are supported too (see [Linux executables](#linux-executables-elf64)). The generated assembler version contains labels instead of addresses, so it can be modified and compiled into a new Windows executable (win64) or into an object file for Linux (elf64) together with replacement code (for example, replacements of Windows API functions).
 
 SRW64 is based on [SRW](../SRW/README.md) (the static recompiler for 32-bit Windows executables) and uses the same workflow and the same information files (SCI files).
 
@@ -17,7 +18,7 @@ The utility uses c++ containers by default or optionally [Judy](http://judy.sour
 
 ## Usage
 
-    SRW64.exe [options] <input.exe> <output.asm>
+    SRW64.exe [options] <input executable> <output.asm>
 
 The utility reads information files (SCI files) and configuration file *SR.cfg* from the current directory.
 
@@ -36,6 +37,8 @@ Output files:
 * *output.def* -- module definition file with exports (only if the executable has exports)
 * *output.res* -- resources in .res format (can be compiled using windres/rc/cvtres and linked into the recompiled executable)
 * *output.resdump* -- raw contents of the resource section
+* *output.ld* -- linker script (only Linux executables)
+* *output.origNN.bin* -- original code of section NN (only Linux executables, see `keep_original_code`)
 
 The generated assembler file includes files *srw64inc.inc* (from the *x64-support* subdirectory), *misc.inc* and *extern.inc* (game specific files, they can be empty).
 
@@ -45,6 +48,7 @@ The generated assembler file includes files *srw64inc.inc* (from the *x64-suppor
 * `convert_exception_data=yes|no` -- convert exception directory, unwind information, SEH scope tables and C++ exception handling data (default: yes)
 * `detect_jump_tables=yes|no` -- detect jump tables which are not relocated (default: yes)
 * `detect_image_relative=yes|no` -- detect image relative addressing (register containing image base + RVA) (default: yes)
+* `keep_original_code=yes|no` -- Linux executables: functions which can't be decoded are not recompiled, the original code is kept at its original address (default: yes)
 
 ## Information files (SCI files)
 
@@ -99,6 +103,36 @@ When NASM reports "short jump is out of range", run *repair_short_jumps.py* (fro
 * Accesses to TEB (`gs:` prefix) and to KUSER_SHARED_DATA (`0x7FFE0000`) are kept unchanged -- they must be emulated (or the code must be replaced).
 * Code which reads the PE header through `__ImageBase` must be replaced.
 
+## Linux executables (ELF64)
+
+Statically linked executables which are not position independent are supported (`gcc -static -no-pie` -- older Linux programs were often distributed like this, as a single binary).
+Dynamically linked executables, position independent executables (PIE, static-pie) and shared libraries are not supported.
+
+Such executables don't contain relocations, so pointers in data can't be found reliably.
+Therefore all sections except code keep their original addresses and only the recompiled code is moved (to a new address after the original image, printed as *Address of recompiled code*):
+
+* The generated linker script (*output.ld*) places the sections (named `srw.<original name>`) at their original addresses and the recompiled code (section `.text`) at the new address.
+* Only references to code are converted:
+  * RIP-relative addresses, calls and jumps,
+  * immediate values which are addresses of functions (in `mov`, `cmp` and `push` instructions),
+  * jump tables (with offsets relative to table start or with absolute addresses),
+  * addresses of functions in data and groups of pointers into the same function (tables of labels),
+  * addresses of IFUNC resolvers in IRELATIVE relocations (`.rela.plt`).
+* Functions (and their sizes) are taken from the symbol table, so the executable should not be stripped (without symbols, the code is found only from the entry point and from references).
+  Cold parts of functions (`foo.cold`) are considered to be parts of the functions.
+* Functions which can't be decoded (AVX-512/EVEX instructions are not supported by udis86 -- glibc contains such variants of string and math functions) are not recompiled: the original code is kept at its original address (sections `srw.<name>.orig` with contents from *output.origNN.bin*) and references to it use absolute symbols `srw_abs_<address>` defined in the linker script.
+  The functions are listed by SRW64 (`Note: function is kept in original code`). This can be disabled with `keep_original_code=no` in *SR.cfg* (then such functions must be handled using SCI files).
+* Thread local storage keeps its layout (`.tdata`, `.tbss`), so offsets relative to `fs:` stay valid.
+* The entry point gets the name `srw_entry` (used in the linker script).
+* Calls of known functions which don't return (`exit`, `abort`, `__libc_fatal`, `__assert_fail`, `__cxa_throw`, `_Unwind_Resume`, ...) are recognized by name.
+
+The recompiled program contains the recompiled C library (glibc) code of the original executable, so no replacement functions are needed:
+
+    nasm -f elf64 -O1 -w-number-overflow -i<path to SRW64/x64-support>/ output.asm -o output.o
+    ld -static -T output.ld output.o -o program
+
+The script [tests/roundtrip_elf.sh](tests/roundtrip_elf.sh) does all steps.
+
 ### Executables which are not large address aware
 
 Executables linked with `/LARGEADDRESSAWARE:NO` can store pointers in 32 bits (Windows keeps their memory below 2 GB). SRW64 prints a note for them.
@@ -107,7 +141,7 @@ Executables with 32-bit absolute relocations must be linked below 2 GB on Window
 
 ## Known limitations
 
-* C++ exception handling data of GCC (`.gcc_except_table`, `.eh_frame`) is not converted.
+* C++ exception handling data of GCC (`.gcc_except_table`, `.eh_frame`) is not converted -- in recompiled Linux executables, C++ exceptions thrown through recompiled code terminate the program.
 * `__CxxFrameHandler4` data of functions with separated code segments is converted only for the first function which uses the data.
 * AVX-512 (EVEX) instructions are not supported.
 * Self-modifying code, code which jumps into the middle of instructions and similar code must be handled using SCI files (or patched).

@@ -2632,7 +2632,13 @@ decode_ext(struct ud *u, uint16_t ptr)
       idx = u->dis_mode != 64 ? 0 : 1;
       break;
     case UD_TAB__OPC_OSIZE:
-      idx = eff_opr_mode(u->dis_mode, REX_W(u->pfx_rex), u->pfx_opr) / 32;
+      /* SRW64: REX.W of instructions with 3-byte VEX/XOP prefix is VEX.W
+       * (u->pfx_rex is set from VEX prefix only after the table lookup) */
+      if (u->vex_op == 0xc4 || u->vex_op == 0x8f) {
+        idx = eff_opr_mode(u->dis_mode, (u->vex_b2 >> 7) & 1, u->pfx_opr) / 32;
+      } else {
+        idx = eff_opr_mode(u->dis_mode, REX_W(u->pfx_rex), u->pfx_opr) / 32;
+      }
       break;
     case UD_TAB__OPC_ASIZE:
       idx = eff_adr_mode(u->dis_mode, u->pfx_adr) / 32;

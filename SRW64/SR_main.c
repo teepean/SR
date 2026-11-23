@@ -83,6 +83,9 @@ int SR_get_section_reladr_exact(uint64_t Address, uint_fast32_t *SecNum, uint_fa
 
 	for (Entry = 0; Entry < num_sections; Entry++)
 	{
+		// uninitialized thread local storage (ELF .tbss) doesn't occupy address space
+		if (section[Entry].tls && section[Entry].type == ST_UDATA) continue;
+
 		if (Address >= section[Entry].start &&
 			Address < section[Entry].start + section[Entry].size)
 		{
@@ -94,6 +97,8 @@ int SR_get_section_reladr_exact(uint64_t Address, uint_fast32_t *SecNum, uint_fa
 	}
 	for (Entry = 0; Entry < num_sections; Entry++)
 	{
+		if (section[Entry].tls && section[Entry].type == ST_UDATA) continue;
+
 		if (Address == section[Entry].start + section[Entry].size)
 		{
 			*SecNum = Entry;
@@ -116,6 +121,8 @@ int SR_get_section_reladr(uint64_t Address, uint_fast32_t *SecNum, uint_fast32_t
 	Best = num_sections;
 	for (Entry = 0; Entry < num_sections; Entry++)
 	{
+		if (section[Entry].tls && section[Entry].type == ST_UDATA) continue;
+
 		if (Address >= section[Entry].start && Address < ImageBase + SizeOfImage)
 		{
 			if (Best == num_sections || section[Entry].start > section[Best].start)
@@ -247,6 +254,10 @@ static void read_cfg(void)
         {
             read_cfg_yesno(param, &detect_image_relative);
         }
+        else if ( strcasecmp(str, "keep_original_code") == 0 )
+        {
+            read_cfg_yesno(param, &keep_original_code);
+        }
     }
 
     fclose(f);
@@ -304,12 +315,15 @@ static void deinitialize_values(void)
 	}
 
 	SR_fh4_free();
+	SR_elf_free();
 }
 
 static void initialize_values(void)
 {
 	num_sections = 0;
 	SR_CodeBase = NULL;
+	InputFormat = INPUT_PE;
+	CodeBase = 0;
 	ImageBase = 0;
 	SizeOfImage = 0;
 	SizeOfHeaders = 0;
@@ -331,15 +345,19 @@ static void initialize_values(void)
 	convert_exception_data = 1;
 	detect_jump_tables = 1;
 	detect_image_relative = 1;
+	keep_original_code = 1;
 
 	ud_init(&ud_obj);
 	ud_set_mode(&ud_obj, 64);
+	// instructions of all vendors (default is AMD, which makes Intel only instructions like endbr64 invalid)
+	ud_set_vendor(&ud_obj, UD_VENDOR_ANY);
 	ud_set_syntax(&ud_obj, UD_SYN_INTEL);
 }
 
 static void print_usage(void)
 {
-	fprintf(stderr, "Usage: SRW64 [options] <input.exe> <output.asm>\n");
+	fprintf(stderr, "Usage: SRW64 [options] <input executable> <output.asm>\n");
+	fprintf(stderr, "Input: 64-bit Windows executable (PE32+) or statically linked 64-bit Linux executable (ELF64)\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "\t--list_invalid_code_fixups=<file>  list code references to code which are not considered as code entries\n");
 	fprintf(stderr, "\t--list_data_to_code_fixups=<file>  list data references to code\n");
@@ -478,6 +496,19 @@ int main (int argc, char *argv[])
 	}
 
 #if (OUTPUT_TYPE != OUT_ORIG)
+	if (InputFormat == INPUT_ELF)
+	{
+		write_log_time(stderr);
+		fprintf(stderr, "Processing symbols and data...\n");
+		ret = SR_elf_process();
+		if (ret != 0)
+		{
+			fprintf(stderr, "Error: %i\n", ret);
+			deinitialize_values();
+			return 4;
+		}
+	}
+
 	write_log_time(stderr);
 	fprintf(stderr, "Processing exception directory...\n");
 	ret = SR_process_pdata();
@@ -496,7 +527,7 @@ int main (int argc, char *argv[])
 		return 4;
 	}
 
-	if (detect_image_relative)
+	if (detect_image_relative && InputFormat == INPUT_PE)
 	{
 		ret = SR_prescan_image_base();
 		if (ret != 0)
