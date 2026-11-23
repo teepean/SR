@@ -397,6 +397,11 @@ static void write_code_ranges(const char *name)
 
 	fprintf(fout, "# SRW64 decoded instructions: <start address> <end address (exclusive)> [ignored - area which is not decoded: function kept in original code, ignored_areas.sci]\n");
 	fprintf(fout, "# address bias: 0x%" PRIx64 " (addresses are original addresses + bias)\n", (InputFormat == INPUT_ELF)?ElfLoadBias:0);
+	for (Entry = 0; Entry < num_sections; Entry++)
+	{
+		if (section[Entry].type != ST_CODE) continue;
+		fprintf(fout, "# code section: 0x%" PRIx64 " 0x%" PRIx64 " %s\n", section[Entry].start, section[Entry].start + section[Entry].size, section[Entry].name);
+	}
 
 	for (Entry = 0; Entry < num_sections; Entry++)
 	{

@@ -12,7 +12,7 @@
 #     (IDA's number of cases can be too small for switches without range check) / jump without jump table in SRW64 /
 #     jump or targets not decoded by SRW64,
 #   * jump tables converted by SRW64 which IDA doesn't know,
-#   * code in IDA functions which SRW64 didn't decode (padding, unreachable ud2 after calls of functions which
+#   * code in IDA functions which SRW64 didn't decode (code in sections which SRW64 considers data, padding, unreachable ud2 after calls of functions which
 #     don't return, thunks - PLT stubs and import thunks which SRW64 replaces - and areas which SRW64 doesn't decode
 #     on purpose - functions kept in original code, ignored_areas.sci - are listed separately; code directly after
 #     a call is listed separately too - SRW64 considers the called function as not returning, IDA doesn't).
@@ -75,6 +75,19 @@ class Executable:
             if vaddr <= address and address + size <= vaddr + region_size:
                 return self.data[offset + address - vaddr:offset + address - vaddr + size]
         return None
+
+
+def plt_stub(code):
+    # PLT entries for lazy binding (push index; jmp PLT0) and PLT0 (push [rip+X]; jmp [rip+Y]), without padding
+    if code is None:
+        return False
+    if len(code) >= 10 and code[0] == 0x68 and code[5] == 0xe9:
+        rest = code[10:]
+    elif len(code) >= 12 and code[0:2] == b"\xff\x35" and code[6:8] == b"\xff\x25":
+        rest = code[12:]
+    else:
+        return False
+    return len(rest) == 0 or padding_kind(rest) == "padding"
 
 
 def padding_kind(code):
@@ -168,15 +181,19 @@ def main():
                 continue
             parts = line.split()
             srw_tables[int(parts[0], 16)] = (int(parts[1], 16), parts[2], int(parts[3]), int(parts[4]), set(int(x, 16) for x in parts[5:]))
-    decoded, ignored = [], []
+    decoded, ignored, code_sections = [], [], []
     with open(code_ranges_name) as f:
         for line in f:
+            if line.startswith("# code section:"):
+                parts = line.split()
+                code_sections.append((int(parts[3], 16), int(parts[4], 16)))
             if line.startswith("#"):
                 continue
             parts = line.split()
             (ignored if len(parts) > 2 and parts[2] == "ignored" else decoded).append((int(parts[0], 16), int(parts[1], 16)))
     srw_code = Ranges(decoded)
     srw_ignored = Ranges(ignored)
+    srw_sections = Ranges(code_sections) if code_sections else None
 
     # IDA
     functions = []
@@ -204,7 +221,8 @@ def main():
             count = int(parts[5])
             switches[from_ida(int(parts[0], 16))] = (from_ida(int(parts[1], 16)), from_ida(int(parts[2], 16)), int(parts[4]), set(from_ida(int(x, 16)) for x in parts[6:6 + count]))
     with open(os.path.join(ida_dir, "code_ranges.txt")) as f:
-        ida_code = [tuple(from_ida(int(x, 16)) for x in line.split()) for line in f]
+        # (chunks shared by more functions are listed more times)
+        ida_code = Ranges([tuple(from_ida(int(x, 16)) for x in line.split()) for line in f]).ranges
 
     stats = collections.OrderedDict()
     examples = collections.defaultdict(list)
@@ -262,10 +280,14 @@ def main():
         for part_start, part_end in srw_code.uncovered(start, end):
             kind = padding_kind(executable.read(part_start - bias, part_end - part_start))
             text = "0x%x-0x%x (%d bytes, %s)" % (part_start, part_end, part_end - part_start, function_of(part_start))
-            if srw_ignored.contains(part_start):
+            if srw_sections is not None and not srw_sections.contains(part_start):
+                add("code: in section which is data for SRW64 (original bytes are used if the code is executed)", text, False)
+            elif srw_ignored.contains(part_start):
                 add("code: in area which SRW64 doesn't decode (kept in original code, ignored_areas.sci)", text, False)
             elif thunk_code.contains(part_start):
                 add("code: thunk not decoded by SRW64 (PLT stub, import thunk)", text, False)
+            elif plt_stub(executable.read(part_start - bias, part_end - part_start)):
+                add("code: PLT entry for lazy binding not decoded by SRW64", text, False)
             elif kind == "padding":
                 add("code: padding not decoded by SRW64", text, False)
             elif kind == "ud2":
@@ -286,7 +308,7 @@ def main():
     for category, (count, problem) in stats.items():
         if category == "switch: same targets" or (not problem and details <= 0):
             continue
-        if category.startswith("code: padding") or category.startswith("code: ud2") or category.startswith("code: thunk") or "doesn't decode" in category or category.startswith("switch: table of absolute"):
+        if category.startswith("code: padding") or category.startswith("code: ud2") or category.startswith("code: thunk") or category.startswith("code: PLT") or "doesn't decode" in category or category.startswith("switch: table of absolute"):
             continue
         print("\n%s:" % category)
         for text in examples[category][:details]:
