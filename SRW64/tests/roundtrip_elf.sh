@@ -1,6 +1,6 @@
 #! /bin/sh
 #
-# Recompiles statically linked 64-bit Linux executable (ELF64, not position independent)
+# Recompiles 64-bit Linux executable (ELF64, not position independent, statically or dynamically linked)
 # with SRW64 into new Linux executable.
 #
 # usage: roundtrip_elf.sh <executable> <work directory>
@@ -8,6 +8,8 @@
 # The work directory may contain SCI files (they are used by SRW64).
 # SRW64 writes linker script <name>.ld, which places the original sections (except code)
 # at their original addresses and the recompiled code at a new address.
+# Dynamically linked executables are linked with stub libraries created by mkstubs_elf.py
+# from file <name>.imports (the real libraries are used at runtime).
 #
 # Result: <work directory>/<name>_srw64
 #
@@ -62,7 +64,14 @@ done
 
 # link (sections are placed by the generated linker script)
 # (--eh-frame-hdr: the unwinder finds the new .eh_frame of the recompiled code using PT_GNU_EH_FRAME)
-"$LD" -static --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
+if [ -f "$NAME.imports" ]; then
+    # dynamically linked executable: stub libraries with imported symbols (the real libraries are used at runtime)
+    LINK_ARGS=$(python3 "$TESTS_DIR/mkstubs_elf.py" "$NAME.imports" stubs) || { echo "creating stub libraries failed"; exit 1; }
+    # shellcheck disable=SC2086
+    "$LD" $LINK_ARGS -E --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
+else
+    "$LD" -static --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
+fi
 if [ -s ld.err ]; then
     cat ld.err >&2
 fi

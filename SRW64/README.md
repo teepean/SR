@@ -1,9 +1,9 @@
 # SRW64
 
-The static recompiler for 64-bit Windows executables (PE32+, x86-64) and statically linked 64-bit Linux executables (ELF64, x86-64).
+The static recompiler for 64-bit Windows executables (PE32+, x86-64) and 64-bit Linux executables (ELF64, x86-64).
 
 This utility takes an original 64-bit Windows executable (or DLL) and information about the original executable as an input and produces x64 assembler version (NASM syntax) of the executable.
-Statically linked Linux executables are supported too (see [Linux executables](#linux-executables-elf64)). The generated assembler version contains labels instead of addresses, so it can be modified and compiled into a new Windows executable (win64) or into an object file for Linux (elf64) together with replacement code (for example, replacements of Windows API functions).
+Linux executables (statically or dynamically linked) are supported too (see [Linux executables](#linux-executables-elf64)). The generated assembler version contains labels instead of addresses, so it can be modified and compiled into a new Windows executable (win64) or into an object file for Linux (elf64) together with replacement code (for example, replacements of Windows API functions).
 
 SRW64 is based on [SRW](../SRW/README.md) (the static recompiler for 32-bit Windows executables) and uses the same workflow and the same information files (SCI files).
 
@@ -38,6 +38,7 @@ Output files:
 * *output.res* -- resources in .res format (can be compiled using windres/rc/cvtres and linked into the recompiled executable)
 * *output.resdump* -- raw contents of the resource section
 * *output.ld* -- linker script (only Linux executables)
+* *output.imports* -- interpreter, needed libraries and imported symbols (only dynamically linked Linux executables)
 * *output.origNN.bin* -- original code of section NN (only Linux executables, see `keep_original_code`)
 
 The generated assembler file includes files *srw64inc.inc* (from the *x64-support* subdirectory), *misc.inc* and *extern.inc* (game specific files, they can be empty).
@@ -105,8 +106,8 @@ When NASM reports "short jump is out of range", run *repair_short_jumps.py* (fro
 
 ## Linux executables (ELF64)
 
-Statically linked executables which are not position independent are supported (`gcc -static -no-pie` -- older Linux programs were often distributed like this, as a single binary).
-Dynamically linked executables, position independent executables (PIE, static-pie) and shared libraries are not supported.
+Executables which are not position independent are supported -- statically linked (`gcc -static -no-pie`) and dynamically linked (older Linux programs and games, for example FTL: Faster Than Light).
+Position independent executables (PIE, static-pie) and shared libraries are not supported.
 
 Such executables don't contain relocations, so pointers in data can't be found reliably.
 Therefore all sections except code keep their original addresses and only the recompiled code is moved (to a new address after the original image, printed as *Address of recompiled code*):
@@ -129,10 +130,20 @@ Therefore all sections except code keep their original addresses and only the re
   The program must be linked with `--eh-frame-hdr`, so the unwinder finds the new FDEs using `PT_GNU_EH_FRAME` (C++ exceptions, `pthread_cancel`, backtraces).
   Landing pads from the exception tables are code entries and FDEs which are not in the symbol table are used as functions (useful for stripped executables).
 
-The recompiled program contains the recompiled C library (glibc) code of the original executable, so no replacement functions are needed:
+Statically linked executables: the recompiled program contains the recompiled C library (glibc) code of the original executable, so no replacement functions are needed:
 
     nasm -f elf64 -O1 -w-number-overflow -i<path to SRW64/x64-support>/ output.asm -o output.o
     ld -static --eh-frame-hdr -T output.ld output.o -o program
+
+Dynamically linked executables use the same shared libraries as the original executable (the dynamic linking is done again by the linker):
+
+* Imported symbols are external symbols in the generated file. Calls of PLT stubs and calls/jumps through GOT are calls/jumps of the symbols, other accesses to GOT use GOT of the new executable (`wrt ..gotpc`, `wrt ..gottpoff`), the original GOT entries get the addresses of the symbols (for original code which is kept).
+* References to objects copied into the executable (COPY relocations, e.g. `stdout`, C++ type information) are references to the symbols -- the linker creates new COPY relocations. Data relocations with symbols are written as `dq symbol+addend`.
+* Symbols exported by the original executable are exported again (link with `-E`); `_init`, `_fini`, `.init_array`, `.fini_array` keep their roles (dynamic tags).
+* The linker needs the libraries with the imported symbols -- the script [tests/mkstubs_elf.py](tests/mkstubs_elf.py) creates stub libraries from *output.imports* (same names, symbols with the same versions, types and sizes), the real libraries are used at runtime:
+
+        mkstubs_elf.py output.imports stubs     # prints: -dynamic-linker <interpreter> [-rpath <path>] <stub libraries>
+        ld <printed arguments> -E --eh-frame-hdr -T output.ld output.o -o program
 
 The script [tests/roundtrip_elf.sh](tests/roundtrip_elf.sh) does all steps.
 

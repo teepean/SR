@@ -233,7 +233,12 @@ int SR_disassemble_find_noret(uint64_t address)
         }
 
         extrn = section_extrn_list_FindEntryEqual(SecNum, RelAdr);
-        if (extrn != NULL && extrn->is_import)
+        if (extrn != NULL && InputFormat == INPUT_ELF)
+        {
+            // Linux executables: imported function (GOT entry, PLT stub)
+            if (SR_elf_is_noret_name(extrn->proc)) return 1;
+        }
+        else if (extrn != NULL && extrn->is_import)
         {
             for (index = 0; noret_imports[index] != NULL; index++)
             {
@@ -280,7 +285,7 @@ extrn_data *SR_disassemble_find_import(uint64_t address)
     uint_fast32_t SecNum, RelAdr;
 
     if (!SR_get_section_reladr_exact(address, &SecNum, &RelAdr)) return NULL;
-    if (section[SecNum].type != ST_IDATA) return NULL;
+    if (section[SecNum].type != ST_IDATA && InputFormat != INPUT_ELF) return NULL;   // Linux executables: GOT
 
     extrn = section_extrn_list_FindEntryEqual(SecNum, RelAdr);
     if (extrn != NULL && extrn->is_import) return extrn;

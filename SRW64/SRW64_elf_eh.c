@@ -356,30 +356,45 @@ static int rd_encoded(eh_reader *r, uint8_t enc, uint64_t *raw, uint64_t *addres
     return 0;
 }
 
-// label (expression) for address, labels in code are set (they are written in output)
-// - address in recompiled code which isn't start of instruction is rounded up to the next instruction
-//   (label+displacement would be wrong - the recompiled instructions can have different sizes)
+// label of position in code: recompiled code (raw label, set to be written in output) or original code which is kept
+static void eh_code_label(char *buf, unsigned int SecNum, uint_fast32_t RelAdr)
+{
+    output_data *output;
+
+    if (SR_is_ignored(SecNum, RelAdr))
+    {
+        sprintf(buf, "srw_orig_%u+0x%x", SecNum, (unsigned int)RelAdr);
+        return;
+    }
+
+    // address which isn't start of instruction is rounded up to the next instruction
+    // (label+displacement would be wrong - the recompiled instructions can have different sizes)
+    output = section_output_list_FindEntryEqualOrHigher(SecNum, RelAdr);
+    if (output != NULL && output->ofs < section[SecNum].size)
+    {
+        output->has_label = 1;
+        SR_get_label_def(buf, section[SecNum].start + output->ofs);
+        return;
+    }
+
+    // end of section
+    sprintf(buf, "srw_end_%u", SecNum);
+}
+
+// label (expression) for address
 static void eh_label(char *buf, uint64_t address)
 {
     uint_fast32_t SecNum, RelAdr;
-    output_data *output;
 
     if (SR_get_section_reladr_exact(address, &SecNum, &RelAdr))
     {
-        if (section[SecNum].type == ST_CODE && !SR_is_ignored(SecNum, RelAdr))
+        if (section[SecNum].type == ST_CODE)
         {
-            output = section_output_list_FindEntryEqualOrHigher(SecNum, RelAdr);
-            if (output != NULL && output->ofs < section[SecNum].size)
-            {
-                SR_get_label_expr(buf, SecNum, output->ofs, 1);
-                return;
-            }
-
-            // end of section
-            sprintf(buf, "srw_end_%u", (unsigned int)SecNum);
+            eh_code_label(buf, SecNum, RelAdr);
             return;
         }
 
+        // data (LSDA, type information, pointer to personality routine)
         SR_get_label_expr(buf, SecNum, RelAdr, 1);
     }
     else
@@ -405,12 +420,13 @@ static void eh_end_label(char *buf, uint64_t ref, uint64_t address)
         }
 
         RelAdr = (uint_fast32_t)(address - section[SecNum].start);
-        if (SR_is_ignored(SecNum, RelAdr))
+        if (SR_is_ignored(SecNum, RelAdr) && !SR_is_ignored(SecNum, (uint_fast32_t)(ref - section[SecNum].start)))
         {
             output = section_output_list_FindEntryEqualOrHigher(SecNum, RelAdr);
             if (output != NULL && output->ofs < section[SecNum].size)
             {
-                SR_get_label_expr(buf, SecNum, output->ofs, 1);
+                output->has_label = 1;
+                SR_get_label_def(buf, section[SecNum].start + output->ofs);
             }
             else
             {
@@ -418,6 +434,9 @@ static void eh_end_label(char *buf, uint64_t ref, uint64_t address)
             }
             return;
         }
+
+        eh_code_label(buf, SecNum, RelAdr);
+        return;
     }
 
     eh_label(buf, address);

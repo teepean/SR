@@ -2,7 +2,7 @@
 
 SRW64 statically recompiles 64-bit Windows executables (PE32+, x86-64) into relocatable NASM x64 source.
 The output can be built into a new Windows executable (win64) or linked into a Linux program (elf64) together with replacement code.
-Statically linked 64-bit Linux executables (ELF64, not PIE) are supported too: data stays at original addresses, only code is moved (see "Linux executables" in README.md).
+64-bit Linux executables (ELF64, not PIE, statically or dynamically linked) are supported too: data stays at original addresses, only code is moved (see "Linux executables" in README.md).
 User documentation (formats of SCI files, options, output conventions) is in [README.md](README.md) -- read it before changing behavior.
 
 ## Build
@@ -33,7 +33,8 @@ For a statically linked Linux executable: `tests/roundtrip_elf.sh program /tmp/w
    Link (elf64): `gcc -no-pie` with replacement implementations of all imported functions (`__attribute__((ms_abi))`), see `tests/msvc_patterns/runtime_linux.c`.
 6. Run and compare with the original. Fix problems with SCI files (see below), iterate.
 
-Linux executables (statically linked, not PIE): steps 3-5 are replaced by `nasm -f elf64 ...` and `ld -static --eh-frame-hdr -T game.ld game.o -o game_srw64` (no imports, no entry point alias -- the entry point is `srw_entry`).
+Linux executables (not PIE): steps 3-5 are replaced by `nasm -f elf64 ...` and `ld -static --eh-frame-hdr -T game.ld game.o -o game_srw64` (statically linked) or `ld $(tests/mkstubs_elf.py game.imports stubs) -E --eh-frame-hdr -T game.ld game.o -o game_srw64` (dynamically linked); no entry point alias -- the entry point is `srw_entry`.
+Test a game headless and isolated: `gamescope --backend headless -- ./game` with `HOME` set to a scratch directory (saves, settings) and an `.asoundrc` with `pcm.!default { type null }`; compare logs of the original and the recompiled game. Building with `keep_original_code=no` in `SR.cfg` checks that no original code is executed.
 Read the notes: functions kept in original code (AVX-512), cold parts of functions, IRELATIVE relocations, FDEs in `.eh_frame` (converted / original code / failed) and converted LSDAs.
 
 ## Diagnosing problems
@@ -56,6 +57,8 @@ Read the notes: functions kept in original code (AVX-512), cold parts of functio
 | ELF: crash in original code (address below the recompiled code) | the program jumped to original code through a pointer which wasn't converted -- find the jump (see below), check jump tables and pointers in data |
 | ELF: C++ exception terminates the program (`terminate called after throwing`) | the new `.eh_frame` is missing an FDE (`Warning: unable to convert .eh_frame FDE`) or the program wasn't linked with `--eh-frame-hdr`; a crash in raw bytes after a throw = landing pad not disassembled |
 | ELF: ld `.eh_frame_hdr refers to overlapping FDEs` / NASM `expression is not simple or relocatable` in `.eh_frame` | an address range end was converted wrongly -- check `eh_label` / `eh_end_label` in `SRW64_elf_eh.c` (ends are rounded up to the next recompiled instruction, end of section = `srw_end_<section>`) |
+| ELF (dynamic): `symbol lookup error: undefined symbol: X` | the symbol was linked against a stub library but the real library doesn't define it -- check `X` in *game.imports* (symbols defined in the executable must not be imports) |
+| ELF (dynamic): linker `undefined reference to X` | the import is missing in *game.imports* or the stub libraries, or an exported symbol is an alias of an import (`X equ <import>`) |
 | ELF: glibc reports a fatal error at startup (e.g. `unexpected reloc type in static binary`) | a reference to the end of a data section was converted to the start of the next (code) section -- immediates at data/code boundaries are not converted (`SR_elf_is_function_start`) |
 
 Runtime debugging (Linux executables): the linked program contains the `loc_<original address>` symbols, so gdb shows original addresses (`loc_4C6840+3`).
@@ -75,6 +78,8 @@ Runtime debugging (Wine):
 | `SR_main.c` | command line, `SR.cfg`, order of passes, address -> section lookup |
 | `SRW64_loader.c` | PE32+ loader: sections (long names, debug sections), relocations (DIR64, HIGHLOW, `relocations.csv`, guessing), imports (64-bit thunks, ordinals), exports, splitting of import/export/IAT ranges, notes about large address awareness; ELF files are passed to `SRW64_LoadElf` |
 | `SRW64_elf.c` | Linux executables (ELF64): loader (sections, functions from symbol table and `.eh_frame`, cold parts, noreturn names, IRELATIVE relocations), prescan (instruction starts, data addresses referenced by code), functions kept in original code, pointers to code in data, `srw_orig_`/`srw_abs_` labels, linker script |
+| `SRW64_elf_dyn.c` | dynamically linked Linux executables: dynamic symbols with versions/libraries, GOT entries, PLT stubs, COPY and data relocations, exports, file *.imports* |
+| `SRW64_elf.h` | ELF64 structures and constants |
 | `SRW64_elf_eh.c` | Linux executables: `.eh_frame` parser (CIEs, FDEs, LSDAs), landing pads as code entries, new `.eh_frame` and LSDAs (section `srw.except`) for recompiled code |
 | `SRW64_pdata.c` | exception directory: function list (`SR_find_pdata`), code entries, image relative fixups in .pdata, unwind info, SEH scope tables, C++ FuncInfo (FH3), delay load descriptors, prolog offsets as label differences (after disassembly), prescan of `lea reg, [__ImageBase]` |
 | `SRW64_eh4.c` | C++ exception handling data version 4 (`__CxxFrameHandler4`): in place conversion of RVAs, regenerated IP to state maps and handler maps (section `srweh4`, offsets as `dd (((loc_A - loc_B) << 4) \| 7)`), copies for functions sharing the data |
@@ -98,7 +103,7 @@ Key internal conventions:
 * Code entries come from: exception directory, exports, aliases, fixups from data, call/jump targets, `lea` of function addresses, jump tables, SCI files. `SR_check_code_reference` decides whether `lea reg, [rip+code]` is a function.
 * Image relative addressing is only converted when the base (or unscaled index) register is known to contain the image base (`run_state.ib_mask`); hints for jump targets are stored in `hint_list` (register mask + jump table bound).
 * The `int3` instruction ends linear disassembly (it is used as padding after calls to functions which don't return).
-* `InputFormat` (`INPUT_PE` / `INPUT_ELF`) selects input specific behavior. ELF: `ImageBase` is the address of the first loaded segment, `CodeBase` the address of recompiled code, `section[].tls` marks TLS sections (`.tbss` is excluded from address lookups); `SR_get_label` returns `srw_orig_<section>+<offset>` for original code which is kept (label in section `srw.<name>.orig`) and `srw_abs_<address>` for addresses outside of sections (defined in the linker script); `srw_end_<section>` is the end of a recompiled code section.
+* `InputFormat` (`INPUT_PE` / `INPUT_ELF`) selects input specific behavior. ELF: `ImageBase` is the address of the first loaded segment, `CodeBase` the address of recompiled code, `section[].tls` marks TLS sections (`.tbss` is excluded from address lookups); `SR_get_label` is used for references (it returns import symbols for PLT stubs and objects copied into the executable), `SR_get_label_def` for label definitions; `SR_get_label` returns `srw_orig_<section>+<offset>` for original code which is kept (label in section `srw.<name>.orig`) and `srw_abs_<address>` for addresses outside of sections (defined in the linker script); `srw_end_<section>` is the end of a recompiled code section.
 * udis86 must be initialized with `ud_set_vendor(&ud, UD_VENDOR_ANY)` (the default vendor makes Intel only instructions like `endbr64` invalid).
 
 ## Coding style

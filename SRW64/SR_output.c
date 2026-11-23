@@ -137,13 +137,13 @@ static void SR_write_output_line(output_data *item, void *data)
                 };
             }
 
-            SR_get_label(cbuf, section[DATA->Entry].start + item->ofs);
+            SR_get_label_def(cbuf, section[DATA->Entry].start + item->ofs);
             if ((alias == NULL) || strcmp(cbuf, alias->proc))
             {
                 fprintf(DATA->fout, "%s:\n", cbuf);
             }
 #else
-            SR_get_label(cbuf, section[DATA->Entry].start + item->ofs);
+            SR_get_label_def(cbuf, section[DATA->Entry].start + item->ofs);
             fprintf(DATA->fout, "%s:\n", cbuf);
 #endif
             if (add_tracing_to_code && item->type == OT_INSTRUCTION)
@@ -195,7 +195,7 @@ static void SR_write_output_export_def(export_data *item, void *data)
     }
     else if (item->name[0] == 0)
     {
-        SR_get_label(cbuf, section[DATA->Entry].start + item->ofs);
+        SR_get_label_def(cbuf, section[DATA->Entry].start + item->ofs);
         fprintf(DATA->fout, "%s", cbuf);
     }
     else if (item->internal != NULL)
@@ -334,7 +334,7 @@ static void SR_write_output_export(export_data *item, void *data)
     else
 #endif
     {
-        SR_get_label(cbuf, section[DATA->Entry].start + item->ofs);
+        SR_get_label_def(cbuf, section[DATA->Entry].start + item->ofs);
 
         fprintf(DATA->fout, "global %s\n", cbuf);
     }
@@ -889,6 +889,9 @@ int SR_write_output(const char *fname)
     if (InputFormat == INPUT_ELF)
     {
         if (SR_elf_eh_write(EF.fout)) return -1;
+
+        // symbols exported by dynamically linked executable
+        SR_elf_dyn_write_exports(EF.fout);
     }
 
     // C++ exception handling data (version 4) generated again
@@ -916,6 +919,7 @@ int SR_write_output(const char *fname)
     if (InputFormat == INPUT_ELF)
     {
         if (SR_write_linker_script(fname)) return -1;
+        if (SR_elf_dyn_write_imports(fname)) return -1;
     }
 #endif
 

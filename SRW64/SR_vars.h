@@ -106,6 +106,7 @@ int SR_is_ignored(uint_fast32_t SecNum, uint_fast32_t RelAdr);
 
 // SR_basic.c
 void SR_get_label(char *cbuf, uint64_t Address);
+void SR_get_label_def(char *cbuf, uint64_t Address);
 void SR_format_label_expr(char *cbuf, uint64_t LabelAddress, int64_t displacement);
 int SR_get_label_expr(char *cbuf, uint_fast32_t SecNum, int_fast64_t RelAdr, int set_label);
 int SR_initial_disassembly(void);
@@ -126,6 +127,20 @@ void SR_elf_write_externs(FILE *fout);
 int SR_write_linker_script(const char *fname);
 void SR_elf_output_section_name(char *buf, unsigned int Entry);
 void SR_elf_free(void);
+int SR_elf_is_noret_name(const char *name);
+
+// SRW64_elf_dyn.c
+int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, const void *shdrs);
+int SR_elf_dyn_process(void);
+int SR_elf_dyn_is_tls_got(uint64_t address);
+int SR_elf_dyn_reference_label(char *cbuf, uint64_t address);
+int SR_elf_dyn_is_import_address(uint64_t value);
+void SR_elf_dyn_write_externs(FILE *fout);
+void SR_elf_dyn_write_exports(FILE *fout);
+int SR_elf_dyn_write_imports(const char *fname);
+int SR_elf_dyn_is_dynamic(void);
+const char *SR_elf_dyn_interp(void);
+void SR_elf_dyn_free(void);
 
 // SRW64_elf_eh.c
 int SR_elf_eh_prescan(uint64_t **ranges, unsigned int *num_ranges);

@@ -75,6 +75,13 @@ int SR_initial_disassembly(void)
     return 0;
 }
 
+// label definition (name of label in output)
+void SR_get_label_def(char *cbuf, uint64_t Address)
+{
+    sprintf(cbuf, "loc_%" PRIX64, Address);
+}
+
+// reference to label
 void SR_get_label(char *cbuf, uint64_t Address)
 {
     // Linux executables: original code which is not recompiled, addresses outside of sections

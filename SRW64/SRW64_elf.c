@@ -44,95 +44,7 @@
 #include "SR_defs.h"
 #include "SR_vars.h"
 
-#pragma pack(1)
-
-typedef struct PACKED _ELF64_Ehdr_ {
-    uint8_t  e_ident[16];
-    uint16_t e_type;
-    uint16_t e_machine;
-    uint32_t e_version;
-    uint64_t e_entry;
-    uint64_t e_phoff;
-    uint64_t e_shoff;
-    uint32_t e_flags;
-    uint16_t e_ehsize;
-    uint16_t e_phentsize;
-    uint16_t e_phnum;
-    uint16_t e_shentsize;
-    uint16_t e_shnum;
-    uint16_t e_shstrndx;
-} ELF64_Ehdr;
-
-typedef struct PACKED _ELF64_Shdr_ {
-    uint32_t sh_name;
-    uint32_t sh_type;
-    uint64_t sh_flags;
-    uint64_t sh_addr;
-    uint64_t sh_offset;
-    uint64_t sh_size;
-    uint32_t sh_link;
-    uint32_t sh_info;
-    uint64_t sh_addralign;
-    uint64_t sh_entsize;
-} ELF64_Shdr;
-
-typedef struct PACKED _ELF64_Phdr_ {
-    uint32_t p_type;
-    uint32_t p_flags;
-    uint64_t p_offset;
-    uint64_t p_vaddr;
-    uint64_t p_paddr;
-    uint64_t p_filesz;
-    uint64_t p_memsz;
-    uint64_t p_align;
-} ELF64_Phdr;
-
-typedef struct PACKED _ELF64_Sym_ {
-    uint32_t st_name;
-    uint8_t  st_info;
-    uint8_t  st_other;
-    uint16_t st_shndx;
-    uint64_t st_value;
-    uint64_t st_size;
-} ELF64_Sym;
-
-typedef struct PACKED _ELF64_Rela_ {
-    uint64_t r_offset;
-    uint64_t r_info;
-    int64_t  r_addend;
-} ELF64_Rela;
-
-#pragma pack()
-
-#define ET_EXEC 2
-#define ET_DYN  3
-#define EM_X86_64 62
-
-#define PT_LOAD    1
-#define PT_DYNAMIC 2
-#define PT_INTERP  3
-
-#define SHT_SYMTAB 2
-#define SHT_RELA   4
-#define SHT_NOTE   7
-#define SHT_NOBITS 8
-#define SHT_DYNSYM 11
-
-#define SHF_WRITE     0x1
-#define SHF_ALLOC     0x2
-#define SHF_EXECINSTR 0x4
-#define SHF_TLS       0x400
-
-#define STT_NOTYPE    0
-#define STT_FUNC      2
-#define STT_GNU_IFUNC 10
-
-#define STB_LOCAL     0
-
-#define SHN_UNDEF     0
-#define SHN_LORESERVE 0xff00
-
-#define R_X86_64_IRELATIVE 37
+#include "SRW64_elf.h"
 
 #define MAX_TABLE_SCAN 4096
 
@@ -183,6 +95,25 @@ static int elf_function_compare(const void *p1, const void *p2)
     return 0;
 }
 
+static int elf_is_noret_name(const char *name);
+
+static int elf_is_dynamic_section(const char *name)
+{
+    static const char *names[] = { ".interp", ".dynamic", ".dynsym", ".dynstr", ".hash", ".gnu.hash", ".gnu.version", ".gnu.version_r", ".gnu.version_d", ".rela.dyn", ".rela.plt", ".eh_frame_hdr", NULL };
+    int index;
+
+    for (index = 0; names[index] != NULL; index++)
+    {
+        if (strcmp(name, names[index]) == 0) return 1;
+    }
+    return 0;
+}
+
+int SR_elf_is_noret_name(const char *name)
+{
+    return elf_is_noret_name(name);
+}
+
 static int elf_is_noret_name(const char *name)
 {
     int index;
@@ -214,6 +145,14 @@ static int elf_add_fixup(uint64_t source, uint64_t target)
 
     fixup = section_fixup_list_FindEntryEqual(SourceObject, SourceOffset);
     if (fixup != NULL) return 0;
+
+    // location already converted (e.g. GOT entry of dynamically linked executable)
+    {
+        output_data *output;
+
+        output = section_output_list_FindEntryEqual(SourceObject, SourceOffset);
+        if (output != NULL && (output->type != OT_UNKNOWN || output->str != NULL)) return 0;
+    }
 
     // overlapping fixups
     fixup = section_fixup_list_FindEntryLower(SourceObject, SourceOffset);
@@ -452,8 +391,7 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
 
     if (is_dynamic)
     {
-        fprintf(stderr, "Error: dynamically linked executables are not supported (only statically linked executables)\n");
-        return -1;
+        fprintf(stderr, "\tDynamically linked executable\n");
     }
 
     if (min_address == UINT64_MAX)
@@ -523,6 +461,9 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
 
         // notes are not needed (and the space after ELF headers is needed for new program headers)
         if (shdr->sh_type == SHT_NOTE) continue;
+
+        // dynamic linking information is created again by the linker
+        if (is_dynamic && elf_is_dynamic_section(name)) continue;
 
         if (num_sections >= MAX_SECTIONS)
         {
@@ -730,6 +671,12 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
         }
     }
 
+    // dynamic linking information
+    if (is_dynamic)
+    {
+        if (SR_elf_dyn_load(file, file_size, header, sections)) return -1;
+    }
+
     // functions from exception handling data (.eh_frame), which are not in symbol table (e.g. stripped executable)
     if (elf_add_eh_functions()) return -1;
 
@@ -817,6 +764,9 @@ int SR_elf_absolute_label(char *cbuf, uint64_t address)
 
     if (InputFormat != INPUT_ELF) return 0;
 
+    // imported symbols (object copied into executable, PLT stub)
+    if (SR_elf_dyn_reference_label(cbuf, address)) return 1;
+
     if (SR_get_section_reladr_exact(address, &SecNum, &RelAdr))
     {
         if (section[SecNum].type != ST_CODE || !keep_original_code) return 0;
@@ -862,6 +812,8 @@ static void elf_sort_absolute(void)
 void SR_elf_write_externs(FILE *fout)
 {
     unsigned int index;
+
+    SR_elf_dyn_write_externs(fout);
 
     elf_sort_absolute();
 
@@ -1091,6 +1043,9 @@ int SR_elf_process(void)
         }
     }
 
+    // imports and exports of dynamically linked executable
+    if (SR_elf_dyn_process()) return -1;
+
     // functions are code entries
     functions = 0;
     for (index = 0; index < pdata_count; index++)
@@ -1144,7 +1099,13 @@ int SR_elf_process(void)
 
             function = NULL;
             is_start = 0;
-            if (SR_get_section_reladr_exact(value, &SecNum, &RelAdr) && section[SecNum].type == ST_CODE && !SR_is_ignored(SecNum, RelAdr))
+
+            // address of object copied into executable or address of PLT stub (imported function)
+            if (SR_elf_dyn_is_import_address(value))
+            {
+                if (elf_add_fixup(section[Entry].start + ofs, value) > 0) single++;
+            }
+            else if (SR_get_section_reladr_exact(value, &SecNum, &RelAdr) && section[SecNum].type == ST_CODE && !SR_is_ignored(SecNum, RelAdr))
             {
                 function = SR_find_pdata((uint_fast32_t)(value - ImageBase));
                 if (function != NULL && function->begin == (uint_fast32_t)(value - ImageBase)) is_start = 1;
@@ -1225,8 +1186,9 @@ static void elf_output_name(char *buf, const char *name)
 int SR_write_linker_script(const char *fname)
 {
     FILE *fout;
-    char *ldname, *dotptr, outname[96];
-    unsigned int Entry, index, order[MAX_SECTIONS], count;
+    char *ldname, *dotptr, outname[96], secname[96];
+    unsigned int Entry, index, order[2 * MAX_SECTIONS], count;
+    int is_orig[2 * MAX_SECTIONS], dynamic;
     alias_data *alias;
 
     ldname = (char *) malloc(strlen(fname) + 4);
@@ -1241,27 +1203,50 @@ int SR_write_linker_script(const char *fname)
     if (fout == NULL) return -1;
 
     alias = section_alias_list_FindEntryEqual(EIPObjectNum, EIP);
+    dynamic = SR_elf_dyn_is_dynamic();
 
-    // sections ordered by address
+    // sections at original addresses (data, original code) ordered by address
     count = 0;
     for (Entry = 0; Entry < num_sections; Entry++)
     {
-        if (section[Entry].type == ST_CODE) continue;
-        if (section[Entry].type != ST_DATA && section[Entry].type != ST_RDATA && section[Entry].type != ST_UDATA) continue;
+        if (section[Entry].type == ST_CODE)
+        {
+            if (!keep_original_code) continue;
+            is_orig[count] = 1;
+        }
+        else if (section[Entry].type == ST_DATA || section[Entry].type == ST_RDATA || section[Entry].type == ST_UDATA)
+        {
+            is_orig[count] = 0;
+        }
+        else continue;
         order[count++] = Entry;
     }
     for (Entry = 1; Entry < count; Entry++)
     {
         for (index = Entry; index > 0 && section[order[index - 1]].start > section[order[index]].start; index--)
         {
-            unsigned int tmp = order[index - 1];
+            unsigned int tmp;
+            int tmp2;
+
+            tmp = order[index - 1];
             order[index - 1] = order[index];
             order[index] = tmp;
+            tmp2 = is_orig[index - 1];
+            is_orig[index - 1] = is_orig[index];
+            is_orig[index] = tmp2;
         }
     }
 
-    fprintf(fout, "/* Linker script generated by SRW64: original sections (except code) are placed at original addresses */\n\n");
-    fprintf(fout, "ENTRY(%s)\n\n", (alias != NULL)?alias->proc:"srw_entry");
+    fprintf(fout, "/* Linker script generated by SRW64: original sections (except code) are placed at original addresses */\n");
+    if (dynamic)
+    {
+        fprintf(fout, "/* link: ld -dynamic-linker %s -E --eh-frame-hdr -T <this script> <object> <libraries> */\n", SR_elf_dyn_interp());
+    }
+    else
+    {
+        fprintf(fout, "/* link: ld -static --eh-frame-hdr -T <this script> <object> */\n");
+    }
+    fprintf(fout, "\nENTRY(%s)\n\n", (alias != NULL)?alias->proc:"srw_entry");
 
     // original code and other addresses which are not recompiled
     elf_sort_absolute();
@@ -1271,28 +1256,50 @@ int SR_write_linker_script(const char *fname)
     }
     if (elf_absolute_count != 0) fprintf(fout, "\n");
     fprintf(fout, "SECTIONS\n{\n");
-    fprintf(fout, "    . = 0x%" PRIx64 " + SIZEOF_HEADERS;\n\n", ImageBase);
+    fprintf(fout, "    . = 0x%" PRIx64 " + SIZEOF_HEADERS;\n", ImageBase);
+    if (dynamic)
+    {
+        fprintf(fout, "    .interp : { *(.interp) }\n");
+    }
 
+    fprintf(fout, "\n    /* original sections */\n");
     for (index = 0; index < count; index++)
     {
         Entry = order[index];
-        elf_output_name(outname, section[Entry].name);
-        fprintf(fout, "    %s 0x%" PRIx64 " : { KEEP(*(%s)) }\n", outname, section[Entry].start, outname);
-    }
+        elf_output_name(secname, section[Entry].name);
+        if (is_orig[index]) strcat(secname, ".orig");
 
-    if (keep_original_code)
-    {
-        fprintf(fout, "\n    /* original code (functions which are not recompiled) */\n");
-        for (Entry = 0; Entry < num_sections; Entry++)
+        // dynamically linked executable: arrays of constructors and destructors (DT_INIT_ARRAY, ...)
+        if (dynamic && !is_orig[index] && (strcmp(section[Entry].name, ".init_array") == 0 || strcmp(section[Entry].name, ".fini_array") == 0 || strcmp(section[Entry].name, ".preinit_array") == 0))
         {
-            if (section[Entry].type != ST_CODE) continue;
-            elf_output_name(outname, section[Entry].name);
-            fprintf(fout, "    %s.orig 0x%" PRIx64 " : { KEEP(*(%s.orig)) }\n", outname, section[Entry].start, outname);
+            strcpy(outname, section[Entry].name);
         }
+        else
+        {
+            strcpy(outname, secname);
+        }
+
+        fprintf(fout, "    %s 0x%" PRIx64 " : { KEEP(*(%s)) }\n", outname, section[Entry].start, secname);
     }
 
     fprintf(fout, "\n    /* recompiled code */\n");
-    fprintf(fout, "    .text 0x%" PRIx64 " :\n    {\n", CodeBase);
+    fprintf(fout, "    . = 0x%" PRIx64 ";\n", CodeBase);
+    if (dynamic)
+    {
+        fprintf(fout, "    .hash : { *(.hash) }\n");
+        fprintf(fout, "    .gnu.hash : { *(.gnu.hash) }\n");
+        fprintf(fout, "    .dynsym : { *(.dynsym) }\n");
+        fprintf(fout, "    .dynstr : { *(.dynstr) }\n");
+        fprintf(fout, "    .gnu.version : { *(.gnu.version) }\n");
+        fprintf(fout, "    .gnu.version_d : { *(.gnu.version_d) }\n");
+        fprintf(fout, "    .gnu.version_r : { *(.gnu.version_r) }\n");
+        fprintf(fout, "    .rela.dyn : { *(.rela.init) *(.rela.text .rela.text.*) *(.rela.rodata .rela.rodata.*) *(.rela.data .rela.data.*) *(.rela.got) *(.rela.bss .rela.bss.*) *(.rela.srw.*) }\n");
+        fprintf(fout, "    .rela.plt : { *(.rela.plt) }\n");
+        fprintf(fout, "    .plt : { *(.plt) *(.iplt) }\n");
+        fprintf(fout, "    .plt.got : { *(.plt.got) }\n");
+        fprintf(fout, "    .plt.sec : { *(.plt.sec) }\n");
+    }
+    fprintf(fout, "    .text :\n    {\n");
     for (Entry = 0; Entry < num_sections; Entry++)
     {
         if (section[Entry].type != ST_CODE) continue;
@@ -1311,8 +1318,16 @@ int SR_write_linker_script(const char *fname)
 
     fprintf(fout, "    /* sections of other object files */\n");
     fprintf(fout, "    .rodata : { *(.rodata .rodata.*) }\n");
+    if (dynamic)
+    {
+        fprintf(fout, "\n    /* dynamic linking data, objects copied from shared libraries */\n");
+        fprintf(fout, "    . = ALIGN(CONSTANT(MAXPAGESIZE)) + (. & (CONSTANT(MAXPAGESIZE) - 1));\n");
+        fprintf(fout, "    .dynamic : { *(.dynamic) }\n");
+        fprintf(fout, "    .got : { *(.got) *(.igot) }\n");
+        fprintf(fout, "    .got.plt : { *(.got.plt) *(.igot.plt) }\n");
+    }
     fprintf(fout, "    .data : { *(.data .data.*) }\n");
-    fprintf(fout, "    .bss : { *(.bss .bss.*) *(COMMON) }\n\n");
+    fprintf(fout, "    .bss : { *(.dynbss) *(.bss .bss.*) *(COMMON) }\n\n");
     fprintf(fout, "    /DISCARD/ : { *(.comment) *(.note.gnu.property)%s }\n", (SR_elf_eh_present())?"":" *(.eh_frame)");
     fprintf(fout, "}\n");
 
@@ -1329,6 +1344,8 @@ void SR_elf_output_section_name(char *buf, unsigned int Entry)
 void SR_elf_free(void)
 {
     unsigned int Entry;
+
+    SR_elf_dyn_free();
 
     if (elf_absolute_addresses != NULL)
     {

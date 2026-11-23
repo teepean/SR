@@ -200,7 +200,31 @@ for OPT in O0 O2; do
 done
 
 
-# test 6 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
+# test 6: dynamically linked Linux programs (not position independent): imports (PLT, GOT), COPY relocations,
+#         data relocations with symbols, exceptions through shared libstdc++
+mkdir -p "$WORK/linux_dynamic"
+cd "$WORK/linux_dynamic" || exit 1
+if gcc -O2 -no-pie -pthread -o test_linux_dyn "$TESTS_DIR/linux_c/test_linux.c" -lm &&
+   g++ -O2 -no-pie -pthread -o test_exceptions_dyn "$TESTS_DIR/linux_cpp/test_exceptions.cpp"
+then
+    for NAME in test_linux_dyn test_exceptions_dyn; do
+        ./$NAME arg1 > expected_$NAME.txt 2>&1; echo "exit code $?" >> expected_$NAME.txt
+        if RESULT=$("$TESTS_DIR/roundtrip_elf.sh" $NAME "$WORK/linux_dynamic/srw64_$NAME"); then
+            "$RESULT" arg1 > actual_$NAME.txt 2>&1; echo "exit code $?" >> actual_$NAME.txt
+            compare expected_$NAME.txt actual_$NAME.txt "dynamically linked Linux program $NAME (elf64)"
+        else
+            echo "$RESULT"
+            echo "FAIL: dynamically linked Linux program $NAME - recompilation failed"
+            FAILED=1
+        fi
+    done
+else
+    echo "FAIL: dynamically linked Linux programs - compilation failed"
+    FAILED=1
+fi
+
+
+# test 7 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
 if [ -n "$FH4_EXECUTABLES" ]; then
     mkdir -p "$WORK/fh4_executables"
     cd "$WORK/fh4_executables" || exit 1
@@ -223,7 +247,7 @@ if [ -n "$FH4_EXECUTABLES" ]; then
 fi
 
 
-# test 7 (optional): Windows executables (built by Microsoft with MSVC)
+# test 8 (optional): Windows executables (built by Microsoft with MSVC)
 if [ -n "$WINDOWS_DIR" ]; then
     mkdir -p "$WORK/windows"
     cd "$WORK/windows" || exit 1

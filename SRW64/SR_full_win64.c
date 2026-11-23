@@ -587,7 +587,15 @@ static int SR_convert_memory_operand(unsigned int Entry, uint_fast32_t offset, c
         if (mi->extrn != NULL)
         {
             mi->kind = MEMK_IMPORT;
-            sprintf(expr, "__imp_%s", mi->extrn->proc);
+            if (InputFormat == INPUT_ELF)
+            {
+                // GOT entry of dynamically linked executable - GOT of new executable
+                sprintf(expr, "%s wrt %s", mi->extrn->proc, (SR_elf_dyn_is_tls_got(mi->target))?"..gottpoff":"..gotpc");
+            }
+            else
+            {
+                sprintf(expr, "__imp_%s", mi->extrn->proc);
+            }
         }
         else if (SR_get_section_reladr_exact(mi->target, &sec, &ofs))
         {
@@ -1269,8 +1277,8 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
 
                 fprintf(stderr, "Note: label inside instruction: 0x%" PRIx64 " - 0x%" PRIx64 "\n", section[Entry].start + offset, section[Entry].start + offset + index);
 
-                SR_get_label(label1, section[Entry].start + offset + index);
-                SR_get_label(label2, section[Entry].start + offset);
+                SR_get_label_def(label1, section[Entry].start + offset + index);
+                SR_get_label_def(label2, section[Entry].start + offset);
                 if (strlen(inner_labels) + 160 < sizeof(inner_labels))
                 {
                     sprintf(&(inner_labels[strlen(inner_labels)]), "\n%s equ %s+%i", label1, label2, index);
@@ -1316,7 +1324,24 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
                 if (op->type != UD_OP_IMM || (op->size != 32 && op->size != 64)) continue;
 
                 value = (op->size == 64)?op->lval.uqword:(uint64_t)op->lval.udword;
-                if (SR_disassemble_find_proc(Entry, value) != NULL) continue;
+
+                // imported symbol (PLT stub, object copied into executable), external procedure, original code
+                {
+                    extrn_data *imm_extrn;
+
+                    imm_extrn = SR_disassemble_find_proc(Entry, value);
+                    if (imm_extrn != NULL || SR_elf_dyn_is_import_address(value))
+                    {
+                        if (imm_extrn != NULL) strcpy(cLabel, imm_extrn->proc);
+                        else SR_get_label(cLabel, value);
+
+                        if (SR_replace_value_text(text, cImm, value, cLabel) == 0)
+                        {
+                            text = cImm;
+                        }
+                        break;
+                    }
+                }
 
                 if (!SR_elf_is_function_start(value))
                 {
