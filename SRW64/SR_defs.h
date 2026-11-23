@@ -1,0 +1,190 @@
+/**
+ *
+ *  Copyright (C) 2016-2025 Roman Pauer
+ *
+ *  Permission is hereby granted, free of charge, to any person obtaining a copy of
+ *  this software and associated documentation files (the "Software"), to deal in
+ *  the Software without restriction, including without limitation the rights to
+ *  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ *  of the Software, and to permit persons to whom the Software is furnished to do
+ *  so, subject to the following conditions:
+ *
+ *  The above copyright notice and this permission notice shall be included in all
+ *  copies or substantial portions of the Software.
+ *
+ *  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ *  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ *  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ *  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ *  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ *  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ *  SOFTWARE.
+ *
+ */
+
+#if !defined(_SR_DEFS_H_INCLUDED_)
+#define _SR_DEFS_H_INCLUDED_
+
+#include <stdint.h>
+#include <inttypes.h>
+#if defined(USE_JUDY)
+    #if defined(_MSC_VER)
+        #define JU_WIN
+    #endif
+    #include <Judy.h>
+#else
+    typedef void * Pvoid_t;
+    typedef uintptr_t Word_t;
+#endif
+
+#define MAX_SECTIONS 96
+
+#define OUT_ORIG 0
+#define OUT_X64 8
+
+#define OUTPUT_TYPE  OUT_X64
+
+
+#if defined(__GNUC__)
+    #define INLINE __inline__
+    #define PACKED __attribute__ ((__packed__))
+    #define PURE_FUNCTION __attribute__ ((pure))
+    #define CONST_FUNCTION __attribute__ ((const))
+#elif defined(_MSC_VER)
+    #define INLINE __inline
+    #define PACKED
+    #define PURE_FUNCTION
+    #define CONST_FUNCTION
+    #define strcasecmp _stricmp
+    #define strncasecmp _strnicmp
+    #define strdup _strdup
+#else
+    #define INLINE inline
+    #define PACKED
+    #define PURE_FUNCTION
+    #define CONST_FUNCTION
+#endif
+
+
+typedef enum _output_type_ {
+    OT_UNITIALIZED = -1,
+    OT_UNKNOWN     =  0,
+    OT_OFFSET      =  1,
+    OT_INSTRUCTION =  2,
+    OT_NONE        =  3         // used for label at section end
+} output_type;
+
+typedef enum _section_type_ {
+    ST_CODE  = 0,
+    ST_DATA  = 1,
+    ST_STACK = 2,
+    ST_UDATA = 3,
+    ST_IDATA = 4,
+    ST_RSRC  = 5,
+    ST_RELOC = 6,
+    ST_RDATA = 7,
+    ST_EDATA = 8,
+    ST_DEBUG = 9                // discardable section (debug information) - not part of output
+} section_type;
+
+typedef enum _fixup_type_ {
+    FT_NORMAL    = 0,           // 32-bit absolute address (IMAGE_REL_BASED_HIGHLOW)
+    FT_DIR64     = 1,           // 64-bit absolute address (IMAGE_REL_BASED_DIR64)
+    FT_RVA32     = 2            // 32-bit address relative to image base (not a relocation - found by analysis)
+} fixup_type;
+
+#define FF_NOENTRY 1            // fixup target is not a code entry (only a label)
+
+// target "section" number for addresses in the PE header (fixup_data.tsec)
+#define SEC_HEADER ((uint_fast32_t) 0xffff)
+
+#define FIXUP_SIZE(type) (((type) == FT_DIR64)?8:4)
+
+
+typedef struct _fixup_data_ {
+    uint_fast32_t sofs;         // source offset
+    int_fast32_t tofs;          // target offset
+    uint_fast32_t tsec;         // target section (or SEC_HEADER)
+    fixup_type    type;         // fixup type
+    int           flags;        // fixup flags (FF_*)
+} fixup_data;
+
+typedef struct _output_data_ {
+    uint_fast32_t ofs;          // output offset
+    uint_fast32_t len;          // output length in memory (number of bytes - 1)
+    char          *str;         // output string
+    int           has_label;    // has label ?
+    int           align;        // align directive
+    output_type   type;         // output type: 0 - unknown (1 byte data), 1 - data offset (4/8 bytes), 2 - instruction
+} output_data;
+
+typedef struct _extrn_data_ {
+    uint_fast32_t ofs;          // procedure offset
+    int           is_import;    // is extern an import?
+    int           is_used;      // is extern used?
+    int           is_ptr_used;  // is pointer to the import (__imp_ name) used?
+    char          *altaction;   // alternative action
+    char          proc[1];      // external procedure name
+} extrn_data, alias_data;
+
+typedef struct _replace_data_ {
+    uint_fast32_t ofs;          // instructions offset
+    uint_fast32_t length;       // instructions length (bytes)
+    int           empty;        // replacement code is empty ?
+    char          instr[1];     // replacement code
+} replace_data;
+
+typedef struct _export_data_ {
+    uint_fast32_t ofs;          // export offset
+    uint_fast32_t ordinal;      // export ordinal
+    struct _export_data_ *next; // next export with the same offset
+    char          *internal;    // export internal name (undecorated)
+    char          name[1];      // export name
+} export_data;
+
+typedef struct _section_data_ {
+    uint_fast32_t size;         // section size
+    uint_fast32_t size_in_file; // section size stored in file
+    uint64_t      start;        // section relocation base address (virtual address)
+    uint_fast32_t virtaddr;     // section relative virtual address
+    uint8_t       *adr;         // section address in memory
+    uint_fast32_t flags;        // section flags
+    uint_fast32_t align;        // section alignment in output
+    Pvoid_t fixup_list;         // list of fixups for section
+    Pvoid_t output_list;        // list of output lines for section
+    Pvoid_t entry_list;         // list of entries for section
+    Pvoid_t code_list;          // list of valid code entries for section
+    Pvoid_t label_list;         // list of displaced labels for section
+    Pvoid_t noret_list;         // list of noret procedures for section
+    Pvoid_t extrn_list;         // list of external procedures for section
+    Pvoid_t alias_list;         // list of global aliases for section
+    Pvoid_t ignored_list;       // list of ignored areas
+    Pvoid_t replace_list;       // list of instruction replacements for section
+    Pvoid_t nocode_list;        // list of invalid code entries for section
+    Pvoid_t export_list;        // list of exports for section
+    Pvoid_t ibreg_list;         // list of registers containing image base (per function)
+    Pvoid_t hint_list;          // list of disassembly hints (register state, jump table bounds) for code entries
+    Pvoid_t rvadisp_list;       // list of forced/suppressed image relative displacements
+    section_type type;          // section type: 0 - code, 1 - data, 2 - stack, 3 - uninitialized data
+    char name[64];              // section name
+} section_data;
+
+typedef struct _import_data_ {
+    uint_fast32_t num;              // import number
+    const char    *DllName;         // import dll name
+    char          *ProcAdrName;     // import procedure address name
+    const char    *ProcName;        // import procedure name
+    uint_fast32_t Ordinal;          // import ordinal (only for imports by ordinal without known name)
+} import_data;
+
+typedef struct _pdata_entry_ {
+    uint_fast32_t begin;        // function begin (RVA)
+    uint_fast32_t end;          // function end (RVA)
+    uint_fast32_t unwind;       // unwind info (RVA)
+    uint_fast32_t primary;      // begin of the primary function (RVA) - different for chained unwind info
+    uint_fast32_t pofs;         // offset of the entry in .pdata section
+    unsigned int  psec;         // section containing the entry
+    int           ignored;      // function is in ignored area
+} pdata_entry;
+
+#endif
