@@ -6997,7 +6997,7 @@
         <mnemonic>pextrq</mnemonic>
         <first_operand_access>W</first_operand_access>
         <def>
-            <pfx>aso rexr rexw rexb</pfx>
+            <pfx>aso rexr rexx rexw rexb</pfx>
             <opc>/sse=66 0f 3a 16 /o=64 /vexw=1</opc>
             <opr>Eq V Ib</opr>
             <access source='scrape'>W R N</access>
@@ -7609,7 +7609,7 @@
         <mnemonic>psadbw</mnemonic>
         <first_operand_access>RW</first_operand_access>
         <def>
-            <pfx>aso rexr rexx rexb</pfx>
+            <pfx>aso rexr rexx rexb vexl</pfx>
             <opc>/sse=66 0f f6</opc>
             <opr>V H W</opr>
             <access source='scrape'>W R R</access>

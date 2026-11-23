@@ -29,11 +29,12 @@ Tests:
 Scripts:
 
 * *roundtrip_win64.sh* -- recompiles any 64-bit Windows executable into new Windows executable: `roundtrip_win64.sh <executable> <work directory> [console|windows]`
-* *roundtrip_elf.sh* -- recompiles 64-bit Linux executable (statically or dynamically linked) into new Linux executable: `roundtrip_elf.sh <executable> <work directory>`
+* *roundtrip_elf.sh* -- recompiles 64-bit Linux executable (statically or dynamically linked) into new Linux executable: `roundtrip_elf.sh <executable> <work directory>` (`LDFLAGS_EXTRA` -- additional linker arguments, e.g. a library with replacement code: `-L/path -lhooks -rpath \$ORIGIN/dir --allow-shlib-undefined`)
 * *mkstubs_elf.py* -- creates stub libraries for linking of recompiled dynamically linked Linux executable: `mkstubs_elf.py <name>.imports <directory>` (prints linker arguments)
 * *fixup_elf.py* -- post-link fixups of recompiled Linux executable (COPY relocations moved to the original addresses, program headers of the original executable): `fixup_elf.py <recompiled executable> <name>.imports <name>.phdrs`
 * *mkimplibs.py* -- creates import libraries for the imports used by the generated assembler file
 * *verify_fh4.py* -- compares `__CxxFrameHandler4` data of original and recompiled executable: `verify_fh4.py original.exe recompiled.exe`
 * *compare_ida.sh* -- compares jump tables and decoded code of SRW64 with the analysis of IDA Pro (headless): `IDAT=<path to idat> compare_ida.sh <executable> <work directory>` (exit code 0 = no differences, 1 = differences to check)
 * *ida_export.py* -- IDAPython script for headless IDA (used by *compare_ida.sh*): exports functions, code ranges and switches, or decompiles all functions using Hex-Rays (`SRW64_IDA_MODE=decompile`, more IDA processes can decompile in parallel, each with its own copy of the database)
+* *compare_code.py* -- compares the recompiled program with the original instruction by instruction (`loc_` symbols are the anchors; converted addresses, RIP-relative displacements, branch targets and padding are normalized), finds instructions which udis86 decodes or prints wrongly: `compare_code.py <original> <recompiled> [address bias] [number of details]` (needs the Python module capstone; ELF64 and PE32+)
 * *compare_ida.py* -- compares the lists written by SRW64 (`--list_jump_tables`, `--list_code_ranges`) with the files exported by *ida_export.py*: `compare_ida.py <executable> <jump tables> <code ranges> <IDA export directory> [number of details]`

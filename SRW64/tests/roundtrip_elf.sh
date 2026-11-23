@@ -16,6 +16,8 @@
 # Environment variables:
 #   SRW64 - path to SRW64 executable (default: ../SRW64.exe relative to this script)
 #   LD    - linker (default: ld)
+#   LDFLAGS_EXTRA - additional linker arguments after the object file (e.g. objects or libraries with replacement code:
+#           "hooks.o" or "-L/path -lname -rpath \$ORIGIN/dir")
 #
 
 TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -73,9 +75,10 @@ if [ -f "$NAME.imports" ]; then
     # dynamically linked executable: stub libraries with imported symbols (the real libraries are used at runtime)
     LINK_ARGS=$(python3 "$TESTS_DIR/mkstubs_elf.py" "$NAME.imports" stubs) || { echo "creating stub libraries failed"; exit 1; }
     # shellcheck disable=SC2086
-    "$LD" $LINK_ARGS -E --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
+    "$LD" $LINK_ARGS -E --eh-frame-hdr -T "$NAME.ld" "$NAME.o" $LDFLAGS_EXTRA -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
 else
-    "$LD" -static --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
+    # shellcheck disable=SC2086
+    "$LD" -static --eh-frame-hdr -T "$NAME.ld" "$NAME.o" $LDFLAGS_EXTRA -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
 fi
 
 # post-link fixups: objects copied from shared libraries (COPY relocations) stay at their original addresses,

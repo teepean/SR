@@ -58,6 +58,14 @@ It runs SRW64 in the work directory (with `--list_jump_tables` and `--list_code_
 The differences must be checked manually -- IDA is not always right (e.g. its number of cases can be too small for switches without range check), known harmless differences (padding, thunks, dead code after calls of functions which don't return, tables of absolute addresses converted as pointers in data, functions kept in original code) are listed separately.
 *ida_export.py* can also decompile all functions using Hex-Rays (`SRW64_IDA_MODE=decompile`, see the script).
 
+### Verification of the recompiled code
+
+The script [tests/compare_code.py](tests/compare_code.py) compares the recompiled program with the original instruction by instruction -- the `loc_` symbols of the recompiled program are anchors, the original instructions between two anchors are compared with the recompiled ones (converted addresses and image relative addresses are checked against the anchors, branch targets, RIP-relative displacements and padding are normalized):
+
+    tests/compare_code.py program program_srw64 [address bias]
+
+It finds instructions which the disassembler decodes or prints wrongly (e.g. a lost VEX.L or VEX.X bit), which assemble without errors but compute something else -- run it after changes of udis86 and on every new program (a large program has millions of instructions, a difference is usually a bug).
+
 ## Configuration file (SR.cfg)
 
 * `use_pdata=yes|no` -- use functions from the exception directory (.pdata) as code entries (default: yes)
@@ -103,6 +111,8 @@ The generated files can be compiled using [NASM](https://www.nasm.us/) (version 
     nasm -f elf64 -O1 -w-number-overflow -i<path to SRW64/x64-support>/ output.asm -o output.o
 
 When NASM reports "short jump is out of range", run *repair_short_jumps.py* (from *SRW64-games/template*) and assemble again (repeat until there are no errors).
+
+Replacement code (hooks): *instruction_replacements.sci* can replace an instruction by a jump to an external function (`loc_X,5,jmp hook wrt ..plt`, declared in *extern.inc*), *global_aliases.sci* gives the original code a global name the hook can call (`loc_Y,original_name`), and `LDFLAGS_EXTRA` of *tests/roundtrip_elf.sh* links the library with the hooks.
 
 ### Windows (win64)
 

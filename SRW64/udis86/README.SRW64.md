@@ -35,6 +35,9 @@ no build system).
 * `libudis86/decode.c`: operand size tables (`/o`) of instructions with 3-byte
   VEX prefix use VEX.W (previously REX.W was always 0 during the table lookup,
   so `vpextrq` was invalid).
+* `docs/x86/optable.xml`: `psadbw` uses VEX.L (`vpsadbw ymm` was decoded as `xmm`), `pextrq` uses REX.X / VEX.X
+  (the index register of a memory operand lost its high bit: `r11` became `rbx`) -- found by comparing all
+  instructions of a large recompiled program with the original (about 5.5 million instructions).
 * `libudis86/itab.c`, `libudis86/itab.h`: generated files (see below).
 
 ## Usage notes
