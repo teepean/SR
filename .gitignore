@@ -26,6 +26,8 @@ llasm/llasm
 **/SR-BI3/SR-BI3.exe.so
 
 seg*.inc
+*.resdump
+SRW64/build/
 seg*.llinc
 **/SR*/*.sci
 **/SR*/*.asm

@@ -29,12 +29,18 @@ The projects consists of following subprojects (read the readme files in subproj
   * The static recompiler (for Windows executables) itself.
   * It takes the original executable as an input together with information about the original executable and produces x86 / llasm / x64 assembler version of the executable.
   * The generated x86/llasm/x64 assembler version of the executable is not part of the project.
+* **SRW64**
+  * The static recompiler (for 64-bit Windows executables) itself.
+  * It takes the original 64-bit executable as an input together with information about the original executable and produces x64 assembler version of the executable, which can be compiled into Windows (x64) or Linux (x64) version.
+  * The generated x64 assembler version of the executable is not part of the project.
 * **llasm**
   * Program which converts *.llasm* file to [LLVM](https://llvm.org/ "LLVM") language-independent intermediate representation, which can be compiled to native code.
 * **SR-games**
   * The information about the original DOS executables.
 * **SRW-games**
   * The information about the original Windows executables.
+* **SRW64-games**
+  * The information about the original 64-bit Windows executables (template for new games).
 * **games**
   * Game specific source code.
   * Together with the generated assembler versions of the executables, these files can be used to build Windows (x86/x64) or Linux (x86/x64/arm/arm64/riscv64) or MacOS (x64/arm64) versions of the games.
@@ -46,7 +52,8 @@ The projects consists of following subprojects (read the readme files in subproj
 * **pycfg**
   * A configuration utility that can be used on Linux (sorry Windows/MacOS users) to change settings in the configuration files (without editing the files).
 * **SR64-loader**
-  * Loader for older 64-bit versions. It's no longer needed.
+  * Loader for older 64-bit versions. It's no longer needed for them.
+  * It can be used for Linux versions of programs recompiled by SRW64 from executables which are not large address aware (it keeps all memory below 2 GB).
 
 <hr/>
 

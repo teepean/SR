@@ -1,0 +1,88 @@
+# SRW64 - instructions for agents
+
+SRW64 statically recompiles 64-bit Windows executables (PE32+, x86-64) into relocatable NASM x64 source.
+The output can be built into a new Windows executable (win64) or linked into a Linux program (elf64) together with replacement code.
+User documentation (formats of SCI files, options, output conventions) is in [README.md](README.md) -- read it before changing behavior.
+
+## Build
+
+    cd SRW64
+    scons                      # or: ./build_gcc.sh   (scons may not be installed: python3 -m venv venv && venv/bin/pip install scons)
+    CFLAGS="-O0 -g" ./build_gcc.sh   # debug build (run under gdb)
+
+Result: `SRW64/SRW64.exe` (a native Linux/Windows program despite the name -- same convention as SR/SRW).
+The build must stay warning-free with `-Wall` (gcc) and must keep working with `scons judy=1` (Judy library) -- new per-section lists need implementations in both `container_helpers.*` and `judy_helpers.*`.
+
+## Test (run after every change)
+
+    tests/run_tests.sh
+    WINDOWS_DIR=/path/to/Windows/System32 tests/run_tests.sh   # also recompiles sort.exe and where.exe made by Microsoft
+
+All tests must print PASS. The tests need NASM, MinGW-w64, Wine, GCC and Python 3 (see [tests/README.md](tests/README.md)).
+To try any 64-bit executable: `tests/roundtrip_win64.sh program.exe /tmp/work [console|windows]`, then run the result with Wine and compare with the original.
+
+## Workflow: recompiling a new executable
+
+1. Create a working directory (template: [../SRW64-games/template](../SRW64-games/template)) and put the original executable there. Never commit original executables or generated `.asm`/`.inc` files.
+2. Run `SRW64.exe game.exe game.asm` and read stderr: entry point, TLS warning, notes about large address awareness, counts of converted exception data, warnings.
+3. Create `global_aliases.sci` -- at least the entry point (`loc_<entry>,entry_name`), `_tls_used` for the TLS directory if reported.
+4. Assemble: `nasm -f win64 -O1 -w-number-overflow -i../SRW64/x64-support/ game.asm -o game.obj` (or `-f elf64`); on "short jump is out of range" run `repair_short_jumps.py` and assemble again.
+5. Link (win64): import libraries for the used DLLs (`tests/mkimplibs.py game.asm .` creates them from the `extern` lines), resources (`windres -i game.res -O coff -o res.o`), `-nostartfiles -nostdlib -Wl,-e,entry_name`.
+   Link (elf64): `gcc -no-pie` with replacement implementations of all imported functions (`__attribute__((ms_abi))`), see `tests/msvc_patterns/runtime_linux.c`.
+6. Run and compare with the original. Fix problems with SCI files (see below), iterate.
+
+## Diagnosing problems
+
+| Symptom | Cause / fix |
+|---|---|
+| `Error: invalid instruction: 0x...` | data decoded as code, or unsupported instruction (AVX-512) -- find who adds the entry (jump target, fixup), add the address to `fixup_do_not_interpret_as_code.sci` or `ignored_areas.sci` |
+| `Error: instruction overlaps another instruction` / `Warning: label inside instruction` | jump into the middle of an instruction or data decoded as code -- use `fixup_do_not_interpret_as_code.sci`, `displaced_labels.sci` or `instruction_replacements.sci` |
+| `Error: output not found` | an entry points inside an already decoded instruction -- same as above |
+| `Warning: jump table not recognized` / `shorter than expected` | jump table bound not found -- check the table manually, use `rva_data.sci` (image relative entries) and `fixup_interpret_as_code.sci` for the targets |
+| `Unrecognized language specific handler data` | listed per handler -- `__GSHandlerCheck` data contains no addresses (OK); `__CxxFrameHandler4` data is not converted (C++ exceptions won't work in those functions) |
+| NASM `label ... inconsistently redefined` | two labels with the same address -- should not happen; check section splitting / end-of-section labels in `SR_output.c` |
+| NASM `undefined symbol loc_...` | reference to a removed area (`ignored_areas.sci`, import/export tables) -- replace the referencing instruction or adjust the ignored area |
+| Linker: undefined `__imp_Name` / `Name` | missing import library (win64) or missing replacement function (elf64); imported variables are only accessible through `__imp_Name` |
+| Crash in raw bytes (`db ...`) in code section | a function was not disassembled (its address is used only by code and it has no unwind info) -- run with `--list_invalid_code_fixups=file` and add the address to `fixup_interpret_as_code.sci` |
+| Crash on `movdqa`/`movaps` with address -1 | misaligned data -- data sections must keep the original offset in page (see `SR_write_section_header`) |
+| Wrong results with `[reg+index*4+0x...]` | image relative displacement not converted (or converted wrongly) -- `--list_rva_displacements=file`, fix with `rva_displacements.sci` |
+
+Runtime debugging (Wine):
+
+* Use a separate Wine prefix for tests (`WINEPREFIX=/tmp/prefix wineboot -i`), for GUI programs set the null display driver in it: `wine reg add 'HKCU\Software\Wine\Drivers' /v Graphics /d null /f` -- don't modify the user's default prefix.
+* `WINEDEBUG=+seh` shows exceptions (code and address), `WINEDEBUG=+pid,+relay` shows API calls with process ids (filter the program's process id; all Wine processes are logged).
+* The linked executable contains the `loc_<original address>` symbols: `x86_64-w64-mingw32-objdump -d --start-address=... -M intel program.exe` maps addresses in the new executable back to original addresses.
+* Compare API call sequences of the original and the recompiled program to find the first difference.
+
+## Code map
+
+| File | Purpose |
+|---|---|
+| `SR_main.c` | command line, `SR.cfg`, order of passes, address -> section lookup |
+| `SRW64_loader.c` | PE32+ loader: sections (long names, debug sections), relocations (DIR64, HIGHLOW, `relocations.csv`, guessing), imports (64-bit thunks, ordinals), exports, splitting of import/export/IAT ranges, notes about large address awareness |
+| `SRW64_pdata.c` | exception directory: function list (`SR_find_pdata`), code entries, image relative fixups in .pdata, unwind info, SEH scope tables, C++ FuncInfo (FH3), delay load descriptors, prolog offsets as label differences (after disassembly), prescan of `lea reg, [__ImageBase]` |
+| `SR_source_code_information.c` | loading SCI files |
+| `SR_basic.c` | labels (`loc_%llX`, label expressions with displaced labels), application of fixups to data (`dq`, `dd`, `dd RVA(...)`) and code entries from fixups |
+| `SR_full.c` | disassembly driver (entry list), ignored areas, instruction replacements, alignment of code and data in code sections |
+| `SR_full_win64.c` | instruction conversion: RIP-relative operands, imports, relocations in instructions, image base register tracking (`run_state`), jump tables, control flow |
+| `SR_full_helpers.c` | adding code entries, conditional jumps, relocated values in instructions, noreturn functions (incl. imports) |
+| `SR_output.c` | writing the .asm/.inc/.def/.res/.resdump files, section declarations (page offset preservation), externs, `__imp_` pointers for elf64 |
+| `container_helpers.*`, `judy_helpers.*` | per-section lists (C++ containers or Judy) |
+| `x64-support/srw64inc.inc` | NASM macros for generated code: `RVA()`, `__ImageBase` (win64: linker symbol, elf64: zero) |
+| `udis86/` | disassembler (fork with AVX2/FMA/BMI), local changes documented in `udis86/README.SRW64.md` |
+| `tests/` | test programs and scripts |
+
+Key internal conventions:
+
+* Addresses are `uint64_t` virtual addresses, offsets inside sections are `uint_fast32_t`; print addresses with `PRIx64`/`PRIX64`, labels with `SR_get_label` / `SR_get_label_expr`.
+* Fixup types: `FT_NORMAL` (32-bit absolute), `FT_DIR64` (64-bit absolute), `FT_RVA32` (32-bit image relative); `FF_NOENTRY` = target is only a label, not a code entry; `SEC_HEADER` = target is in the PE header (`__ImageBase+offset`).
+* Output strings: `dd RVA(loc_X+n)` -- the `RVA()` macro argument must not be parenthesized (`wrt ..imagebase` doesn't work inside parentheses).
+* Code entries come from: exception directory, exports, aliases, fixups from data, call/jump targets, `lea` of function addresses, jump tables, SCI files. `SR_check_code_reference` decides whether `lea reg, [rip+code]` is a function.
+* Image relative addressing is only converted when the base (or unscaled index) register is known to contain the image base (`run_state.ib_mask`); hints for jump targets are stored in `hint_list` (register mask + jump table bound).
+* The `int3` instruction ends linear disassembly (it is used as padding after calls to functions which don't return).
+
+## Coding style
+
+* Same style as SR/SRW: C (C89 compatible declarations at block start), 4 spaces, MIT license header in every file (keep the original copyright in files derived from SRW).
+* Keep the generated output assemblable by NASM for both `win64` and `elf64` -- every change in output must be tested with both (`tests/run_tests.sh` does).
+* Don't use unguarded `rm` with shell variables in scripts.
