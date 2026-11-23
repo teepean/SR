@@ -1814,7 +1814,7 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
         }
 
         // immediate values with addresses of functions (executables without relocations)
-        if (InputFormat == INPUT_ELF && !ElfPie && fixup == NULL && (ud_obj.mnemonic == UD_Imov || ud_obj.mnemonic == UD_Icmp || ud_obj.mnemonic == UD_Ipush))
+        if (InputFormat == INPUT_ELF && !ElfRelocatedPointers && fixup == NULL && (ud_obj.mnemonic == UD_Imov || ud_obj.mnemonic == UD_Icmp || ud_obj.mnemonic == UD_Ipush))
         {
             for (index = 0; index < 4; index++)
             {

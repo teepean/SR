@@ -78,6 +78,9 @@ static elf_dynsym *dynsyms = NULL;
 static unsigned int num_dynsyms = 0;
 static elf_dynrel *got_slots = NULL;        // GOT entries (sorted by address)
 static unsigned int num_got_slots = 0;
+static extrn_data **outside_imports = NULL; // imports in GOT entries outside of sections (sorted by address)
+static uint64_t *outside_import_addresses = NULL;
+static unsigned int num_outside_imports = 0;
 static elf_dynrel *data_relocs = NULL;      // data relocations with symbols (R_X86_64_64)
 static unsigned int num_data_relocs = 0;
 static elf_dynrel *copies = NULL;           // COPY relocations (sorted by address)
@@ -602,6 +605,14 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
         fprintf(stderr, "\tDynamically linked: %u libraries, %u imported symbols (%u GOT entries, %u COPY relocations, %u data relocations), %u exported symbols, %u relative relocations\n", num_needed, imported, num_got_slots, num_copies, num_data_relocs, exported, num_relatives);
     }
 
+    // executable (not position independent) with relative relocations - e.g. converted from position independent code:
+    // all pointers are known from relocations, immediate values and data are not searched for addresses of functions
+    if (!ElfPie && num_relatives != 0)
+    {
+        ElfRelocatedPointers = 1;
+        fprintf(stderr, "Note: executable with relative relocations - pointers are known from relocations, immediate values are not converted\n");
+    }
+
     return 0;
 }
 
@@ -656,6 +667,48 @@ static const elf_plt_stub *find_plt_stub(uint64_t address)
     }
 
     if (low < num_plt_stubs && plt_stubs[low].address == address) return &(plt_stubs[low]);
+    return NULL;
+}
+
+static int add_outside_import(uint64_t address, const char *name)
+{
+    extrn_data **new_imports, *extrn;
+    uint64_t *new_addresses;
+
+    new_imports = (extrn_data **) realloc(outside_imports, (num_outside_imports + 1) * sizeof(extrn_data *));
+    if (new_imports == NULL) return -1;
+    outside_imports = new_imports;
+    new_addresses = (uint64_t *) realloc(outside_import_addresses, (num_outside_imports + 1) * sizeof(uint64_t));
+    if (new_addresses == NULL) return -1;
+    outside_import_addresses = new_addresses;
+
+    extrn = (extrn_data *) malloc(sizeof(extrn_data) + strlen(name));
+    if (extrn == NULL) return -1;
+    memset(extrn, 0, sizeof(extrn_data));
+    strcpy(extrn->proc, name);
+    extrn->is_import = 1;
+
+    outside_imports[num_outside_imports] = extrn;
+    outside_import_addresses[num_outside_imports] = address;
+    num_outside_imports++;
+    return 0;
+}
+
+// import in GOT entry outside of sections (e.g. GOT entry in dynamic linking information, which isn't part of the output)
+extrn_data *SR_elf_dyn_find_outside_import(uint64_t address)
+{
+    unsigned int low, high, middle;
+
+    low = 0;
+    high = num_outside_imports;
+    while (low < high)
+    {
+        middle = (low + high) / 2;
+        if (outside_import_addresses[middle] < address) low = middle + 1;
+        else high = middle;
+    }
+
+    if (low < num_outside_imports && outside_import_addresses[low] == address) return outside_imports[low];
     return NULL;
 }
 
@@ -856,7 +909,21 @@ int SR_elf_dyn_process(void)
         uint_fast32_t SecNum, RelAdr;
         extrn_data *extrn;
 
-        if (!SR_get_section_reladr_exact(got_slots[index].address, &SecNum, &RelAdr)) continue;
+        if (!SR_get_section_reladr_exact(got_slots[index].address, &SecNum, &RelAdr))
+        {
+            // GOT entry outside of sections (e.g. in dynamic linking information of converted executable, used by entry code)
+            // - accesses from code use GOT of the new executable
+            if (dynsyms[got_slots[index].sym].imported && !dynsyms[got_slots[index].sym].copy && got_slots[index].type != R_X86_64_TPOFF64)
+            {
+                if (add_outside_import(got_slots[index].address, dynsyms[got_slots[index].sym].asm_name)) return -1;
+                fprintf(stderr, "Note: GOT entry outside of sections: 0x%" PRIx64 " %s\n", got_slots[index].address, dynsyms[got_slots[index].sym].name);
+            }
+            else
+            {
+                fprintf(stderr, "Warning: GOT entry outside of sections is not converted: 0x%" PRIx64 " %s\n", got_slots[index].address, dynsyms[got_slots[index].sym].name);
+            }
+            continue;
+        }
 
         // symbol defined in executable or object copied into executable - GOT entry contains its (original) address
         if (!dynsyms[got_slots[index].sym].imported || dynsyms[got_slots[index].sym].copy)
@@ -1213,6 +1280,17 @@ void SR_elf_dyn_free(void)
         free(dynsyms);
     }
     if (got_slots != NULL) free(got_slots);
+    if (outside_imports != NULL)
+    {
+        unsigned int index;
+
+        for (index = 0; index < num_outside_imports; index++) free(outside_imports[index]);
+        free(outside_imports);
+    }
+    if (outside_import_addresses != NULL) free(outside_import_addresses);
+    outside_imports = NULL;
+    outside_import_addresses = NULL;
+    num_outside_imports = 0;
     if (data_relocs != NULL) free(data_relocs);
     if (copies != NULL) free(copies);
     if (relatives != NULL) free(relatives);

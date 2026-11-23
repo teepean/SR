@@ -127,6 +127,7 @@ Static-pie executables and shared libraries are not supported.
 Executables which are not position independent don't contain relocations, so pointers in data can't be found reliably.
 Therefore all sections except code keep their original addresses and only the recompiled code is moved (to a new address after the original image, printed as *Address of recompiled code*).
 Position independent executables are placed at address 0x410000 or higher (aligned like the segments; the recompiled executable is not position independent and its headers are at address 0x400000) -- their pointers in data are known from relative relocations (also in compact format RELR), so the data isn't searched for pointers.
+Executables which are not position independent but contain relative relocations (e.g. executables converted from position independent code) are handled the same way: all pointers are known from the relocations, the data and immediate values in instructions are not searched for addresses of functions (`Note: executable with relative relocations`).
 
 Executables without section headers (or with section headers which don't describe all loaded segments -- e.g. executables converted from other platforms) are supported too: sections are created from the program headers (executable segments are code, writable segments are data, the part after the file data is uninitialized data, thread local storage from `PT_TLS`, `.eh_frame` from `PT_GNU_EH_FRAME`) and the dynamic linking information is read using the dynamic tags.
 

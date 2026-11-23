@@ -788,6 +788,7 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
 
     ElfLoadBias = 0;
     ElfPie = 0;
+    ElfRelocatedPointers = 0;
     if (header->e_type == ET_DYN)
     {
         int has_interp;
@@ -809,6 +810,7 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
 
         // position independent executable - loaded at fixed address (the recompiled executable is not position independent)
         ElfPie = 1;
+        ElfRelocatedPointers = 1;
     }
 
     if (header->e_type != ET_EXEC && !ElfPie)
@@ -1744,8 +1746,8 @@ int SR_elf_process(void)
         uint_fast32_t group_start, group_count;
         const pdata_entry *group_function;
 
-        // position independent executable: pointers are known from relocations
-        if (ElfPie) break;
+        // position independent executable (or executable with relative relocations): pointers are known from relocations
+        if (ElfRelocatedPointers) break;
 
         if (!elf_is_code_pointer_section(Entry)) continue;
 

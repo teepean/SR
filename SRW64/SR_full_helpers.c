@@ -284,7 +284,11 @@ extrn_data *SR_disassemble_find_import(uint64_t address)
     extrn_data *extrn;
     uint_fast32_t SecNum, RelAdr;
 
-    if (!SR_get_section_reladr_exact(address, &SecNum, &RelAdr)) return NULL;
+    if (!SR_get_section_reladr_exact(address, &SecNum, &RelAdr))
+    {
+        // Linux executables: GOT entry outside of sections (e.g. in dynamic linking information, which isn't part of the output)
+        return (InputFormat == INPUT_ELF)?SR_elf_dyn_find_outside_import(address):NULL;
+    }
     if (section[SecNum].type != ST_IDATA && InputFormat != INPUT_ELF) return NULL;   // Linux executables: GOT
 
     extrn = section_extrn_list_FindEntryEqual(SecNum, RelAdr);

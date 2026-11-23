@@ -332,6 +332,7 @@ static void initialize_values(void)
 	InputFormat = INPUT_PE;
 	CodeBase = 0;
 	ElfPie = 0;
+	ElfRelocatedPointers = 0;
 	ElfLoadBias = 0;
 	ElfHeadersBase = 0;
 	ImageBase = 0;
