@@ -325,6 +325,8 @@ static void initialize_values(void)
 	SR_CodeBase = NULL;
 	InputFormat = INPUT_PE;
 	CodeBase = 0;
+	ElfPie = 0;
+	ElfLoadBias = 0;
 	ImageBase = 0;
 	SizeOfImage = 0;
 	SizeOfHeaders = 0;

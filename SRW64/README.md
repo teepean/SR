@@ -106,11 +106,12 @@ When NASM reports "short jump is out of range", run *repair_short_jumps.py* (fro
 
 ## Linux executables (ELF64)
 
-Executables which are not position independent are supported -- statically linked (`gcc -static -no-pie`) and dynamically linked (older Linux programs and games, for example FTL: Faster Than Light).
-Position independent executables (PIE, static-pie) and shared libraries are not supported.
+Statically linked executables (`gcc -static -no-pie`), dynamically linked executables (older Linux programs and games, for example FTL: Faster Than Light) and position independent executables (PIE -- current Linux programs) are supported.
+Static-pie executables and shared libraries are not supported.
 
-Such executables don't contain relocations, so pointers in data can't be found reliably.
-Therefore all sections except code keep their original addresses and only the recompiled code is moved (to a new address after the original image, printed as *Address of recompiled code*):
+Executables which are not position independent don't contain relocations, so pointers in data can't be found reliably.
+Therefore all sections except code keep their original addresses and only the recompiled code is moved (to a new address after the original image, printed as *Address of recompiled code*).
+Position independent executables are placed at address 0x400000 (the recompiled executable is not position independent) -- their pointers in data are known from relative relocations (also in compact format RELR), so the data isn't searched for pointers:
 
 * The generated linker script (*output.ld*) places the sections (named `srw.<original name>`) at their original addresses and the recompiled code (section `.text`) at the new address.
 * Only references to code are converted:
@@ -138,12 +139,13 @@ Statically linked executables: the recompiled program contains the recompiled C 
 Dynamically linked executables use the same shared libraries as the original executable (the dynamic linking is done again by the linker):
 
 * Imported symbols are external symbols in the generated file. Calls of PLT stubs and calls/jumps through GOT are calls/jumps of the symbols, other accesses to GOT use GOT of the new executable (`wrt ..gotpc`, `wrt ..gottpoff`), the original GOT entries get the addresses of the symbols (for original code which is kept).
-* References to objects copied into the executable (COPY relocations, e.g. `stdout`, C++ type information) are references to the symbols -- the linker creates new COPY relocations. Data relocations with symbols are written as `dq symbol+addend`.
+* Objects copied into the executable (COPY relocations, e.g. `stdout`, C++ type information) stay at their original addresses: the generated file contains references which make the linker create COPY relocations, and the script [tests/fixcopy_elf.py](tests/fixcopy_elf.py) moves the relocations and the dynamic symbols to the original addresses after linking (the original code which is kept uses the original addresses too). Data relocations with symbols are written as `dq symbol+addend`.
 * Symbols exported by the original executable are exported again (link with `-E`); `_init`, `_fini`, `.init_array`, `.fini_array` keep their roles (dynamic tags).
 * The linker needs the libraries with the imported symbols -- the script [tests/mkstubs_elf.py](tests/mkstubs_elf.py) creates stub libraries from *output.imports* (same names, symbols with the same versions, types and sizes), the real libraries are used at runtime:
 
         mkstubs_elf.py output.imports stubs     # prints: -dynamic-linker <interpreter> [-rpath <path>] <stub libraries>
         ld <printed arguments> -E --eh-frame-hdr -T output.ld output.o -o program
+        fixcopy_elf.py program output.imports   # only if output.imports contains lines "copy"
 
 The script [tests/roundtrip_elf.sh](tests/roundtrip_elf.sh) does all steps.
 

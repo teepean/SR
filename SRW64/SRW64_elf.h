@@ -142,6 +142,7 @@ typedef struct PACKED _ELF64_Vernaux_ {
 } ELF64_Vernaux;
 
 #define SHT_PROGBITS 1
+#define SHT_RELR     19
 #define SHT_DYNAMIC  6
 #define SHT_GNU_verneed 0x6ffffffe
 #define SHT_GNU_versym  0x6fffffff

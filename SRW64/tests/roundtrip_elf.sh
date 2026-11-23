@@ -69,6 +69,10 @@ if [ -f "$NAME.imports" ]; then
     LINK_ARGS=$(python3 "$TESTS_DIR/mkstubs_elf.py" "$NAME.imports" stubs) || { echo "creating stub libraries failed"; exit 1; }
     # shellcheck disable=SC2086
     "$LD" $LINK_ARGS -E --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
+    # objects copied from shared libraries (COPY relocations) stay at their original addresses
+    if grep -q "^copy " "$NAME.imports"; then
+        python3 "$TESTS_DIR/fixcopy_elf.py" "${NAME}_srw64" "$NAME.imports" > fixcopy.log || { cat fixcopy.log; echo "moving COPY relocations failed"; exit 1; }
+    fi
 else
     "$LD" -static --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
 fi

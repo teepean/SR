@@ -81,6 +81,8 @@ static elf_dynrel *data_relocs = NULL;      // data relocations with symbols (R_
 static unsigned int num_data_relocs = 0;
 static elf_dynrel *copies = NULL;           // COPY relocations (sorted by address)
 static unsigned int num_copies = 0;
+static elf_dynrel *relatives = NULL;        // relative relocations (position independent executable)
+static unsigned int num_relatives = 0;
 static elf_plt_stub *plt_stubs = NULL;      // PLT stubs (sorted by address)
 static unsigned int num_plt_stubs = 0;
 static char **needed = NULL;                // DT_NEEDED
@@ -128,6 +130,26 @@ static int add_dynrel(elf_dynrel **list, unsigned int *count, uint64_t address, 
     (*list)[*count].type = type;
     (*list)[*count].addend = addend;
     (*count)++;
+    return 0;
+}
+
+// relative relocation from RELR table (implicit addend: value in file at the location)
+static int relr_add(const uint8_t *file, int64_t file_size, const ELF64_Ehdr *header, const ELF64_Shdr *sections, uint64_t location)
+{
+    unsigned int index;
+
+    for (index = 0; index < header->e_shnum; index++)
+    {
+        uint64_t value;
+
+        if (!(sections[index].sh_flags & SHF_ALLOC) || sections[index].sh_type == SHT_NOBITS) continue;
+        if (location < sections[index].sh_addr || location + 8 > sections[index].sh_addr + sections[index].sh_size) continue;
+        if ((int64_t)(sections[index].sh_offset + (location - sections[index].sh_addr) + 8) > file_size) return 0;
+
+        memcpy(&value, file + sections[index].sh_offset + (location - sections[index].sh_addr), 8);
+        return add_dynrel(&relatives, &num_relatives, location + ElfLoadBias, 0, R_X86_64_RELATIVE, (int64_t)(value + ElfLoadBias));
+    }
+
     return 0;
 }
 
@@ -223,7 +245,7 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
 
         sym = (const ELF64_Sym *) (file + dynsym_sec->sh_offset + index * sizeof(ELF64_Sym));
         dynsyms[index].name = (char *) dyn_string(sym->st_name);
-        dynsyms[index].value = sym->st_value;
+        dynsyms[index].value = sym->st_value + ((sym->st_shndx != SHN_UNDEF && sym->st_shndx < SHN_LORESERVE)?ElfLoadBias:0);
         dynsyms[index].size = sym->st_size;
         dynsyms[index].type = sym->st_info & 0x0f;
         dynsyms[index].bind = sym->st_info >> 4;
@@ -265,7 +287,7 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
 
             type = (unsigned int)(relocations[relocation].r_info & 0xffffffff);
             sym = (unsigned int)(relocations[relocation].r_info >> 32);
-            address = relocations[relocation].r_offset;
+            address = relocations[relocation].r_offset + ElfLoadBias;
             addend = relocations[relocation].r_addend;
 
             if (sym >= num_dynsyms) continue;
@@ -287,9 +309,12 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
                     dynsyms[sym].copy = 1;
                     ret = add_dynrel(&copies, &num_copies, address, sym, type, addend);
                     break;
-                case R_X86_64_IRELATIVE:
                 case R_X86_64_RELATIVE:
-                    fprintf(stderr, "Warning: relocation type %u is not supported in dynamically linked executable: 0x%" PRIx64 "\n", type, address);
+                    // pointer in position independent executable
+                    ret = add_dynrel(&relatives, &num_relatives, address, 0, type, addend + (int64_t)ElfLoadBias);
+                    break;
+                case R_X86_64_IRELATIVE:
+                    fprintf(stderr, "Warning: IRELATIVE relocation is not supported in dynamically linked executable: 0x%" PRIx64 "\n", address);
                     break;
                 case R_X86_64_DTPMOD64:
                 case R_X86_64_DTPOFF64:
@@ -308,6 +333,46 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
     for (index = 1; index < num_dynsyms; index++)
     {
         dynsyms[index].imported = ((!dynsyms[index].defined && dynsyms[index].name[0] != 0) || dynsyms[index].copy)?1:0;
+    }
+
+    // relative relocations in compact format (RELR, -z pack-relative-relocs): addends are in the relocated locations
+    for (index = 0; index < header->e_shnum; index++)
+    {
+        const uint64_t *entries;
+        uint64_t num_entries, entry, where;
+
+        if (sections[index].sh_type != SHT_RELR) continue;
+        if ((int64_t)(sections[index].sh_offset + sections[index].sh_size) > file_size) continue;
+
+        entries = (const uint64_t *) (file + sections[index].sh_offset);
+        num_entries = sections[index].sh_size / 8;
+        where = 0;
+        for (entry = 0; entry < num_entries; entry++)
+        {
+            uint64_t value, location;
+            unsigned int bit;
+
+            value = entries[entry];
+            if ((value & 1) == 0)
+            {
+                // address
+                location = value;
+                if (relr_add(file, file_size, header, sections, location)) return -1;
+                where = location + 8;
+            }
+            else
+            {
+                // bitmap of the following 63 words
+                for (bit = 0; (value >>= 1) != 0; bit++)
+                {
+                    if (value & 1)
+                    {
+                        if (relr_add(file, file_size, header, sections, where + 8 * (uint64_t)bit)) return -1;
+                    }
+                }
+                where += 63 * 8;
+            }
+        }
     }
 
     if (num_got_slots) qsort(got_slots, num_got_slots, sizeof(elf_dynrel), dynrel_compare);
@@ -344,10 +409,10 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
                     strncpy(rpath, dyn_string(dyn->d_val), sizeof(rpath) - 1);
                     break;
                 case DT_INIT:
-                    dt_init = dyn->d_val;
+                    dt_init = dyn->d_val + ElfLoadBias;
                     break;
                 case DT_FINI:
-                    dt_fini = dyn->d_val;
+                    dt_fini = dyn->d_val + ElfLoadBias;
                     break;
                 default:
                     break;
@@ -382,7 +447,7 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
             else if (dynsyms[index].defined && dynsyms[index].bind != STB_LOCAL) exported++;
         }
 
-        fprintf(stderr, "\tDynamically linked: %u libraries, %u imported symbols (%u GOT entries, %u COPY relocations, %u data relocations), %u exported symbols\n", num_needed, imported, num_got_slots, num_copies, num_data_relocs, exported);
+        fprintf(stderr, "\tDynamically linked: %u libraries, %u imported symbols (%u GOT entries, %u COPY relocations, %u data relocations), %u exported symbols, %u relative relocations\n", num_needed, imported, num_got_slots, num_copies, num_data_relocs, exported, num_relatives);
     }
 
     return 0;
@@ -450,21 +515,13 @@ int SR_elf_dyn_is_tls_got(uint64_t address)
     return (slot != NULL && slot->type == R_X86_64_TPOFF64)?1:0;
 }
 
-// reference to imported symbol instead of address (object copied into executable, PLT stub), returns 1 if label was written
+// reference to imported function instead of address of PLT stub, returns 1 if label was written
+// (objects copied into executable stay at their original addresses - the COPY relocations are moved there after linking)
 int SR_elf_dyn_reference_label(char *cbuf, uint64_t address)
 {
-    const elf_dynrel *copy;
     const elf_plt_stub *stub;
 
     if (num_dynsyms == 0) return 0;
-
-    copy = find_copy(address);
-    if (copy != NULL)
-    {
-        if (address == copy->address) strcpy(cbuf, dynsyms[copy->sym].name);
-        else sprintf(cbuf, "%s+%u", dynsyms[copy->sym].name, (unsigned int)(address - copy->address));
-        return 1;
-    }
 
     stub = find_plt_stub(address);
     if (stub != NULL)
@@ -476,12 +533,12 @@ int SR_elf_dyn_reference_label(char *cbuf, uint64_t address)
     return 0;
 }
 
-// is value address which is converted to imported symbol ?
+// is value address which is converted to imported symbol (PLT stub) ?
 int SR_elf_dyn_is_import_address(uint64_t value)
 {
     if (num_dynsyms == 0) return 0;
 
-    return (find_copy(value) != NULL || find_plt_stub(value) != NULL)?1:0;
+    return (find_plt_stub(value) != NULL)?1:0;
 }
 
 static int set_data_string(uint64_t address, const char *str)
@@ -516,14 +573,25 @@ static int set_data_string(uint64_t address, const char *str)
     return 0;
 }
 
-// "dq label" for address of symbol defined in executable
+// "dq label" for address of symbol defined in executable (or object copied into executable)
 static int elf_own_symbol_string(char *buf, unsigned int sym, int64_t addend)
 {
     uint_fast32_t SecNum, RelAdr;
     output_data *output;
     char label[256];
 
-    if (!SR_get_section_reladr_exact(dynsyms[sym].value, &SecNum, &RelAdr)) return 1;
+    if (dynsyms[sym].copy)
+    {
+        unsigned int k;
+
+        for (k = 0; k < num_copies; k++)
+        {
+            if (copies[k].sym == sym) break;
+        }
+        if (k >= num_copies) return 1;
+        if (!SR_get_section_reladr_exact(copies[k].address, &SecNum, &RelAdr)) return 1;
+    }
+    else if (!SR_get_section_reladr_exact(dynsyms[sym].value, &SecNum, &RelAdr)) return 1;
 
     output = section_output_list_FindEntryEqual(SecNum, RelAdr);
     if (output != NULL) output->has_label = 1;
@@ -616,8 +684,8 @@ int SR_elf_dyn_process(void)
 
         if (!SR_get_section_reladr_exact(got_slots[index].address, &SecNum, &RelAdr)) continue;
 
-        // symbol defined in executable - GOT entry contains its address
-        if (!dynsyms[got_slots[index].sym].imported)
+        // symbol defined in executable or object copied into executable - GOT entry contains its (original) address
+        if (!dynsyms[got_slots[index].sym].imported || dynsyms[got_slots[index].sym].copy)
         {
             if (got_slots[index].type != R_X86_64_TPOFF64 &&
                 elf_own_symbol_string(buf, got_slots[index].sym, 0) == 0 &&
@@ -643,7 +711,7 @@ int SR_elf_dyn_process(void)
     // data relocations with symbols
     for (index = 0; index < num_data_relocs; index++)
     {
-        if (!dynsyms[data_relocs[index].sym].imported)
+        if (!dynsyms[data_relocs[index].sym].imported || dynsyms[data_relocs[index].sym].copy)
         {
             if (elf_own_symbol_string(buf, data_relocs[index].sym, data_relocs[index].addend) == 0 &&
                 set_data_string(data_relocs[index].address, buf) == 0) written++;
@@ -655,6 +723,25 @@ int SR_elf_dyn_process(void)
         else sprintf(buf, "dq %s", dynsyms[data_relocs[index].sym].name);
 
         if (set_data_string(data_relocs[index].address, buf) == 0) written++;
+    }
+
+    // relative relocations (pointers in position independent executable)
+    {
+        unsigned int converted;
+
+        converted = 0;
+        for (index = 0; index < num_relatives; index++)
+        {
+            int ret;
+
+            ret = SR_elf_add_fixup(relatives[index].address, (uint64_t)relatives[index].addend);
+            if (ret < 0) return -1;
+            if (ret > 0) converted++;
+        }
+        if (num_relatives != 0)
+        {
+            fprintf(stderr, "\tRelative relocations converted: %u/%u\n", converted, num_relatives);
+        }
     }
 
     // exported symbols need labels
@@ -755,6 +842,22 @@ void SR_elf_dyn_write_externs(FILE *fout)
     }
 }
 
+// writes references which make the linker create COPY relocations (never executed)
+void SR_elf_dyn_write_copy_references(FILE *fout)
+{
+    unsigned int index;
+
+    if (num_copies == 0) return;
+
+    fprintf(fout, "\n; references which make the linker create COPY relocations (never executed)\n");
+    fprintf(fout, "; the relocations are moved to the original addresses after linking (fixcopy_elf.py)\n");
+    fprintf(fout, "section srw.copyref progbits alloc exec nowrite align=16\n");
+    for (index = 0; index < num_copies; index++)
+    {
+        fprintf(fout, "lea rax, [rel %s]\n", dynsyms[copies[index].sym].name);
+    }
+}
+
 // writes exported symbols (at the end of file - labels are defined)
 void SR_elf_dyn_write_exports(FILE *fout)
 {
@@ -833,11 +936,17 @@ int SR_elf_dyn_write_imports(const char *fname)
     fprintf(fout, "# dynamic linking information generated by SRW64\n");
     fprintf(fout, "# interp <path>; rpath <path>; needed <library>\n");
     fprintf(fout, "# symbol <library or -> <name> <version or -> <FUNC|OBJECT|TLS|NOTYPE> <size> <GLOBAL|WEAK>\n");
+    fprintf(fout, "# copy <name> <original address> <size> (COPY relocation, moved to original address after linking)\n");
     fprintf(fout, "interp %s\n", interp);
     if (rpath[0] != 0) fprintf(fout, "rpath %s\n", rpath);
     for (index = 0; index < num_needed; index++)
     {
         fprintf(fout, "needed %s\n", needed[index]);
+    }
+
+    for (index = 0; index < num_copies; index++)
+    {
+        fprintf(fout, "copy %s 0x%" PRIx64 " %u\n", dynsyms[copies[index].sym].name, copies[index].address, (unsigned int)dynsyms[copies[index].sym].size);
     }
 
     for (index = 1; index < num_dynsyms; index++)
@@ -889,6 +998,9 @@ void SR_elf_dyn_free(void)
     if (got_slots != NULL) free(got_slots);
     if (data_relocs != NULL) free(data_relocs);
     if (copies != NULL) free(copies);
+    if (relatives != NULL) free(relatives);
+    relatives = NULL;
+    num_relatives = 0;
     if (plt_stubs != NULL) free(plt_stubs);
     if (needed != NULL) free(needed);
     dyn_strings = NULL;

@@ -13,6 +13,6 @@ The generated assembler versions of the original executables (and the original e
 | `llasm` | converter of llasm files to LLVM IR |
 | `SR64-loader` | Linux loader which keeps all memory below 2 GB (for programs which store pointers in 32 bits) |
 
-Choosing the recompiler: 32-bit DOS executable (LE format, DOS extender) -> `SR`, 32-bit Windows executable (PE32) -> `SRW`, 64-bit Windows executable (PE32+, x86-64) or 64-bit Linux executable (ELF64, not PIE) -> `SRW64`.
+Choosing the recompiler: 32-bit DOS executable (LE format, DOS extender) -> `SR`, 32-bit Windows executable (PE32) -> `SRW`, 64-bit Windows executable (PE32+, x86-64) or 64-bit Linux executable (ELF64) -> `SRW64`.
 
 Each recompiler is built using scons in its directory (the result is `SR.exe`, `SRW.exe`, `SRW64.exe`). The output type of SR and SRW is selected by `OUTPUT_TYPE` in `SR_defs.h`.

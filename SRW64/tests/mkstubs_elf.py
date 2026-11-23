@@ -8,7 +8,8 @@
 # same name (SONAME) is created, it defines the imported symbols with the same versions, types
 # and sizes (sizes of objects are needed for COPY relocations). At runtime the real libraries
 # are used. Unversioned symbols are defined in the first library (symbols are searched in all
-# libraries at runtime), weak symbols are not defined (they stay undefined like in the original).
+# libraries at runtime). Weak symbols are defined too (the linker creates PLT entries for calls),
+# the references stay weak, so the symbols can be missing at runtime.
 #
 # Prints arguments for the linker (dynamic linker, rpath, stub libraries).
 #
@@ -57,8 +58,6 @@ def main():
 
     per_library = {lib: [] for lib in needed}
     for library, name, version, sym_type, size, bind in symbols:
-        if bind == "WEAK" and sym_type != "OBJECT":
-            continue
         if library == "-" or library not in per_library:
             library = default_library
             if version != "-" and library not in per_library:

@@ -99,7 +99,7 @@ static int elf_is_noret_name(const char *name);
 
 static int elf_is_dynamic_section(const char *name)
 {
-    static const char *names[] = { ".interp", ".dynamic", ".dynsym", ".dynstr", ".hash", ".gnu.hash", ".gnu.version", ".gnu.version_r", ".gnu.version_d", ".rela.dyn", ".rela.plt", ".eh_frame_hdr", NULL };
+    static const char *names[] = { ".interp", ".dynamic", ".dynsym", ".dynstr", ".hash", ".gnu.hash", ".gnu.version", ".gnu.version_r", ".gnu.version_d", ".rela.dyn", ".rela.plt", ".relr.dyn", ".eh_frame_hdr", NULL };
     int index;
 
     for (index = 0; names[index] != NULL; index++)
@@ -131,6 +131,13 @@ static int elf_is_noret_name(const char *name)
     return 0;
 }
 
+static int elf_add_fixup(uint64_t source, uint64_t target);
+
+int SR_elf_add_fixup(uint64_t source, uint64_t target)
+{
+    return elf_add_fixup(source, target);
+}
+
 static int elf_add_fixup(uint64_t source, uint64_t target)
 {
     uint_fast32_t SourceObject, SourceOffset, TargetObject, TargetOffset;
@@ -140,8 +147,8 @@ static int elf_add_fixup(uint64_t source, uint64_t target)
     if (!SR_get_section_reladr_exact(target, &TargetObject, &TargetOffset)) return 0;
     if (SourceOffset + 8 > section[SourceObject].size_in_file) return 0;
 
-    // original code which is not recompiled - the address stays valid
-    if (section[TargetObject].type == ST_CODE && SR_is_ignored(TargetObject, TargetOffset)) return 0;
+    // original code which is not recompiled - the address stays valid (except position independent executable, which is moved)
+    if (ElfLoadBias == 0 && section[TargetObject].type == ST_CODE && SR_is_ignored(TargetObject, TargetOffset)) return 0;
 
     fixup = section_fixup_list_FindEntryEqual(SourceObject, SourceOffset);
     if (fixup != NULL) return 0;
@@ -335,13 +342,32 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
         return -1;
     }
 
+    ElfLoadBias = 0;
+    ElfPie = 0;
     if (header->e_type == ET_DYN)
     {
-        fprintf(stderr, "Error: position independent executables and shared libraries are not supported\n");
-        return -1;
+        int has_interp;
+
+        has_interp = 0;
+        if (header->e_phoff != 0 && header->e_phentsize == sizeof(ELF64_Phdr) && (int64_t)(header->e_phoff + header->e_phnum * sizeof(ELF64_Phdr)) <= file_size)
+        {
+            for (index = 0; index < header->e_phnum; index++)
+            {
+                if (((const ELF64_Phdr *) (file + header->e_phoff))[index].p_type == PT_INTERP) has_interp = 1;
+            }
+        }
+
+        if (!has_interp || header->e_entry == 0)
+        {
+            fprintf(stderr, "Error: shared libraries and static-pie executables are not supported\n");
+            return -1;
+        }
+
+        // position independent executable - loaded at fixed address (the recompiled executable is not position independent)
+        ElfPie = 1;
     }
 
-    if (header->e_type != ET_EXEC)
+    if (header->e_type != ET_EXEC && !ElfPie)
     {
         fprintf(stderr, "Error: not an executable\n");
         return -1;
@@ -398,6 +424,15 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
     {
         fprintf(stderr, "Error: no loadable segments\n");
         return -1;
+    }
+
+    // position independent executable is placed at address 0x400000
+    if (ElfPie && min_address < UINT64_C(0x400000))
+    {
+        ElfLoadBias = UINT64_C(0x400000) - (min_address & ~UINT64_C(0xfff));
+        min_address += ElfLoadBias;
+        max_address += ElfLoadBias;
+        fprintf(stderr, "\tPosition independent executable: load address 0x%" PRIx64 "\n", ElfLoadBias);
     }
 
     ImageBase = min_address & ~UINT64_C(0xfff);
@@ -476,8 +511,8 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
 
         memset(&(section[Entry]), 0, sizeof(section_data));
         strncpy(section[Entry].name, name, sizeof(section[Entry].name) - 1);
-        section[Entry].start = shdr->sh_addr;
-        section[Entry].virtaddr = (uint_fast32_t)(shdr->sh_addr - ImageBase);
+        section[Entry].start = shdr->sh_addr + ElfLoadBias;
+        section[Entry].virtaddr = (uint_fast32_t)(shdr->sh_addr + ElfLoadBias - ImageBase);
         section[Entry].size = (uint_fast32_t)shdr->sh_size;
         section[Entry].size_in_file = (shdr->sh_type == SHT_NOBITS)?0:(uint_fast32_t)shdr->sh_size;
         section[Entry].adr = memory;
@@ -529,12 +564,12 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
     CodeBase = ((max_section_end + UINT64_C(0xfffff)) & ~UINT64_C(0xfffff)) + UINT64_C(0x100000);
 
     // entry point
-    if (!SR_get_section_reladr_exact(header->e_entry, &EIPObjectNum, &EIP))
+    if (!SR_get_section_reladr_exact(header->e_entry + ElfLoadBias, &EIPObjectNum, &EIP))
     {
         fprintf(stderr, "Error: entry point is not in any section\n");
         return -1;
     }
-    fprintf(stderr, "\tEntry point: 0x%" PRIx64 "\n", header->e_entry);
+    fprintf(stderr, "\tEntry point: 0x%" PRIx64 "\n", header->e_entry + ElfLoadBias);
 
     // functions from symbol table
     {
@@ -603,10 +638,10 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
                 }
                 else if (type != STT_FUNC && type != STT_GNU_IFUNC) continue;
                 if (symbols[symbol].st_shndx == SHN_UNDEF || symbols[symbol].st_shndx >= SHN_LORESERVE) continue;
-                if (!SR_get_section_reladr_exact(symbols[symbol].st_value, &SecNum, &RelAdr)) continue;
+                if (!SR_get_section_reladr_exact(symbols[symbol].st_value + ElfLoadBias, &SecNum, &RelAdr)) continue;
                 if (section[SecNum].type != ST_CODE) continue;
 
-                elf_functions[elf_num_functions].address = symbols[symbol].st_value;
+                elf_functions[elf_num_functions].address = symbols[symbol].st_value + ElfLoadBias;
                 elf_functions[elf_num_functions].size = symbols[symbol].st_size;
                 elf_functions[elf_num_functions].name = (symbols[symbol].st_name < strtab->sh_size)?(elf_strings + symbols[symbol].st_name):NULL;
                 elf_num_functions++;
@@ -700,7 +735,7 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
             {
                 if ((relocations[relocation].r_info & 0xffffffff) != R_X86_64_IRELATIVE) continue;
 
-                if (elf_add_fixup(sections[index].sh_addr + relocation * sizeof(ELF64_Rela) + 16, (uint64_t)relocations[relocation].r_addend) > 0)
+                if (elf_add_fixup(sections[index].sh_addr + ElfLoadBias + relocation * sizeof(ELF64_Rela) + 16, (uint64_t)relocations[relocation].r_addend + ElfLoadBias) > 0)
                 {
                     count++;
                 }
@@ -1083,6 +1118,9 @@ int SR_elf_process(void)
         uint_fast32_t group_start, group_count;
         const pdata_entry *group_function;
 
+        // position independent executable: pointers are known from relocations
+        if (ElfPie) break;
+
         if (!elf_is_code_pointer_section(Entry)) continue;
 
         group_start = 0;
@@ -1306,6 +1344,7 @@ int SR_write_linker_script(const char *fname)
         elf_output_name(outname, section[Entry].name);
         fprintf(fout, "        KEEP(*(%s))\n", outname);
     }
+    if (dynamic) fprintf(fout, "        KEEP(*(srw.copyref))\n");
     fprintf(fout, "        *(.text .text.*)\n    }\n\n");
 
     if (SR_elf_eh_present())

@@ -46,6 +46,8 @@ EXTERNAL_VARIABLE uint8_t *SR_CodeBase;                 // allocated data
 
 EXTERNAL_VARIABLE int InputFormat;                      // INPUT_PE or INPUT_ELF
 EXTERNAL_VARIABLE uint64_t CodeBase;                    // address of recompiled code (ELF)
+EXTERNAL_VARIABLE int ElfPie;                           // position independent executable (ELF)
+EXTERNAL_VARIABLE uint64_t ElfLoadBias;                 // address of position independent executable (ELF)
 EXTERNAL_VARIABLE uint64_t ImageBase;                   // image base
 EXTERNAL_VARIABLE uint_fast32_t SizeOfImage;            // size of image
 EXTERNAL_VARIABLE uint_fast32_t SizeOfHeaders;          // size of headers
@@ -128,6 +130,7 @@ int SR_write_linker_script(const char *fname);
 void SR_elf_output_section_name(char *buf, unsigned int Entry);
 void SR_elf_free(void);
 int SR_elf_is_noret_name(const char *name);
+int SR_elf_add_fixup(uint64_t source, uint64_t target);
 
 // SRW64_elf_dyn.c
 int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, const void *shdrs);
@@ -137,6 +140,7 @@ int SR_elf_dyn_reference_label(char *cbuf, uint64_t address);
 int SR_elf_dyn_is_import_address(uint64_t value);
 void SR_elf_dyn_write_externs(FILE *fout);
 void SR_elf_dyn_write_exports(FILE *fout);
+void SR_elf_dyn_write_copy_references(FILE *fout);
 int SR_elf_dyn_write_imports(const char *fname);
 int SR_elf_dyn_is_dynamic(void);
 const char *SR_elf_dyn_interp(void);

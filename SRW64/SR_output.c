@@ -890,7 +890,8 @@ int SR_write_output(const char *fname)
     {
         if (SR_elf_eh_write(EF.fout)) return -1;
 
-        // symbols exported by dynamically linked executable
+        // symbols exported by dynamically linked executable, references for COPY relocations
+        SR_elf_dyn_write_copy_references(EF.fout);
         SR_elf_dyn_write_exports(EF.fout);
     }
 

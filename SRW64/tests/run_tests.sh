@@ -15,6 +15,7 @@
 #                 for example /mnt/windows/Windows/System32
 #   FH4_EXECUTABLES - optional list of executables built by Visual Studio 2019+ (with __CxxFrameHandler4),
 #                 their C++ exception handling data is verified after recompilation
+#   SYSTEM_TOOLS - optional, non-empty value enables test of Linux system tools (sort, gzip, sed, grep, xz)
 #
 
 TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -200,14 +201,16 @@ for OPT in O0 O2; do
 done
 
 
-# test 6: dynamically linked Linux programs (not position independent): imports (PLT, GOT), COPY relocations,
-#         data relocations with symbols, exceptions through shared libstdc++
+# test 6: dynamically linked Linux programs (not position independent and PIE): imports (PLT, GOT), COPY relocations,
+#         data relocations with symbols, relative relocations, exceptions through shared libstdc++
 mkdir -p "$WORK/linux_dynamic"
 cd "$WORK/linux_dynamic" || exit 1
 if gcc -O2 -no-pie -pthread -o test_linux_dyn "$TESTS_DIR/linux_c/test_linux.c" -lm &&
-   g++ -O2 -no-pie -pthread -o test_exceptions_dyn "$TESTS_DIR/linux_cpp/test_exceptions.cpp"
+   g++ -O2 -no-pie -pthread -o test_exceptions_dyn "$TESTS_DIR/linux_cpp/test_exceptions.cpp" &&
+   gcc -O2 -fPIE -pie -pthread -o test_linux_pie "$TESTS_DIR/linux_c/test_linux.c" -lm &&
+   g++ -O2 -fPIE -pie -pthread -o test_exceptions_pie "$TESTS_DIR/linux_cpp/test_exceptions.cpp"
 then
-    for NAME in test_linux_dyn test_exceptions_dyn; do
+    for NAME in test_linux_dyn test_exceptions_dyn test_linux_pie test_exceptions_pie; do
         ./$NAME arg1 > expected_$NAME.txt 2>&1; echo "exit code $?" >> expected_$NAME.txt
         if RESULT=$("$TESTS_DIR/roundtrip_elf.sh" $NAME "$WORK/linux_dynamic/srw64_$NAME"); then
             "$RESULT" arg1 > actual_$NAME.txt 2>&1; echo "exit code $?" >> actual_$NAME.txt
@@ -224,7 +227,44 @@ else
 fi
 
 
-# test 7 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
+# test 7 (optional): Linux system tools (dynamically linked, usually stripped PIE executables of the distribution)
+if [ -n "$SYSTEM_TOOLS" ]; then
+    mkdir -p "$WORK/system_tools"
+    cd "$WORK/system_tools" || exit 1
+    seq 1 20000 | awk '{print ($1*7919)%10007, "line" $1, ($1%13)}' > data.txt
+    for NAME in sort gzip sed grep xz; do
+        TOOL=$(command -v $NAME) || { echo "SKIP: $NAME not found"; continue; }
+        cp "$TOOL" . || continue
+        if RESULT=$("$TESTS_DIR/roundtrip_elf.sh" $NAME "$WORK/system_tools/srw64_$NAME"); then
+            case $NAME in
+                sort) ARGS_LIST="data.txt|-n -k1 data.txt|-r -k3n -k1n data.txt|--parallel=4 -S 1M data.txt" ;;
+                gzip) ARGS_LIST="-c -n -9 data.txt|-c -n -1 data.txt" ;;
+                sed) ARGS_LIST="-e s/line/LINE/g -e /^5/d data.txt|-E s/([a-z]+)([0-9]+)/\\2\\1/ data.txt" ;;
+                grep) ARGS_LIST="-c line1 data.txt|-v -w line5 data.txt|-P \\d{4}\\sline1\\d+ data.txt" ;;
+                xz) ARGS_LIST="-c -6 data.txt|-c -T4 -9e data.txt" ;;
+            esac
+            OLD_IFS=$IFS
+            IFS='|'
+            for ARGS in $ARGS_LIST; do
+                IFS=$OLD_IFS
+                # shellcheck disable=SC2086
+                ./$NAME $ARGS > expected.txt 2>&1; echo "exit code $?" >> expected.txt
+                # shellcheck disable=SC2086
+                "$RESULT" $ARGS > actual.txt 2>&1; echo "exit code $?" >> actual.txt
+                compare expected.txt actual.txt "$NAME $ARGS (elf64)"
+                IFS='|'
+            done
+            IFS=$OLD_IFS
+        else
+            echo "$RESULT"
+            echo "FAIL: $NAME - recompilation failed"
+            FAILED=1
+        fi
+    done
+fi
+
+
+# test 8 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
 if [ -n "$FH4_EXECUTABLES" ]; then
     mkdir -p "$WORK/fh4_executables"
     cd "$WORK/fh4_executables" || exit 1
@@ -247,7 +287,7 @@ if [ -n "$FH4_EXECUTABLES" ]; then
 fi
 
 
-# test 8 (optional): Windows executables (built by Microsoft with MSVC)
+# test 9 (optional): Windows executables (built by Microsoft with MSVC)
 if [ -n "$WINDOWS_DIR" ]; then
     mkdir -p "$WORK/windows"
     cd "$WORK/windows" || exit 1
