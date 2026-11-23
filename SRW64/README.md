@@ -27,6 +27,8 @@ Options:
 * `--list_invalid_code_fixups=<file>` -- list code addresses referenced from code, which are not considered as code (candidates for *fixup_interpret_as_code.sci*)
 * `--list_data_to_code_fixups=<file>` -- list code addresses referenced from data (candidates for *fixup_do_not_interpret_as_code.sci*)
 * `--list_rva_displacements=<file>` -- list instructions with converted image relative displacements (in format of *rva_displacements.sci*)
+* `--list_jump_tables=<file>` -- list jumps through jump tables: `<jump address> <table address> <kind> <number of converted entries> <bound or -1> <targets>`, kind is `diff` (entries relative to the table), `rva` (image relative entries) or `abs` (absolute addresses); jumps whose table wasn't found or recognized have 0 entries
+* `--list_code_ranges=<file>` -- list address ranges of decoded instructions (`<start> <end>`, end is exclusive) and areas of code sections which are not decoded on purpose (`<start> <end> ignored` -- functions kept in original code, *ignored_areas.sci*)
 * `--generate_relocations=<file>` -- guess relocations for executable with stripped relocations (aligned 64-bit values pointing into the image) and write them to file (in format of *relocations.csv*)
 * `--add_tracing` -- add `TRACE_LABEL address` macro after labels of instructions
 
@@ -43,6 +45,18 @@ Output files:
 * *output.symrename* -- renaming of symbols which aren't valid in NASM (only dynamically linked Linux executables, see below)
 
 The generated assembler file includes files *srw64inc.inc* (from the *x64-support* subdirectory), *misc.inc* and *extern.inc* (game specific files, they can be empty).
+
+The lists of jump tables and code ranges start with comment lines (`#`), the line `# address bias: 0x...` gives the difference between the listed addresses and the original addresses (position independent Linux executables are placed at a new address, see below).
+
+### Comparison with IDA Pro
+
+The script [tests/compare_ida.sh](tests/compare_ida.sh) compares the jump tables and the decoded code of SRW64 with the analysis of IDA Pro (headless, IDA 9 with IDAPython) -- switches found by IDA which SRW64 converted differently or not at all, jump tables which IDA doesn't know and code in IDA functions which SRW64 didn't decode:
+
+    IDAT=/path/to/ida/idat tests/compare_ida.sh program /tmp/work
+
+It runs SRW64 in the work directory (with `--list_jump_tables` and `--list_code_ranges`, *SR.cfg* and SCI files from the work directory are used), lets IDA analyze the program ([tests/ida_export.py](tests/ida_export.py), the database and exported files are written into the *ida* subdirectory and reused next time) and prints the differences ([tests/compare_ida.py](tests/compare_ida.py)).
+The differences must be checked manually -- IDA is not always right (e.g. its number of cases can be too small for switches without range check), known harmless differences (padding, thunks, dead code after calls of functions which don't return, tables of absolute addresses converted as pointers in data, functions kept in original code) are listed separately.
+*ida_export.py* can also decompile all functions using Hex-Rays (`SRW64_IDA_MODE=decompile`, see the script).
 
 ## Configuration file (SR.cfg)
 

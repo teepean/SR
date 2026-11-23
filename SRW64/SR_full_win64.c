@@ -1162,6 +1162,21 @@ static uint64_t SR_find_table_by_dataflow(uint64_t jump_address, const run_state
     return 0;
 }
 
+// writes line into the list of jump tables (--list_jump_tables)
+static void SR_list_jump_table(uint64_t jump_address, uint64_t table_address, const char *kind, int num_entries, int bound, const uint64_t *targets)
+{
+    int index;
+
+    if (jump_tables_file == NULL) return;
+
+    fprintf(jump_tables_file, "0x%" PRIx64 " 0x%" PRIx64 " %s %i %i", jump_address, table_address, kind, num_entries, (bound > 0)?bound:-1);
+    for (index = 0; index < num_entries; index++)
+    {
+        fprintf(jump_tables_file, " 0x%" PRIx64, targets[index]);
+    }
+    fprintf(jump_tables_file, "\n");
+}
+
 static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, const run_state *state)
 {
     uint_fast32_t tsec, tofs, eofs, esec, etofs;
@@ -1170,15 +1185,19 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
     output_data *output, *output2;
     int32_t value;
     uint64_t target;
+    const char *kind;
     char cLabel[64], cTable[64], cbuf[256];
+    static uint64_t targets[MAX_TABLE_ENTRIES];
 
     is_rva = (state->tbl_kind == TBL_RVA_READY)?1:0;
     is_abs = (state->tbl_kind == TBL_ABS_READY || state->tbl_kind == TBL_ABS_LOADED)?1:0;
     esize = (is_abs)?8:4;
+    kind = (is_abs)?"abs":((is_rva)?"rva":"diff");
 
     if (!SR_get_section_reladr_exact(state->tbl_address, &tsec, &tofs))
     {
         fprintf(stderr, "Warning: jump table outside of sections: 0x%" PRIx64 "\n", state->tbl_address);
+        SR_list_jump_table(section[Entry].start + jmp_offset, state->tbl_address, kind, 0, state->tbl_bound, targets);
         return 0;
     }
 
@@ -1235,7 +1254,10 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
                 target = (is_rva)?(ImageBase + (uint32_t)value):(state->tbl_address + (int64_t)value);
             }
             SR_add_jump_table_edge(section[Entry].start + jmp_offset, target);
+            targets[index] = target;
         }
+
+        SR_list_jump_table(section[Entry].start + jmp_offset, state->tbl_address, kind, index, count, targets);
         return 0;
     }
 
@@ -1317,6 +1339,7 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
 
         SR_add_jump_target(Entry, target, state, -1);
         SR_add_jump_table_edge(section[Entry].start + jmp_offset, target);
+        targets[index] = target;
     }
 
     output = section_output_list_FindEntryEqual(tsec, tofs);
@@ -1324,6 +1347,8 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
     {
         output->has_label = 1;
     }
+
+    SR_list_jump_table(section[Entry].start + jmp_offset, state->tbl_address, kind, index, count, targets);
 
     if (index == 0)
     {
@@ -1949,6 +1974,7 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
                             if (state.tbl_address == 0)
                             {
                                 fprintf(stderr, "Warning: address of jump table not found: 0x%" PRIx64 "\n", section[Entry].start + offset);
+                                SR_list_jump_table(section[Entry].start + offset, 0, "diff", 0, state.tbl_bound, NULL);
                             }
                         }
 

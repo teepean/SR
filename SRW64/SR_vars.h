@@ -79,6 +79,10 @@ EXTERNAL_VARIABLE int list_rva_displacements;
 EXTERNAL_VARIABLE char *rva_displacements_name;
 EXTERNAL_VARIABLE FILE *rva_displacements_file;
 
+EXTERNAL_VARIABLE char *jump_tables_name;
+EXTERNAL_VARIABLE FILE *jump_tables_file;               // list of jumps through jump tables (--list_jump_tables)
+EXTERNAL_VARIABLE char *code_ranges_name;               // list of decoded code (--list_code_ranges)
+
 EXTERNAL_VARIABLE char *generate_relocations_name;
 
 EXTERNAL_VARIABLE int add_tracing_to_code;

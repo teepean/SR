@@ -34,3 +34,6 @@ Scripts:
 * *fixup_elf.py* -- post-link fixups of recompiled Linux executable (COPY relocations moved to the original addresses, program headers of the original executable): `fixup_elf.py <recompiled executable> <name>.imports <name>.phdrs`
 * *mkimplibs.py* -- creates import libraries for the imports used by the generated assembler file
 * *verify_fh4.py* -- compares `__CxxFrameHandler4` data of original and recompiled executable: `verify_fh4.py original.exe recompiled.exe`
+* *compare_ida.sh* -- compares jump tables and decoded code of SRW64 with the analysis of IDA Pro (headless): `IDAT=<path to idat> compare_ida.sh <executable> <work directory>` (exit code 0 = no differences, 1 = differences to check)
+* *ida_export.py* -- IDAPython script for headless IDA (used by *compare_ida.sh*): exports functions, code ranges and switches, or decompiles all functions using Hex-Rays (`SRW64_IDA_MODE=decompile`, more IDA processes can decompile in parallel, each with its own copy of the database)
+* *compare_ida.py* -- compares the lists written by SRW64 (`--list_jump_tables`, `--list_code_ranges`) with the files exported by *ida_export.py*: `compare_ida.py <executable> <jump tables> <code ranges> <IDA export directory> [number of details]`

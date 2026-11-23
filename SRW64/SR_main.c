@@ -302,6 +302,12 @@ static void deinitialize_values(void)
 		rva_displacements_file = NULL;
 	}
 
+	if (jump_tables_file != NULL)
+	{
+		fclose(jump_tables_file);
+		jump_tables_file = NULL;
+	}
+
 	if (invalid_code_fixups_file != NULL)
 	{
 		fclose(invalid_code_fixups_file);
@@ -342,6 +348,9 @@ static void initialize_values(void)
 	list_rva_displacements = 0;
 	rva_displacements_name = NULL;
 	rva_displacements_file = NULL;
+	jump_tables_name = NULL;
+	jump_tables_file = NULL;
+	code_ranges_name = NULL;
 	generate_relocations_name = NULL;
 	add_tracing_to_code = 0;
 
@@ -358,6 +367,66 @@ static void initialize_values(void)
 	ud_set_syntax(&ud_obj, UD_SYN_INTEL);
 }
 
+typedef struct {
+	FILE *fout;
+	uint64_t start;
+} code_ranges_info;
+
+static void write_ignored_range(Word_t Index, int Value, void *data)
+{
+	const code_ranges_info *info = (const code_ranges_info *) data;
+
+	fprintf(info->fout, "0x%" PRIx64 " 0x%" PRIx64 " ignored\n", info->start + Index, info->start + Index + (uint64_t)Value);
+}
+
+// writes address ranges of decoded instructions and of ignored areas in code sections (--list_code_ranges)
+static void write_code_ranges(const char *name)
+{
+	code_ranges_info info;
+	FILE *fout;
+	unsigned int Entry;
+	output_data *output;
+	uint64_t start, end;
+
+	fout = fopen(name, "wt");
+	if (fout == NULL)
+	{
+		fprintf(stderr, "Error: unable to create file: %s\n", name);
+		return;
+	}
+
+	fprintf(fout, "# SRW64 decoded instructions: <start address> <end address (exclusive)> [ignored - area which is not decoded: function kept in original code, ignored_areas.sci]\n");
+	fprintf(fout, "# address bias: 0x%" PRIx64 " (addresses are original addresses + bias)\n", (InputFormat == INPUT_ELF)?ElfLoadBias:0);
+
+	for (Entry = 0; Entry < num_sections; Entry++)
+	{
+		if (section[Entry].type != ST_CODE) continue;
+
+		start = end = 0;
+		for (output = section_output_list_FindEntryFirst(Entry); output != NULL; output = section_output_list_FindEntryHigher(Entry, output->ofs))
+		{
+			if (output->type != OT_INSTRUCTION) continue;
+
+			if (end != 0 && section[Entry].start + output->ofs == end)
+			{
+				end += output->len + 1;
+				continue;
+			}
+
+			if (end != 0) fprintf(fout, "0x%" PRIx64 " 0x%" PRIx64 "\n", start, end);
+			start = section[Entry].start + output->ofs;
+			end = start + output->len + 1;
+		}
+		if (end != 0) fprintf(fout, "0x%" PRIx64 " 0x%" PRIx64 "\n", start, end);
+
+		info.fout = fout;
+		info.start = section[Entry].start;
+		section_ignored_list_ForEach(Entry, &write_ignored_range, &info);
+	}
+
+	fclose(fout);
+}
+
 static void print_usage(void)
 {
 	fprintf(stderr, "Usage: SRW64 [options] <input executable> <output.asm>\n");
@@ -366,6 +435,8 @@ static void print_usage(void)
 	fprintf(stderr, "\t--list_invalid_code_fixups=<file>  list code references to code which are not considered as code entries\n");
 	fprintf(stderr, "\t--list_data_to_code_fixups=<file>  list data references to code\n");
 	fprintf(stderr, "\t--list_rva_displacements=<file>    list instructions with converted image relative displacements\n");
+	fprintf(stderr, "\t--list_jump_tables=<file>          list jumps through jump tables (table address, entries, targets)\n");
+	fprintf(stderr, "\t--list_code_ranges=<file>          list address ranges of decoded instructions\n");
 	fprintf(stderr, "\t--generate_relocations=<file>      guess relocations for executable with stripped relocations\n");
 	fprintf(stderr, "\t--add_tracing                      add TRACE_LABEL macro to labeled instructions\n");
 }
@@ -423,6 +494,14 @@ int main (int argc, char *argv[])
 				list_rva_displacements = 1;
 				rva_displacements_name = &((*argv)[25]);
 			}
+			else if (strncasecmp(*argv, "--list_jump_tables=", 19) == 0)
+			{
+				jump_tables_name = &((*argv)[19]);
+			}
+			else if (strncasecmp(*argv, "--list_code_ranges=", 19) == 0)
+			{
+				code_ranges_name = &((*argv)[19]);
+			}
 			else if (strncasecmp(*argv, "--generate_relocations=", 23) == 0)
 			{
 				generate_relocations_name = &((*argv)[23]);
@@ -477,6 +556,20 @@ int main (int argc, char *argv[])
 	}
 
 	fprintf(stderr, "\tSections in file: %i\n", num_sections);
+
+	if (jump_tables_name != NULL)
+	{
+		jump_tables_file = fopen(jump_tables_name, "wt");
+		if (jump_tables_file == NULL)
+		{
+			fprintf(stderr, "Error: unable to create file: %s\n", jump_tables_name);
+		}
+		else
+		{
+			fprintf(jump_tables_file, "# SRW64 jump tables: <jump address> <table address> <kind: diff|rva|abs> <number of entries> <bound or -1> <targets>\n");
+			fprintf(jump_tables_file, "# address bias: 0x%" PRIx64 " (addresses are original addresses + bias)\n", (InputFormat == INPUT_ELF)?ElfLoadBias:0);
+		}
+	}
 
 #if (OUTPUT_TYPE != OUT_ORIG)
 	write_log_time(stderr);
@@ -590,6 +683,11 @@ int main (int argc, char *argv[])
 		}
 	}
 #endif
+
+	if (code_ranges_name != NULL)
+	{
+		write_code_ranges(code_ranges_name);
+	}
 
 	write_log_time(stderr);
 	fprintf(stderr, "Writing output...\n");
