@@ -118,11 +118,14 @@ Executables without section headers (or with section headers which don't describ
 
 * The generated linker script (*output.ld*) places the sections (named `srw.<original name>`, sections created from program headers are named `srw.load<segment>`) at their original addresses and the recompiled code (section `.text`) at the new address.
 * The original data is included from *output.secNN.bin* (`incbin`) and uninitialized data is written as `resb <size>`, so the generated files stay small also for big executables.
+* Program headers of the original executable which the linker doesn't create (OS specific headers like process parameters of converted executables, notes in data) are written into *output.phdrs*: the generated file contains placeholder notes (the linker creates `PT_NOTE` program headers for them) and the script [tests/fixup_elf.py](tests/fixup_elf.py) changes them into the original headers after linking: `fixup_elf.py program output.phdrs`.
 
 * Only references to code are converted:
   * RIP-relative addresses, calls and jumps,
   * immediate values which are addresses of functions (in `mov`, `cmp` and `push` instructions),
   * jump tables (with offsets relative to table start or with absolute addresses),
+    when the table address isn't loaded in the same block as the jump (e.g. it's loaded before a loop: `lea rdx, [rip+table]` ... `movsxd rax, [rdx+rax*4]; add rax, rdx; jmp rax`), it's found by a data flow analysis of the function (addresses loaded by `lea reg, [rip+table]` and copied by `mov`, propagated along jumps and targets of already converted jump tables) -- `Note: address of jump table found by data flow`;
+    if that fails, the function is searched for `lea` instructions which load the base register (or its copy) and the table is used if its entries are instruction starts in the same function (when more tables are valid, the nearest load before the jump is used) -- `Note: address of jump table found in function` / `Warning: address of jump table not found`,
   * addresses of functions in data and groups of pointers into the same function (tables of labels),
   * addresses of IFUNC resolvers in IRELATIVE relocations (`.rela.plt`).
 * Functions (and their sizes) are taken from the symbol table, so the executable should not be stripped (without symbols, the code is found only from the entry point and from references).
@@ -144,7 +147,7 @@ Statically linked executables: the recompiled program contains the recompiled C 
 Dynamically linked executables use the same shared libraries as the original executable (the dynamic linking is done again by the linker):
 
 * Imported symbols are external symbols in the generated file. Calls of PLT stubs and calls/jumps through GOT are calls/jumps of the symbols, other accesses to GOT use GOT of the new executable (`wrt ..gotpc`, `wrt ..gottpoff`), the original GOT entries get the addresses of the symbols (for original code which is kept).
-* Objects copied into the executable (COPY relocations, e.g. `stdout`, C++ type information) stay at their original addresses: the generated file contains references which make the linker create COPY relocations, and the script [tests/fixcopy_elf.py](tests/fixcopy_elf.py) moves the relocations and the dynamic symbols to the original addresses after linking (the original code which is kept uses the original addresses too). Data relocations with symbols are written as `dq symbol+addend`.
+* Objects copied into the executable (COPY relocations, e.g. `stdout`, C++ type information) stay at their original addresses: the generated file contains references which make the linker create COPY relocations, and the script [tests/fixup_elf.py](tests/fixup_elf.py) moves the relocations and the dynamic symbols to the original addresses after linking (the original code which is kept uses the original addresses too). Data relocations with symbols are written as `dq symbol+addend`.
 * Symbols exported by the original executable are exported again (link with `-E`); `_init`, `_fini`, `.init_array`, `.fini_array` keep their roles (dynamic tags).
 * Symbol names which are valid in NASM get prefix `$` (names like `div` or `abs` aren't keywords then), other names (e.g. names with `+`, `-` or starting with a digit) are written as `srw_sym_<index>` and renamed in the object file using *output.symrename*: `objcopy @output.symrename output.o`.
 * The linker needs the libraries with the imported symbols -- the script [tests/mkstubs_elf.py](tests/mkstubs_elf.py) creates stub libraries from *output.imports* (same names, symbols with the same versions, types and sizes), the real libraries are used at runtime:
@@ -152,7 +155,7 @@ Dynamically linked executables use the same shared libraries as the original exe
         objcopy @output.symrename output.o      # only if output.symrename exists
         mkstubs_elf.py output.imports stubs     # prints: -dynamic-linker <interpreter> [-rpath <path>] <stub libraries>
         ld <printed arguments> -E --eh-frame-hdr -T output.ld output.o -o program
-        fixcopy_elf.py program output.imports   # only if output.imports contains lines "copy"
+        fixup_elf.py program output.imports     # only if output.imports contains lines "copy"
 
 The script [tests/roundtrip_elf.sh](tests/roundtrip_elf.sh) does all steps.
 

@@ -105,6 +105,8 @@ typedef struct _run_state_ {
     table_kind tbl_kind;        // pending jump table
     int tbl_reg;                // register containing value from jump table
     int tbl_basereg;            // register containing image base / table address
+    int tbl_basereg2;           // register containing copy of table address (-1 = none)
+    uint64_t tbl_load_address;  // address of instruction which loads value from jump table
     uint64_t tbl_address;       // jump table address
     int tbl_bound;              // number of jump table entries
     int tbl_uses_bt;            // jump table index was loaded from byte table
@@ -201,12 +203,40 @@ static void SR_add_jump_target(unsigned int Entry, uint64_t address, const run_s
     }
 }
 
+// memory operand without displacement (or with zero displacement - base r13/rbp needs displacement in encoding)
+static int SR_no_displacement(const struct ud_operand *op)
+{
+    switch (op->offset)
+    {
+        case 0: return 1;
+        case 8: return (op->lval.sbyte == 0)?1:0;
+        case 16: return (op->lval.sword == 0)?1:0;
+        case 32: return (op->lval.sdword == 0)?1:0;
+        default: return 0;
+    }
+}
+
+// register contains address of jump table (the base register of the table load or a copy of it - mov rsi, rcx; movsxd rcx, [rcx+rdx*4]; add rcx, rsi)
+static int SR_is_table_base(const run_state *state, int old_lea_mask, int reg)
+{
+    if (reg < 0 || reg == state->tbl_reg) return 0;
+    if (reg == state->tbl_basereg) return 1;
+    if (state->tbl_address != 0)
+    {
+        return ((old_lea_mask & BIT(reg)) && state->lea_target[reg] == state->tbl_address)?1:0;
+    }
+
+    // address of table isn't known (it's searched for at the jump, validated by entries)
+    return (InputFormat == INPUT_ELF)?1:0;
+}
+
 // bound of table index (from cmp/ja), if the index register was checked
-static int SR_index_bound(const run_state *state, const struct ud_operand *op)
+// (state before the instruction - the instruction can overwrite the index register: movsxd rax, [rdx+rax*4])
+static int SR_index_bound(int bound, int bound_mask, const struct ud_operand *op)
 {
     int index;
 
-    if (state->bound < 0) return -1;
+    if (bound < 0) return -1;
 
     index = reg64_index(op->index);
     if (index < 0)
@@ -214,22 +244,22 @@ static int SR_index_bound(const run_state *state, const struct ud_operand *op)
         // jmp [index*8 + table] - index in base register
         index = reg64_index(op->base);
     }
-    if (index < 0 || !(state->bound_mask & BIT(index))) return -1;
+    if (index < 0 || !(bound_mask & BIT(index))) return -1;
 
-    return state->bound;
+    return bound;
 }
 
 // registers written by current instruction
-static int SR_written_registers(void)
+static int SR_written_registers_ud(const ud_t *u)
 {
     const struct ud_operand *op0, *op1;
     int mask, reg;
 
-    op0 = &(ud_obj.operand[0]);
-    op1 = &(ud_obj.operand[1]);
+    op0 = &(u->operand[0]);
+    op1 = &(u->operand[1]);
     mask = 0;
 
-    switch (ud_obj.mnemonic)
+    switch (u->mnemonic)
     {
         // instructions which don't write to first operand
         case UD_Icmp:
@@ -255,7 +285,8 @@ static int SR_written_registers(void)
 
         // instructions with implicit operands
         case UD_Icall:
-            return VOLATILE_MASK;
+            // (System V ABI: rsi and rdi are volatile too)
+            return (InputFormat == INPUT_ELF)?(VOLATILE_MASK | BIT(REG_RSI) | BIT(REG_RDI)):VOLATILE_MASK;
         case UD_Isyscall:
             return BIT(REG_RAX) | BIT(REG_RCX) | BIT(REG_R11);
         case UD_Icpuid:
@@ -347,6 +378,11 @@ static int SR_written_registers(void)
     }
 
     return mask;
+}
+
+static int SR_written_registers(void)
+{
+    return SR_written_registers_ud(&ud_obj);
 }
 
 static void SR_print_mem_disp(char *buf, const struct ud_operand *op, int sign)
@@ -760,6 +796,372 @@ static int SR_is_noret_thunk(uint64_t address)
     return SR_disassemble_find_noret(address + 6 + (int64_t)disp);
 }
 
+// data flow analysis of table addresses in registers (lea reg, [rip+table]) in a function:
+// values are propagated along fallthrough and direct jumps from the function start (all registers unknown),
+// code which is reached only by jump tables (or not at all) is not analyzed
+#define DF_UNKNOWN 0
+#define DF_MAX_INSTRUCTIONS 1000000
+
+enum { DFK_NEXT, DFK_JMP, DFK_JCC, DFK_STOP, DFK_INDIRECT };
+
+// targets of converted jump tables (edges for data flow analysis)
+static struct {
+    unsigned int num, max;
+    uint64_t *from, *to;
+} jt_edges;
+
+static void SR_add_jump_table_edge(uint64_t from, uint64_t to)
+{
+    if (jt_edges.num == jt_edges.max)
+    {
+        unsigned int max;
+        uint64_t *new_from, *new_to;
+
+        max = (jt_edges.max == 0)?4096:2 * jt_edges.max;
+        new_from = (uint64_t *) realloc(jt_edges.from, max * sizeof(uint64_t));
+        if (new_from == NULL) return;
+        jt_edges.from = new_from;
+        new_to = (uint64_t *) realloc(jt_edges.to, max * sizeof(uint64_t));
+        if (new_to == NULL) return;
+        jt_edges.to = new_to;
+        jt_edges.max = max;
+    }
+
+    jt_edges.from[jt_edges.num] = from;
+    jt_edges.to[jt_edges.num] = to;
+    jt_edges.num++;
+}
+
+typedef struct {
+    uint64_t address;
+    uint64_t target;            // jump target / table address loaded by lea
+    int written;                // written registers
+    int8_t kind;
+    int8_t lea_reg;             // lea r64, [rip+table]
+    int8_t mov_dst;             // mov r64, r64
+    int8_t mov_src;
+} df_instruction;
+
+static struct {
+    uint64_t begin, end;        // analyzed function
+    unsigned int num_edges;     // number of jump table edges in function
+    unsigned int num;           // number of instructions
+    df_instruction *insn;
+    uint64_t *values;           // register values at instruction start (16 per instruction)
+    uint8_t *reached;
+} df_function;
+
+static int SR_df_find(uint64_t address)
+{
+    int low, high, middle;
+
+    low = 0;
+    high = (int)df_function.num - 1;
+    while (low <= high)
+    {
+        middle = (low + high) / 2;
+        if (df_function.insn[middle].address == address) return middle;
+        if (df_function.insn[middle].address < address) low = middle + 1; else high = middle - 1;
+    }
+    return -1;
+}
+
+// merges values into state of instruction (returns 1 if the state changed)
+static int SR_df_merge(int index, const uint64_t *values)
+{
+    uint64_t *dst;
+    int reg, changed;
+
+    dst = &(df_function.values[16 * (unsigned int)index]);
+    if (!df_function.reached[index])
+    {
+        memcpy(dst, values, 16 * sizeof(uint64_t));
+        df_function.reached[index] = 1;
+        return 1;
+    }
+
+    changed = 0;
+    for (reg = 0; reg < 16; reg++)
+    {
+        if (dst[reg] != values[reg] && dst[reg] != DF_UNKNOWN)
+        {
+            dst[reg] = DF_UNKNOWN;
+            changed = 1;
+        }
+    }
+    return changed;
+}
+
+static int SR_df_analyze_function(uint64_t begin, uint64_t end)
+{
+    uint_fast32_t SecNum, RelAdr, TblSec, TblOfs;
+    unsigned int max_num, length, top, *stack, num_edges, edge;
+    uint8_t *on_stack;
+    uint64_t address, values[16];
+    df_instruction *insn;
+    int index, reg, next;
+    ud_t ud_df;
+
+    num_edges = 0;
+    for (edge = 0; edge < jt_edges.num; edge++)
+    {
+        if (jt_edges.from[edge] >= begin && jt_edges.from[edge] < end) num_edges++;
+    }
+
+    if (df_function.insn != NULL && df_function.begin == begin && df_function.end == end && df_function.num_edges == num_edges) return 1;
+
+    free(df_function.insn);
+    free(df_function.values);
+    free(df_function.reached);
+    memset(&df_function, 0, sizeof(df_function));
+
+    if (!SR_get_section_reladr_exact(begin, &SecNum, &RelAdr) || section[SecNum].type != ST_CODE) return 0;
+    if (end > section[SecNum].start + section[SecNum].size_in_file) end = section[SecNum].start + section[SecNum].size_in_file;
+    if (end <= begin) return 0;
+
+    // instructions (linear decoding)
+    ud_init(&ud_df);
+    ud_set_mode(&ud_df, 64);
+    ud_set_vendor(&ud_df, UD_VENDOR_ANY);
+    ud_set_input_buffer(&ud_df, &(section[SecNum].adr[RelAdr]), (size_t)(end - begin));
+    ud_set_pc(&ud_df, begin);
+
+    max_num = 0;
+    address = begin;
+    while (address < end && (length = ud_decode(&ud_df)) != 0)
+    {
+        if (ud_df.mnemonic == UD_Iinvalid) break;
+        if (df_function.num >= DF_MAX_INSTRUCTIONS) return 0;
+
+        if (df_function.num == max_num)
+        {
+            max_num = (max_num == 0)?1024:2 * max_num;
+            insn = (df_instruction *) realloc(df_function.insn, max_num * sizeof(df_instruction));
+            if (insn == NULL) return 0;
+            df_function.insn = insn;
+        }
+
+        insn = &(df_function.insn[df_function.num]);
+        df_function.num++;
+
+        insn->address = address;
+        insn->target = 0;
+        insn->written = SR_written_registers_ud(&ud_df);
+        insn->kind = DFK_NEXT;
+        insn->lea_reg = -1;
+        insn->mov_dst = -1;
+        insn->mov_src = -1;
+
+        switch (ud_df.mnemonic)
+        {
+            case UD_Ijmp:
+                if (ud_df.operand[0].type == UD_OP_JIMM)
+                {
+                    insn->kind = DFK_JMP;
+                    insn->target = ud_df.pc + (int64_t)((ud_df.operand[0].size == 32)?ud_df.operand[0].lval.sdword:ud_df.operand[0].lval.sbyte);
+                }
+                else
+                {
+                    // targets from converted jump tables
+                    insn->kind = DFK_INDIRECT;
+                }
+                break;
+            case UD_Ijo:
+            case UD_Ijno:
+            case UD_Ijb:
+            case UD_Ijae:
+            case UD_Ijz:
+            case UD_Ijnz:
+            case UD_Ijbe:
+            case UD_Ija:
+            case UD_Ijs:
+            case UD_Ijns:
+            case UD_Ijp:
+            case UD_Ijnp:
+            case UD_Ijl:
+            case UD_Ijge:
+            case UD_Ijle:
+            case UD_Ijg:
+            case UD_Ijcxz:
+            case UD_Ijecxz:
+            case UD_Ijrcxz:
+            case UD_Iloop:
+            case UD_Iloope:
+            case UD_Iloopne:
+                if (ud_df.operand[0].type == UD_OP_JIMM)
+                {
+                    insn->kind = DFK_JCC;
+                    insn->target = ud_df.pc + (int64_t)((ud_df.operand[0].size == 32)?ud_df.operand[0].lval.sdword:ud_df.operand[0].lval.sbyte);
+                }
+                break;
+            case UD_Iret:
+            case UD_Iretf:
+            case UD_Iud2:
+            case UD_Ihlt:
+            case UD_Iint3:
+                insn->kind = DFK_STOP;
+                break;
+            case UD_Ilea:
+                if (ud_df.operand[0].type == UD_OP_REG && ud_df.operand[0].size == 64 &&
+                    ud_df.operand[1].type == UD_OP_MEM && ud_df.operand[1].base == UD_R_RIP && ud_df.operand[1].index == UD_NONE
+                   )
+                {
+                    uint64_t target = ud_df.pc + (int64_t)ud_df.operand[1].lval.sdword;
+
+                    if (SR_get_section_reladr_exact(target, &TblSec, &TblOfs) && section[TblSec].type != ST_CODE)
+                    {
+                        insn->lea_reg = (int8_t)reg64_index(ud_df.operand[0].base);
+                        insn->target = target;
+                    }
+                }
+                break;
+            case UD_Imov:
+                if (ud_df.operand[0].type == UD_OP_REG && ud_df.operand[0].size == 64 &&
+                    ud_df.operand[1].type == UD_OP_REG && ud_df.operand[1].size == 64
+                   )
+                {
+                    insn->mov_dst = (int8_t)reg64_index(ud_df.operand[0].base);
+                    insn->mov_src = (int8_t)reg64_index(ud_df.operand[1].base);
+                }
+                break;
+            default:
+                break;
+        }
+
+        address += length;
+    }
+
+    if (df_function.num == 0) return 0;
+
+    df_function.begin = begin;
+    df_function.end = end;
+    df_function.num_edges = num_edges;
+    df_function.values = (uint64_t *) malloc(16 * sizeof(uint64_t) * df_function.num);
+    df_function.reached = (uint8_t *) calloc(df_function.num, 1);
+    stack = (unsigned int *) malloc(sizeof(unsigned int) * df_function.num);
+    on_stack = (uint8_t *) calloc(df_function.num, 1);
+    if (df_function.values == NULL || df_function.reached == NULL || stack == NULL || on_stack == NULL)
+    {
+        free(stack);
+        free(on_stack);
+        free(df_function.insn);
+        free(df_function.values);
+        free(df_function.reached);
+        memset(&df_function, 0, sizeof(df_function));
+        return 0;
+    }
+
+    // propagation (worklist)
+    for (reg = 0; reg < 16; reg++) values[reg] = DF_UNKNOWN;
+    SR_df_merge(0, values);
+    stack[0] = 0;
+    on_stack[0] = 1;
+    top = 1;
+
+    while (top != 0)
+    {
+        top--;
+        index = (int)stack[top];
+        on_stack[index] = 0;
+        insn = &(df_function.insn[index]);
+
+        memcpy(values, &(df_function.values[16 * (unsigned int)index]), sizeof(values));
+        if (insn->mov_dst >= 0 && insn->mov_src >= 0)
+        {
+            uint64_t value = values[(int)insn->mov_src];
+
+            for (reg = 0; reg < 16; reg++) if (insn->written & BIT(reg)) values[reg] = DF_UNKNOWN;
+            values[(int)insn->mov_dst] = value;
+        }
+        else
+        {
+            for (reg = 0; reg < 16; reg++) if (insn->written & BIT(reg)) values[reg] = DF_UNKNOWN;
+            if (insn->lea_reg >= 0) values[(int)insn->lea_reg] = insn->target;
+        }
+
+        for (next = 0; next < 2; next++)
+        {
+            int succ;
+
+            if (next == 0)
+            {
+                if (insn->kind == DFK_JMP || insn->kind == DFK_STOP || insn->kind == DFK_INDIRECT) continue;
+                succ = index + 1;
+                if (succ >= (int)df_function.num) continue;
+            }
+            else
+            {
+                if (insn->kind != DFK_JMP && insn->kind != DFK_JCC) continue;
+                succ = SR_df_find(insn->target);
+                if (succ < 0) continue;
+            }
+
+            if (SR_df_merge(succ, values) && !on_stack[succ])
+            {
+                stack[top++] = (unsigned int)succ;
+                on_stack[succ] = 1;
+            }
+        }
+
+        if (insn->kind == DFK_INDIRECT && num_edges != 0)
+        {
+            for (edge = 0; edge < jt_edges.num; edge++)
+            {
+                int succ;
+
+                if (jt_edges.from[edge] != insn->address) continue;
+                succ = SR_df_find(jt_edges.to[edge]);
+                if (succ < 0) continue;
+
+                if (SR_df_merge(succ, values) && !on_stack[succ])
+                {
+                    stack[top++] = (unsigned int)succ;
+                    on_stack[succ] = 1;
+                }
+            }
+        }
+    }
+
+    free(stack);
+    free(on_stack);
+    return 1;
+}
+
+// address of jump table relative to its start (from data flow analysis), 0 = unknown
+static uint64_t SR_find_table_by_dataflow(uint64_t jump_address, const run_state *state)
+{
+    const pdata_entry *function;
+    uint64_t value;
+    int index, k;
+
+    function = SR_find_pdata((uint_fast32_t)(jump_address - ImageBase));
+    if (function == NULL) return 0;
+    if (!SR_df_analyze_function(ImageBase + function->begin, ImageBase + function->end)) return 0;
+
+    index = SR_df_find(state->tbl_load_address);
+    if (index < 0 || !df_function.reached[index]) return 0;
+
+    for (k = 0; k < 2; k++)
+    {
+        int reg = (k == 0)?state->tbl_basereg:state->tbl_basereg2;
+
+        if (reg < 0) continue;
+        value = df_function.values[16 * (unsigned int)index + reg];
+        if (value == DF_UNKNOWN) continue;
+
+        if (!SR_elf_jump_table_valid(value, jump_address, state->tbl_bound))
+        {
+            fprintf(stderr, "Warning: jump table found by data flow is not valid: 0x%" PRIx64 " - 0x%" PRIx64 "\n", jump_address, value);
+            return 0;
+        }
+
+        fprintf(stderr, "Note: address of jump table found by data flow: 0x%" PRIx64 " - 0x%" PRIx64 "\n", jump_address, value);
+        return value;
+    }
+
+    return 0;
+}
+
 static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, const run_state *state)
 {
     uint_fast32_t tsec, tofs, eofs, esec, etofs;
@@ -806,7 +1208,36 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
 
     // table was already converted (table used by more jumps) or contains relocations (or code pointers found in data)
     output = section_output_list_FindEntryEqual(tsec, tofs);
-    if (output != NULL && output->type == OT_OFFSET) return 0;
+    if (output != NULL && output->type == OT_OFFSET)
+    {
+        // targets of converted table (for data flow analysis)
+        for (index = 0; index < max_count; index++)
+        {
+            eofs = tofs + esize * index;
+            if (eofs + esize > section[tsec].size) break;
+
+            output = section_output_list_FindEntryEqual(tsec, eofs);
+            if (output == NULL || output->type != OT_OFFSET || output->str == NULL || output->len != (uint_fast32_t)(esize - 1)) break;
+            if (index > 0 && output->has_label) break;
+            if (!is_abs && !is_rva)
+            {
+                size_t len1 = strlen(output->str), len2 = strlen(cTable);
+                if (len1 < len2 + 3 || strcmp(output->str + len1 - len2, cTable) != 0 || output->str[len1 - len2 - 2] != '-') break;
+            }
+
+            if (is_abs)
+            {
+                memcpy(&target, &(section[tsec].adr[eofs]), 8);
+            }
+            else
+            {
+                memcpy(&value, &(section[tsec].adr[eofs]), 4);
+                target = (is_rva)?(ImageBase + (uint32_t)value):(state->tbl_address + (int64_t)value);
+            }
+            SR_add_jump_table_edge(section[Entry].start + jmp_offset, target);
+        }
+        return 0;
+    }
 
     for (index = 0; index < max_count; index++)
     {
@@ -885,6 +1316,7 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
         output->str = strdup(cbuf);
 
         SR_add_jump_target(Entry, target, state, -1);
+        SR_add_jump_table_edge(section[Entry].start + jmp_offset, target);
     }
 
     output = section_output_list_FindEntryEqual(tsec, tofs);
@@ -908,7 +1340,7 @@ static int SR_process_jump_table(unsigned int Entry, uint_fast32_t jmp_offset, c
 static void SR_update_run_state(run_state *state, const memory_info *mi)
 {
     const struct ud_operand *op0, *op1;
-    int written, r0, r1, base, was_cmp, old_ib_mask, old_lea_mask, old_bound_mask, table_written, table_kept;
+    int written, r0, r1, base, was_cmp, old_ib_mask, old_lea_mask, old_bound_mask, old_bound, table_written, table_kept;
     int64_t was_cmp_imm;
 
     op0 = &(ud_obj.operand[0]);
@@ -921,6 +1353,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
     old_ib_mask = state->ib_mask;
     old_lea_mask = state->lea_mask;
     old_bound_mask = state->bound_mask;
+    old_bound = state->bound;
 
     r0 = (op0->type == UD_OP_REG)?reg_index(op0->base):-1;
     r1 = (op1->type == UD_OP_REG)?reg_index(op1->base):-1;
@@ -947,7 +1380,15 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
         state->bound = -1;
     }
 
-    table_written = (state->tbl_kind != TBL_NONE && (written & (BIT(state->tbl_reg) | BIT(state->tbl_basereg))))?1:0;
+    // (when the jump target is computed, the base register isn't needed anymore: add rsi, rdx; mov edx, [rbp-X]; jmp rsi)
+    if (state->tbl_kind == TBL_RVA_READY || state->tbl_kind == TBL_DIFF_READY)
+    {
+        table_written = (written & BIT(state->tbl_reg))?1:0;
+    }
+    else
+    {
+        table_written = (state->tbl_kind != TBL_NONE && (written & (BIT(state->tbl_reg) | BIT(state->tbl_basereg))))?1:0;
+    }
     table_kept = 0;
 
     if (state->bt_valid && (written & BIT(state->bt_reg)))
@@ -984,6 +1425,22 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
             }
             break;
 
+        case UD_Iand:
+            // and reg, 2^n - 1 - the register contains index of table with 2^n entries
+            if (r0 >= 0 && op1->type == UD_OP_IMM && op0->size >= 32)
+            {
+                uint64_t mask;
+
+                mask = (op1->size == 8)?(uint64_t)(int64_t)op1->lval.sbyte:((op1->size == 16)?(uint64_t)(int64_t)op1->lval.sword:(uint64_t)(int64_t)op1->lval.sdword);
+                if (op0->size == 32) mask &= 0xffffffff;
+                if (mask != 0 && mask < MAX_TABLE_ENTRIES && (mask & (mask + 1)) == 0)
+                {
+                    state->bound = (int)(mask + 1);
+                    state->bound_mask = BIT(r0);
+                }
+            }
+            break;
+
         case UD_Ija:
             if (was_cmp)
             {
@@ -1012,13 +1469,15 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                     state->lea_mask |= BIT(r0);
                     state->lea_target[r0] = mi->target;
                 }
-                else if (mi->kind == MEMK_NONE && state->tbl_kind == TBL_DIFF_LOADED && op1->offset == 0 && op1->scale <= 1 &&
-                         ((reg64_index(op1->base) == state->tbl_reg && reg64_index(op1->index) == state->tbl_basereg) ||
-                          (reg64_index(op1->base) == state->tbl_basereg && reg64_index(op1->index) == state->tbl_reg)
+                else if (mi->kind == MEMK_NONE && state->tbl_kind == TBL_DIFF_LOADED && SR_no_displacement(op1) && op1->scale <= 1 &&
+                         ((reg64_index(op1->base) == state->tbl_reg && SR_is_table_base(state, old_lea_mask, reg64_index(op1->index))) ||
+                          (reg64_index(op1->index) == state->tbl_reg && SR_is_table_base(state, old_lea_mask, reg64_index(op1->base)))
                          )
                         )
                 {
                     // lea r64, [table + value]
+                    base = (reg64_index(op1->base) == state->tbl_reg)?reg64_index(op1->index):reg64_index(op1->base);
+                    if (base != state->tbl_basereg) state->tbl_basereg2 = base;
                     state->tbl_kind = TBL_DIFF_READY;
                     state->tbl_reg = r0;
                     table_kept = 1;
@@ -1044,7 +1503,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                 state->tbl_reg = r0;
                 state->tbl_basereg = r0;
                 state->tbl_address = (uint64_t)(int64_t)op1->lval.sdword;
-                state->tbl_bound = SR_index_bound(state, op1);
+                state->tbl_bound = SR_index_bound(old_bound, old_bound_mask, op1);
                 state->tbl_uses_bt = 0;
                 table_kept = 1;
             }
@@ -1055,7 +1514,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                 state->tbl_reg = r0;
                 state->tbl_basereg = (reg64_index(op1->base) >= 0)?reg64_index(op1->base):r0;
                 state->tbl_address = mi->target;
-                state->tbl_bound = SR_index_bound(state, op1);
+                state->tbl_bound = SR_index_bound(old_bound, old_bound_mask, op1);
                 state->tbl_uses_bt = (state->bt_valid && reg64_index(op1->index) == state->bt_reg)?1:0;
                 table_kept = 1;
             }
@@ -1066,14 +1525,29 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
             {
                 base = reg64_index(op1->base);
 
-                if (mi->kind == MEMK_NONE && op1->offset == 0 && base >= 0 && (old_lea_mask & BIT(base)))
+                if (mi->kind == MEMK_NONE && SR_no_displacement(op1) && base >= 0 && (old_lea_mask & BIT(base)))
                 {
                     // movsxd r64, [table + index*4]
                     state->tbl_kind = TBL_DIFF_LOADED;
                     state->tbl_reg = r0;
                     state->tbl_basereg = base;
+                    state->tbl_basereg2 = -1;
+                    state->tbl_load_address = ud_insn_off(&ud_obj);
                     state->tbl_address = state->lea_target[base];
-                    state->tbl_bound = SR_index_bound(state, op1);
+                    state->tbl_bound = SR_index_bound(old_bound, old_bound_mask, op1);
+                    state->tbl_uses_bt = 0;
+                    table_kept = 1;
+                }
+                else if (InputFormat == INPUT_ELF && mi->kind == MEMK_NONE && SR_no_displacement(op1) && base >= 0 && reg64_index(op1->index) >= 0)
+                {
+                    // movsxd r64, [table + index*4] - table address isn't known in this run (e.g. table address loaded before loop)
+                    state->tbl_kind = TBL_DIFF_LOADED;
+                    state->tbl_reg = r0;
+                    state->tbl_basereg = base;
+                    state->tbl_basereg2 = -1;
+                    state->tbl_load_address = ud_insn_off(&ud_obj);
+                    state->tbl_address = 0;
+                    state->tbl_bound = SR_index_bound(old_bound, old_bound_mask, op1);
                     state->tbl_uses_bt = 0;
                     table_kept = 1;
                 }
@@ -1084,7 +1558,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                     state->tbl_reg = r0;
                     state->tbl_basereg = (base >= 0)?base:r0;
                     state->tbl_address = mi->target;
-                    state->tbl_bound = SR_index_bound(state, op1);
+                    state->tbl_bound = SR_index_bound(old_bound, old_bound_mask, op1);
                     state->tbl_uses_bt = (state->bt_valid && reg64_index(op1->index) == state->bt_reg)?1:0;
                     table_kept = 1;
                 }
@@ -1098,7 +1572,7 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                 state->bt_valid = 1;
                 state->bt_reg = r0;
                 state->bt_address = mi->target;
-                state->bt_bound = SR_index_bound(state, op1);
+                state->bt_bound = SR_index_bound(old_bound, old_bound_mask, op1);
             }
             break;
 
@@ -1121,13 +1595,15 @@ static void SR_update_run_state(run_state *state, const memory_info *mi)
                 }
                 else if (state->tbl_kind == TBL_DIFF_LOADED)
                 {
-                    if (r0 == state->tbl_reg && r1 == state->tbl_basereg)
+                    if (r0 == state->tbl_reg && SR_is_table_base(state, old_lea_mask, r1))
                     {
+                        if (r1 != state->tbl_basereg) state->tbl_basereg2 = r1;
                         state->tbl_kind = TBL_DIFF_READY;
                         table_kept = 1;
                     }
-                    else if (r1 == state->tbl_reg && r0 == state->tbl_basereg)
+                    else if (r1 == state->tbl_reg && SR_is_table_base(state, old_lea_mask, r0))
                     {
+                        if (r0 != state->tbl_basereg) state->tbl_basereg2 = r0;
                         state->tbl_kind = TBL_DIFF_READY;
                         state->tbl_reg = r0;
                         table_kept = 1;
@@ -1462,8 +1938,25 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
                         reg_index(ud_obj.operand[0].base) == state.tbl_reg
                        )
                     {
-                        ret = SR_process_jump_table(Entry, offset, &state);
-                        if (ret) return ret;
+                        if (state.tbl_kind == TBL_DIFF_READY && state.tbl_address == 0)
+                        {
+                            // address of table: data flow analysis of the function, or lea base, [rip+table] somewhere in the function (validated by entries)
+                            state.tbl_address = SR_find_table_by_dataflow(section[Entry].start + offset, &state);
+                            if (state.tbl_address == 0)
+                            {
+                                state.tbl_address = SR_elf_find_table_address(section[Entry].start + offset, state.tbl_basereg, state.tbl_basereg2, state.tbl_bound);
+                            }
+                            if (state.tbl_address == 0)
+                            {
+                                fprintf(stderr, "Warning: address of jump table not found: 0x%" PRIx64 "\n", section[Entry].start + offset);
+                            }
+                        }
+
+                        if (state.tbl_kind != TBL_DIFF_READY || state.tbl_address != 0)
+                        {
+                            ret = SR_process_jump_table(Entry, offset, &state);
+                            if (ret) return ret;
+                        }
                     }
                     else if (ud_obj.operand[0].type == UD_OP_MEM &&
                              detect_jump_tables &&
@@ -1481,7 +1974,7 @@ int SR_disassemble_offset_win64(unsigned int Entry, uint_fast32_t offset)
                         table_state = state;
                         table_state.tbl_kind = TBL_ABS_READY;
                         table_state.tbl_address = (uint64_t)(int64_t)ud_obj.operand[0].lval.sdword;
-                        table_state.tbl_bound = SR_index_bound(&state, &(ud_obj.operand[0]));
+                        table_state.tbl_bound = SR_index_bound(state.bound, state.bound_mask, &(ud_obj.operand[0]));
                         table_state.tbl_uses_bt = 0;
 
                         ret = SR_process_jump_table(Entry, offset, &table_state);

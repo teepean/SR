@@ -31,6 +31,6 @@ Scripts:
 * *roundtrip_win64.sh* -- recompiles any 64-bit Windows executable into new Windows executable: `roundtrip_win64.sh <executable> <work directory> [console|windows]`
 * *roundtrip_elf.sh* -- recompiles 64-bit Linux executable (statically or dynamically linked) into new Linux executable: `roundtrip_elf.sh <executable> <work directory>`
 * *mkstubs_elf.py* -- creates stub libraries for linking of recompiled dynamically linked Linux executable: `mkstubs_elf.py <name>.imports <directory>` (prints linker arguments)
-* *fixcopy_elf.py* -- moves COPY relocations of recompiled dynamically linked Linux executable to the original addresses: `fixcopy_elf.py <recompiled executable> <name>.imports`
+* *fixup_elf.py* -- post-link fixups of recompiled Linux executable (COPY relocations moved to the original addresses, program headers of the original executable): `fixup_elf.py <recompiled executable> <name>.imports <name>.phdrs`
 * *mkimplibs.py* -- creates import libraries for the imports used by the generated assembler file
 * *verify_fh4.py* -- compares `__CxxFrameHandler4` data of original and recompiled executable: `verify_fh4.py original.exe recompiled.exe`

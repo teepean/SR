@@ -1022,7 +1022,7 @@ void SR_elf_dyn_write_copy_references(FILE *fout)
     if (num_copies == 0) return;
 
     fprintf(fout, "\n; references which make the linker create COPY relocations (never executed)\n");
-    fprintf(fout, "; the relocations are moved to the original addresses after linking (fixcopy_elf.py)\n");
+    fprintf(fout, "; the relocations are moved to the original addresses after linking (fixup_elf.py)\n");
     fprintf(fout, "section srw.copyref progbits alloc exec nowrite align=16\n");
     for (index = 0; index < num_copies; index++)
     {

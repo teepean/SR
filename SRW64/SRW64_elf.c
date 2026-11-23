@@ -325,6 +325,16 @@ typedef struct _elf_region_ {
 } elf_region;
 
 static uint8_t *elf_segment_memory = NULL;
+
+// program headers of original executable which the linker doesn't create (e.g. OS specific headers, notes in data)
+// - placeholder notes are written, the post-link script (fixup_elf.py) changes them to the original headers
+typedef struct _elf_extra_phdr_ {
+    uint32_t type, flags;
+    uint64_t vaddr, filesz, memsz, align;
+} elf_extra_phdr;
+
+static elf_extra_phdr elf_extra_phdrs[16];
+static unsigned int elf_num_extra_phdrs = 0;
 static elf_region elf_dropped[64];          // sections which are not part of output (notes, dynamic linking information)
 static unsigned int elf_num_dropped = 0;
 
@@ -1015,6 +1025,33 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
     // parts of loaded segments which are not described by section headers (e.g. converted executables)
     if (elf_add_segment_sections(file, file_size, header, segments, &max_section_end, is_dynamic)) return -1;
 
+    // program headers which must be created again (data is in output)
+    elf_num_extra_phdrs = 0;
+    for (index = 0; index < header->e_phnum; index++)
+    {
+        const ELF64_Phdr *ph = &(segments[index]);
+        uint_fast32_t SecNum, RelAdr;
+        int keep;
+
+        keep = (ph->p_type == 4 /* PT_NOTE */ ||
+                (ph->p_type >= UINT32_C(0x60000000) && ph->p_type <= UINT32_C(0x6fffffff) && !(ph->p_type >= UINT32_C(0x6474e550) && ph->p_type <= UINT32_C(0x6474e553))))?1:0;
+        if (!keep || elf_num_extra_phdrs >= 16) continue;
+
+        // data must be in output
+        if (!SR_get_section_reladr_exact(ph->p_vaddr + ElfLoadBias, &SecNum, &RelAdr)) continue;
+        if (RelAdr + ph->p_memsz > section[SecNum].size) continue;
+
+        elf_extra_phdrs[elf_num_extra_phdrs].type = ph->p_type;
+        elf_extra_phdrs[elf_num_extra_phdrs].flags = ph->p_flags;
+        elf_extra_phdrs[elf_num_extra_phdrs].vaddr = ph->p_vaddr + ElfLoadBias;
+        elf_extra_phdrs[elf_num_extra_phdrs].filesz = ph->p_filesz;
+        elf_extra_phdrs[elf_num_extra_phdrs].memsz = ph->p_memsz;
+        elf_extra_phdrs[elf_num_extra_phdrs].align = ph->p_align;
+        elf_num_extra_phdrs++;
+
+        fprintf(stderr, "\tProgram header 0x%x at 0x%" PRIx64 " (size 0x%" PRIx64 ") is created after linking (fixup_elf.py)\n", ph->p_type, ph->p_vaddr + ElfLoadBias, ph->p_memsz);
+    }
+
     // address of recompiled code
     CodeBase = ((max_section_end + UINT64_C(0xfffff)) & ~UINT64_C(0xfffff)) + UINT64_C(0x100000);
 
@@ -1299,6 +1336,20 @@ static void elf_sort_absolute(void)
     elf_absolute_count = count;
 }
 
+// placeholder notes for program headers which are created after linking
+void SR_elf_write_phdr_notes(FILE *fout)
+{
+    unsigned int index;
+
+    for (index = 0; index < elf_num_extra_phdrs; index++)
+    {
+        // (different alignment of adjacent notes - the linker creates separate program headers)
+        fprintf(fout, "\n; placeholder for program header 0x%x (changed by fixup_elf.py after linking)\n", elf_extra_phdrs[index].type);
+        fprintf(fout, "section .note.srw_phdr%u note alloc noexec nowrite align=%u\n", index, (index & 1)?8:4);
+        fprintf(fout, "dd 4, 4, 0x%x\ndb \"SRW\", 0\ndd 0\n", 0x53525700 + index);
+    }
+}
+
 void SR_elf_write_externs(FILE *fout)
 {
     unsigned int index;
@@ -1420,6 +1471,126 @@ static int elf_prescan_functions(void)
     fprintf(stderr, "\tAddresses in data referenced by code: %u\n", refs);
 
     return 0;
+}
+
+// checks if the table (entries relative to table start) can be the jump table of jump at given address:
+// the entries (bound or at least 2) are instruction starts in the same function
+int SR_elf_jump_table_valid(uint64_t table, uint64_t jump_address, int bound)
+{
+    const pdata_entry *function, *target_function;
+    uint_fast32_t TblSec, TblOfs;
+    int count, valid;
+
+    function = SR_find_pdata((uint_fast32_t)(jump_address - ImageBase));
+    if (function == NULL) return 0;
+    if (!SR_get_section_reladr_exact(table, &TblSec, &TblOfs) || section[TblSec].type == ST_CODE) return 0;
+
+    valid = 0;
+    for (count = 0; count < ((bound > 0)?bound:MAX_TABLE_SCAN); count++)
+    {
+        int32_t value;
+        uint64_t target;
+
+        if (TblOfs + 4 * (uint_fast32_t)(count + 1) > section[TblSec].size_in_file) break;
+        memcpy(&value, &(section[TblSec].adr[TblOfs + 4 * count]), 4);
+        target = table + (int64_t)value;
+
+        target_function = SR_find_pdata((uint_fast32_t)(target - ImageBase));
+        if (target_function == NULL || target_function->primary != function->primary || !SR_elf_is_instruction_start(target)) break;
+        valid++;
+    }
+
+    return ((bound > 0)?(valid == bound):(valid >= 2))?1:0;
+}
+
+// finds address of jump table (entries relative to table start) used by jump at given address (when the data flow analysis didn't find it):
+// candidates are addresses loaded by lea base, [rip+table] in the function (base = base_register or base_register2 - copy of table address),
+// the table must contain valid entries (targets in the same function at instruction starts),
+// returns 0 if the table isn't found (or isn't unique)
+uint64_t SR_elf_find_table_address(uint64_t jump_address, int base_register, int base_register2, int bound)
+{
+    const pdata_entry *function;
+    uint_fast32_t SecNum, RelAdr, TblSec, TblOfs;
+    uint64_t begin, end, address, candidates[256], lea_before[256], found, found_lea;
+    unsigned int num_candidates, num_valid, index, length;
+    ud_t ud_tmp;
+
+    function = SR_find_pdata((uint_fast32_t)(jump_address - ImageBase));
+    if (function == NULL) return 0;
+
+    begin = ImageBase + function->begin;
+    end = ImageBase + function->end;
+    if (!SR_get_section_reladr_exact(begin, &SecNum, &RelAdr) || section[SecNum].type != ST_CODE) return 0;
+    if (end > section[SecNum].start + section[SecNum].size_in_file) end = section[SecNum].start + section[SecNum].size_in_file;
+
+    // candidates
+    ud_init(&ud_tmp);
+    ud_set_mode(&ud_tmp, 64);
+    ud_set_vendor(&ud_tmp, UD_VENDOR_ANY);
+    ud_set_input_buffer(&ud_tmp, &(section[SecNum].adr[RelAdr]), (size_t)(end - begin));
+    ud_set_pc(&ud_tmp, begin);
+
+    num_candidates = 0;
+    address = begin;
+    while (address < end && (length = ud_decode(&ud_tmp)) != 0)
+    {
+        if (ud_tmp.mnemonic == UD_Iinvalid) break;
+
+        if (ud_tmp.mnemonic == UD_Ilea && ud_tmp.operand[0].type == UD_OP_REG &&
+            ud_tmp.operand[0].base >= UD_R_RAX && ud_tmp.operand[0].base <= UD_R_R15 &&
+            ((int)(ud_tmp.operand[0].base - UD_R_RAX) == base_register || (int)(ud_tmp.operand[0].base - UD_R_RAX) == base_register2) &&
+            ud_tmp.operand[1].type == UD_OP_MEM && ud_tmp.operand[1].base == UD_R_RIP && ud_tmp.operand[1].index == UD_NONE)
+        {
+            uint64_t target = address + length + (int64_t)ud_tmp.operand[1].lval.sdword;
+
+            if (SR_get_section_reladr_exact(target, &TblSec, &TblOfs) && section[TblSec].type != ST_CODE)
+            {
+                for (index = 0; index < num_candidates; index++)
+                {
+                    if (candidates[index] == target) break;
+                }
+                if (index == num_candidates && num_candidates < 256)
+                {
+                    candidates[num_candidates] = target;
+                    lea_before[num_candidates] = 0;
+                    num_candidates++;
+                }
+
+                // the nearest load of the table before the jump
+                if (index < 256 && address < jump_address && address > lea_before[index]) lea_before[index] = address;
+            }
+        }
+
+        address += length;
+    }
+
+    // validation of candidates
+    // (more tables can be valid - e.g. more switches with the same values: the table which is loaded the nearest before the jump is used)
+    found = 0;
+    found_lea = 0;
+    num_valid = 0;
+    for (index = 0; index < num_candidates; index++)
+    {
+        if (SR_elf_jump_table_valid(candidates[index], jump_address, bound))
+        {
+            num_valid++;
+            if (found == 0 || lea_before[index] > found_lea)
+            {
+                found = candidates[index];
+                found_lea = lea_before[index];
+            }
+        }
+    }
+
+    // more valid tables and none of them is loaded before the jump
+    if (num_valid > 1 && found_lea == 0) return 0;
+
+    if (found != 0)
+    {
+        fprintf(stderr, "Note: address of jump table found in function: 0x%" PRIx64 " - 0x%" PRIx64 "\n", jump_address, found);
+    }
+
+    return found;
 }
 
 int SR_elf_is_function_start(uint64_t address)
@@ -1756,6 +1927,10 @@ int SR_write_linker_script(const char *fname)
     {
         fprintf(fout, "    .interp : { *(.interp) }\n");
     }
+    for (index = 0; index < elf_num_extra_phdrs; index++)
+    {
+        fprintf(fout, "    .note.srw_phdr%u : { KEEP(*(.note.srw_phdr%u)) }\n", index, index);
+    }
 
     fprintf(fout, "\n    /* original sections */\n");
     for (index = 0; index < count; index++)
@@ -1828,6 +2003,31 @@ int SR_write_linker_script(const char *fname)
     fprintf(fout, "}\n");
 
     fclose(fout);
+
+    // program headers which are created after linking
+    if (elf_num_extra_phdrs != 0)
+    {
+        ldname = (char *) malloc(strlen(fname) + 8);
+        if (ldname == NULL) return -1;
+        strcpy(ldname, fname);
+        dotptr = strrchr(ldname, '.');
+        if (dotptr != NULL) *dotptr = 0;
+        strcat(ldname, ".phdrs");
+
+        fout = fopen(ldname, "wt");
+        free(ldname);
+        if (fout == NULL) return -1;
+
+        fprintf(fout, "# program headers of original executable, created after linking by fixup_elf.py (placeholder notes)\n");
+        fprintf(fout, "# phdr <placeholder note type> <type> <flags> <address> <size in file> <size in memory> <alignment>\n");
+        for (index = 0; index < elf_num_extra_phdrs; index++)
+        {
+            fprintf(fout, "phdr 0x%x 0x%x 0x%x 0x%" PRIx64 " 0x%" PRIx64 " 0x%" PRIx64 " 0x%" PRIx64 "\n", 0x53525700 + index,
+                    elf_extra_phdrs[index].type, elf_extra_phdrs[index].flags, elf_extra_phdrs[index].vaddr,
+                    elf_extra_phdrs[index].filesz, elf_extra_phdrs[index].memsz, elf_extra_phdrs[index].align);
+        }
+        fclose(fout);
+    }
 
     return 0;
 }

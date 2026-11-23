@@ -74,12 +74,22 @@ if [ -f "$NAME.imports" ]; then
     LINK_ARGS=$(python3 "$TESTS_DIR/mkstubs_elf.py" "$NAME.imports" stubs) || { echo "creating stub libraries failed"; exit 1; }
     # shellcheck disable=SC2086
     "$LD" $LINK_ARGS -E --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
-    # objects copied from shared libraries (COPY relocations) stay at their original addresses
-    if grep -q "^copy " "$NAME.imports"; then
-        python3 "$TESTS_DIR/fixcopy_elf.py" "${NAME}_srw64" "$NAME.imports" > fixcopy.log || { cat fixcopy.log; echo "moving COPY relocations failed"; exit 1; }
-    fi
 else
     "$LD" -static --eh-frame-hdr -T "$NAME.ld" "$NAME.o" -o "${NAME}_srw64" 2> ld.err || { cat ld.err; echo "linking failed"; exit 1; }
+fi
+
+# post-link fixups: objects copied from shared libraries (COPY relocations) stay at their original addresses,
+# program headers of the original executable which the linker doesn't create
+FIXUP_FILES=""
+if [ -f "$NAME.imports" ] && grep -q "^copy " "$NAME.imports"; then
+    FIXUP_FILES="$NAME.imports"
+fi
+if [ -f "$NAME.phdrs" ]; then
+    FIXUP_FILES="$FIXUP_FILES $NAME.phdrs"
+fi
+if [ -n "$FIXUP_FILES" ]; then
+    # shellcheck disable=SC2086
+    python3 "$TESTS_DIR/fixup_elf.py" "${NAME}_srw64" $FIXUP_FILES > fixup.log || { cat fixup.log; echo "post-link fixups failed"; exit 1; }
 fi
 if [ -s ld.err ]; then
     cat ld.err >&2
