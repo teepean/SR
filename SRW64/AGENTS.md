@@ -39,7 +39,8 @@ To try any 64-bit executable: `tests/roundtrip_win64.sh program.exe /tmp/work [c
 | `Error: instruction overlaps another instruction` / `Warning: label inside instruction` | jump into the middle of an instruction or data decoded as code -- use `fixup_do_not_interpret_as_code.sci`, `displaced_labels.sci` or `instruction_replacements.sci` |
 | `Error: output not found` | an entry points inside an already decoded instruction -- same as above |
 | `Warning: jump table not recognized` / `shorter than expected` | jump table bound not found -- check the table manually, use `rva_data.sci` (image relative entries) and `fixup_interpret_as_code.sci` for the targets |
-| `Unrecognized language specific handler data` | listed per handler -- `__GSHandlerCheck` data contains no addresses (OK); `__CxxFrameHandler4` data is not converted (C++ exceptions won't work in those functions) |
+| `Unrecognized language specific handler data` | listed per handler -- `__GSHandlerCheck` data contains no addresses (OK); other handlers: check if their data contains addresses |
+| `unable to convert C++ exception handling ... map` / `unable to create copy of shared C++ exception handling data` | an address in `__CxxFrameHandler4` data is not at instruction boundary -- check the function; verify with `tests/verify_fh4.py original.exe recompiled.exe` |
 | NASM `label ... inconsistently redefined` | two labels with the same address -- should not happen; check section splitting / end-of-section labels in `SR_output.c` |
 | NASM `undefined symbol loc_...` | reference to a removed area (`ignored_areas.sci`, import/export tables) -- replace the referencing instruction or adjust the ignored area |
 | Linker: undefined `__imp_Name` / `Name` | missing import library (win64) or missing replacement function (elf64); imported variables are only accessible through `__imp_Name` |
@@ -61,6 +62,7 @@ Runtime debugging (Wine):
 | `SR_main.c` | command line, `SR.cfg`, order of passes, address -> section lookup |
 | `SRW64_loader.c` | PE32+ loader: sections (long names, debug sections), relocations (DIR64, HIGHLOW, `relocations.csv`, guessing), imports (64-bit thunks, ordinals), exports, splitting of import/export/IAT ranges, notes about large address awareness |
 | `SRW64_pdata.c` | exception directory: function list (`SR_find_pdata`), code entries, image relative fixups in .pdata, unwind info, SEH scope tables, C++ FuncInfo (FH3), delay load descriptors, prolog offsets as label differences (after disassembly), prescan of `lea reg, [__ImageBase]` |
+| `SRW64_eh4.c` | C++ exception handling data version 4 (`__CxxFrameHandler4`): in place conversion of RVAs, regenerated IP to state maps and handler maps (section `srweh4`, offsets as `dd (((loc_A - loc_B) << 4) \| 7)`), copies for functions sharing the data |
 | `SR_source_code_information.c` | loading SCI files |
 | `SR_basic.c` | labels (`loc_%llX`, label expressions with displaced labels), application of fixups to data (`dq`, `dd`, `dd RVA(...)`) and code entries from fixups |
 | `SR_full.c` | disassembly driver (entry list), ignored areas, instruction replacements, alignment of code and data in code sections |
@@ -77,6 +79,7 @@ Key internal conventions:
 * Addresses are `uint64_t` virtual addresses, offsets inside sections are `uint_fast32_t`; print addresses with `PRIx64`/`PRIX64`, labels with `SR_get_label` / `SR_get_label_expr`.
 * Fixup types: `FT_NORMAL` (32-bit absolute), `FT_DIR64` (64-bit absolute), `FT_RVA32` (32-bit image relative); `FF_NOENTRY` = target is only a label, not a code entry; `SEC_HEADER` = target is in the PE header (`__ImageBase+offset`).
 * Output strings: `dd RVA(loc_X+n)` -- the `RVA()` macro argument must not be parenthesized (`wrt ..imagebase` doesn't work inside parentheses).
+* FH4 compressed integers are generated in the 4-byte form (Wine doesn't decode the 5-byte form).
 * Code entries come from: exception directory, exports, aliases, fixups from data, call/jump targets, `lea` of function addresses, jump tables, SCI files. `SR_check_code_reference` decides whether `lea reg, [rip+code]` is a function.
 * Image relative addressing is only converted when the base (or unscaled index) register is known to contain the image base (`run_state.ib_mask`); hints for jump targets are stored in `hint_list` (register mask + jump table bound).
 * The `int3` instruction ends linear disassembly (it is used as padding after calls to functions which don't return).

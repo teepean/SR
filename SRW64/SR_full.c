@@ -39,18 +39,7 @@ output_data *SR_disassemble_offset_init_output(unsigned int SecNum, uint_fast32_
     output_data *output;
     unsigned int index;
 
-    if (offset + length == section[SecNum].size)
-    {
-        output = section_output_list_FindEntryEqual(SecNum, offset + length);
-        if (output != NULL)
-        {
-            if (NULL == section_alias_list_FindEntryEqual(SecNum, offset + length))
-            {
-                output->has_label = 0;
-                output->align = 0;
-            }
-        }
-    }
+    // (the label at section end is kept - it can be referenced, e.g. by end of function in exception directory)
 
     for (index = length - 1; index != 0; index--)
     {

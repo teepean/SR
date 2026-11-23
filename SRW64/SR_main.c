@@ -302,6 +302,8 @@ static void deinitialize_values(void)
 		free(SR_CodeBase);
 		SR_CodeBase = NULL;
 	}
+
+	SR_fh4_free();
 }
 
 static void initialize_values(void)
@@ -528,6 +530,14 @@ int main (int argc, char *argv[])
 	if (convert_exception_data)
 	{
 		ret = SR_process_unwind_offsets();
+		if (ret != 0)
+		{
+			fprintf(stderr, "Error: %i\n", ret);
+			deinitialize_values();
+			return 6;
+		}
+
+		ret = SR_fh4_post_process();
 		if (ret != 0)
 		{
 			fprintf(stderr, "Error: %i\n", ret);

@@ -786,6 +786,17 @@ int SR_write_output(const char *fname)
     }
 
 #if (OUTPUT_TYPE != OUT_ORIG)
+    // C++ exception handling data (version 4) generated again
+    if (SR_fh4_get_data() != NULL)
+    {
+        fprintf(EF.fout, "\n%%ifidn __OUTPUT_FORMAT__, elf64\n");
+        fprintf(EF.fout, "section srweh4 progbits alloc noexec nowrite align=4\n");
+        fprintf(EF.fout, "%%else\n");
+        fprintf(EF.fout, "section srweh4 rdata align=4\n");
+        fprintf(EF.fout, "%%endif\n");
+        fputs(SR_fh4_get_data(), EF.fout);
+    }
+
     // pointers to imports (on Windows they are provided by import libraries)
     fprintf(EF.fout, "\n%%ifidn __OUTPUT_FORMAT__, elf64\n");
     fprintf(EF.fout, "section .data\n");

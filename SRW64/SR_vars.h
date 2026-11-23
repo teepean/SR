@@ -117,6 +117,13 @@ const pdata_entry *SR_find_pdata(uint_fast32_t rva);
 const pdata_entry *SR_find_pdata_begin(uint_fast32_t rva);
 int SR_process_pdata(void);
 int SR_process_delay_imports(void);
+int SR_add_rva_fixup(uint_fast32_t src_rva, int flags);
+
+// SRW64_eh4.c
+int SR_fh4_process(uint_fast32_t unwind_rva, uint_fast32_t data_rva, const pdata_entry *function, int handler_kind);
+int SR_fh4_post_process(void);
+const char *SR_fh4_get_data(void);
+void SR_fh4_free(void);
 int SR_process_unwind_offsets(void);
 int SR_prescan_image_base(void);
 

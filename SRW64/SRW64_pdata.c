@@ -54,6 +54,8 @@ static unsigned int unknown_handler_count[MAX_UNKNOWN_HANDLERS];
 static unsigned int num_unknown_handlers = 0;
 
 
+static void SR_handler_name(char *name, uint_fast32_t rva);
+
 static int pdata_compare(const void *p1, const void *p2)
 {
     const pdata_entry *e1 = (const pdata_entry *)p1;
@@ -145,7 +147,7 @@ static int is_image_rva(uint_fast32_t rva)
 }
 
 // adds image relative fixup at given rva (value at rva is the target rva)
-static int add_rva_fixup(uint_fast32_t src_rva, int flags)
+int SR_add_rva_fixup(uint_fast32_t src_rva, int flags)
 {
     uint_fast32_t SourceObject, SourceOffset, TargetObject, TargetOffset;
     uint32_t value;
@@ -269,19 +271,19 @@ static int process_scope_table(uint_fast32_t rva)
 
     for (index = 0; index < count; index++)
     {
-        ret = add_rva_fixup(rva + 4 + 16 * index, FF_NOENTRY);
+        ret = SR_add_rva_fixup(rva + 4 + 16 * index, FF_NOENTRY);
         if (ret) return ret;
-        ret = add_rva_fixup(rva + 4 + 16 * index + 4, FF_NOENTRY);
+        ret = SR_add_rva_fixup(rva + 4 + 16 * index + 4, FF_NOENTRY);
         if (ret) return ret;
 
         handler = read_dword(rva + 4 + 16 * index + 8, &valid);
         if (handler > 0xff)
         {
-            ret = add_rva_fixup(rva + 4 + 16 * index + 8, 0);
+            ret = SR_add_rva_fixup(rva + 4 + 16 * index + 8, 0);
             if (ret) return ret;
         }
 
-        ret = add_rva_fixup(rva + 4 + 16 * index + 12, 0);
+        ret = SR_add_rva_fixup(rva + 4 + 16 * index + 12, 0);
         if (ret) return ret;
     }
 
@@ -343,12 +345,12 @@ static int process_cxx_funcinfo(uint_fast32_t rva)
     pdata_cxx_funcinfos++;
 
     // FuncInfo
-    if ((ret = add_rva_fixup(rva + 8, FF_NOENTRY))) return ret;
-    if ((ret = add_rva_fixup(rva + 16, FF_NOENTRY))) return ret;
-    if ((ret = add_rva_fixup(rva + 24, FF_NOENTRY))) return ret;
+    if ((ret = SR_add_rva_fixup(rva + 8, FF_NOENTRY))) return ret;
+    if ((ret = SR_add_rva_fixup(rva + 16, FF_NOENTRY))) return ret;
+    if ((ret = SR_add_rva_fixup(rva + 24, FF_NOENTRY))) return ret;
     if (magic >= 0x19930521)
     {
-        if ((ret = add_rva_fixup(rva + 32, FF_NOENTRY))) return ret;
+        if ((ret = SR_add_rva_fixup(rva + 32, FF_NOENTRY))) return ret;
     }
 
     // UnwindMapEntry: toState, action
@@ -356,7 +358,7 @@ static int process_cxx_funcinfo(uint_fast32_t rva)
     {
         for (index = 0; index < maxState; index++)
         {
-            if ((ret = add_rva_fixup(dispUnwindMap + 8 * index + 4, 0))) return ret;
+            if ((ret = SR_add_rva_fixup(dispUnwindMap + 8 * index + 4, 0))) return ret;
         }
     }
 
@@ -369,15 +371,15 @@ static int process_cxx_funcinfo(uint_fast32_t rva)
             dispHandlerArray = read_dword(dispTryBlockMap + 20 * index + 16, &valid);
             if (!valid || nCatches > MAX_EH_ENTRIES) break;
 
-            if ((ret = add_rva_fixup(dispTryBlockMap + 20 * index + 16, FF_NOENTRY))) return ret;
+            if ((ret = SR_add_rva_fixup(dispTryBlockMap + 20 * index + 16, FF_NOENTRY))) return ret;
 
             // HandlerType: adjectives, dispType, dispCatchObj, dispOfHandler, dispFrame
             if (dispHandlerArray != 0 && is_image_rva(dispHandlerArray))
             {
                 for (index2 = 0; index2 < nCatches; index2++)
                 {
-                    if ((ret = add_rva_fixup(dispHandlerArray + 20 * index2 + 4, FF_NOENTRY))) return ret;
-                    if ((ret = add_rva_fixup(dispHandlerArray + 20 * index2 + 12, 0))) return ret;
+                    if ((ret = SR_add_rva_fixup(dispHandlerArray + 20 * index2 + 4, FF_NOENTRY))) return ret;
+                    if ((ret = SR_add_rva_fixup(dispHandlerArray + 20 * index2 + 12, 0))) return ret;
                 }
             }
         }
@@ -388,7 +390,7 @@ static int process_cxx_funcinfo(uint_fast32_t rva)
     {
         for (index = 0; index < nIPMapEntries; index++)
         {
-            if ((ret = add_rva_fixup(dispIPToStateMap + 8 * index, FF_NOENTRY))) return ret;
+            if ((ret = SR_add_rva_fixup(dispIPToStateMap + 8 * index, FF_NOENTRY))) return ret;
         }
     }
 
@@ -402,19 +404,31 @@ static int process_cxx_funcinfo(uint_fast32_t rva)
 
         if (valid && nCount <= MAX_EH_ENTRIES)
         {
-            if ((ret = add_rva_fixup(dispESTypeList + 4, FF_NOENTRY))) return ret;
+            if ((ret = SR_add_rva_fixup(dispESTypeList + 4, FF_NOENTRY))) return ret;
 
             if (dispTypeArray != 0 && is_image_rva(dispTypeArray))
             {
                 for (index = 0; index < nCount; index++)
                 {
-                    if ((ret = add_rva_fixup(dispTypeArray + 20 * index + 4, FF_NOENTRY))) return ret;
-                    if ((ret = add_rva_fixup(dispTypeArray + 20 * index + 12, 0))) return ret;
+                    if ((ret = SR_add_rva_fixup(dispTypeArray + 20 * index + 4, FF_NOENTRY))) return ret;
+                    if ((ret = SR_add_rva_fixup(dispTypeArray + 20 * index + 12, 0))) return ret;
                 }
             }
         }
     }
 
+    return 0;
+}
+
+// kind of exception handler: 1 = __CxxFrameHandler4, 2 = __GSHandlerCheck_EH4, 0 = other / unknown
+static int fh4_handler_kind(uint_fast32_t handler_rva)
+{
+    char name[256];
+
+    SR_handler_name(name, handler_rva);
+
+    if (strcmp(name, "__CxxFrameHandler4") == 0) return 1;
+    if (strcmp(name, "__GSHandlerCheck_EH4") == 0) return 2;
     return 0;
 }
 
@@ -447,9 +461,9 @@ static int process_unwind_info(uint_fast32_t unwind, const pdata_entry *function
     if (flags & UNW_FLAG_CHAININFO)
     {
         // chained RUNTIME_FUNCTION
-        if ((ret = add_rva_fixup(after, 0))) return ret;
-        if ((ret = add_rva_fixup(after + 4, FF_NOENTRY))) return ret;
-        if ((ret = add_rva_fixup(after + 8, FF_NOENTRY))) return ret;
+        if ((ret = SR_add_rva_fixup(after, 0))) return ret;
+        if ((ret = SR_add_rva_fixup(after + 4, FF_NOENTRY))) return ret;
+        if ((ret = SR_add_rva_fixup(after + 8, FF_NOENTRY))) return ret;
     }
     else if (flags & (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER))
     {
@@ -464,7 +478,7 @@ static int process_unwind_info(uint_fast32_t unwind, const pdata_entry *function
         }
 
         // exception handler
-        if ((ret = add_rva_fixup(after, 0))) return ret;
+        if ((ret = SR_add_rva_fixup(after, 0))) return ret;
 
         // language specific handler data
         value = read_dword(after + 4, &valid);
@@ -472,8 +486,12 @@ static int process_unwind_info(uint_fast32_t unwind, const pdata_entry *function
 
         if (is_image_rva(value) && is_cxx_funcinfo(value))
         {
-            if ((ret = add_rva_fixup(after + 4, FF_NOENTRY))) return ret;
+            if ((ret = SR_add_rva_fixup(after + 4, FF_NOENTRY))) return ret;
             if ((ret = process_cxx_funcinfo(value))) return ret;
+        }
+        else if ((ret = SR_fh4_process(unwind, after + 4, function, fh4_handler_kind(read_dword(after, &valid)))) != 0)
+        {
+            if (ret < 0) return ret;
         }
         else if (check_scope_table(after + 4, function))
         {
@@ -588,7 +606,7 @@ int SR_process_delay_imports(void)
         // rvaDLLName, rvaHmod, rvaIAT, rvaINT, rvaBoundIAT, rvaUnloadIAT
         for (field = 1; field <= 6; field++)
         {
-            if ((ret = add_rva_fixup(descriptor + 4 * field, FF_NOENTRY))) return ret;
+            if ((ret = SR_add_rva_fixup(descriptor + 4 * field, FF_NOENTRY))) return ret;
         }
 
         // import name table: RVAs of IMAGE_IMPORT_BY_NAME or ordinals
@@ -602,7 +620,7 @@ int SR_process_delay_imports(void)
 
                 if (!(*entry & UINT64_C(0x8000000000000000)))
                 {
-                    if ((ret = add_rva_fixup(lookup, FF_NOENTRY))) return ret;
+                    if ((ret = SR_add_rva_fixup(lookup, FF_NOENTRY))) return ret;
                 }
             }
         }
@@ -721,9 +739,9 @@ int SR_process_pdata(void)
             continue;
         }
 
-        if ((ret = add_rva_fixup(entry_rva, 0))) return ret;
-        if ((ret = add_rva_fixup(entry_rva + 4, FF_NOENTRY))) return ret;
-        if ((ret = add_rva_fixup(entry_rva + 8, FF_NOENTRY))) return ret;
+        if ((ret = SR_add_rva_fixup(entry_rva, 0))) return ret;
+        if ((ret = SR_add_rva_fixup(entry_rva + 4, FF_NOENTRY))) return ret;
+        if ((ret = SR_add_rva_fixup(entry_rva + 8, FF_NOENTRY))) return ret;
     }
 
     // unwind info (every unwind info only once)

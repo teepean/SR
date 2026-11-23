@@ -12,6 +12,8 @@
 #   WORK        - work directory (default: new temporary directory)
 #   WINDOWS_DIR - optional directory with original Windows executables (sort.exe, where.exe),
 #                 for example /mnt/windows/Windows/System32
+#   FH4_EXECUTABLES - optional list of executables built by Visual Studio 2019+ (with __CxxFrameHandler4),
+#                 their C++ exception handling data is verified after recompilation
 #
 
 TESTS_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -126,7 +128,62 @@ else
 fi
 
 
-# test 3 (optional): Windows executables (built by Microsoft with MSVC)
+# test 3: C++ exception handling data version 4 (__CxxFrameHandler4)
+mkdir -p "$WORK/fh4"
+cd "$WORK/fh4" || exit 1
+printf 'LIBRARY "vcruntime140_1.dll"\nEXPORTS\n    __CxxFrameHandler4\n' > vcruntime140_1.def
+printf 'LIBRARY "vcruntime140.dll"\nEXPORTS\n    _CxxThrowException\n' > vcruntime140.def
+if nasm -f win64 "$TESTS_DIR/fh4/fh4_test.asm" -o fh4_test.obj &&
+   "${CROSS}dlltool" -d vcruntime140_1.def -l libvcruntime140_1.a &&
+   "${CROSS}dlltool" -d vcruntime140.def -l libvcruntime140.a &&
+   "${CROSS}gcc" -nostartfiles -nostdlib -Wl,-e,start fh4_test.obj -o fh4_test.exe libvcruntime140_1.a libvcruntime140.a -lkernel32
+then
+    wine ./fh4_test.exe > /dev/null 2>&1; echo "exit code $?" > expected.txt
+    if RESULT=$("$TESTS_DIR/roundtrip_win64.sh" fh4_test.exe "$WORK/fh4/srw64"); then
+        wine "$RESULT" > /dev/null 2>&1; echo "exit code $?" > actual.txt
+        compare expected.txt actual.txt "C++ exception with __CxxFrameHandler4 data (win64)"
+        if python3 "$TESTS_DIR/verify_fh4.py" fh4_test.exe "$RESULT" > verify.txt; then
+            echo "PASS: __CxxFrameHandler4 data verification"
+        else
+            cat verify.txt
+            echo "FAIL: __CxxFrameHandler4 data verification"
+            FAILED=1
+        fi
+    else
+        echo "$RESULT"
+        echo "FAIL: C++ exception with __CxxFrameHandler4 data - recompilation failed"
+        FAILED=1
+    fi
+else
+    echo "FAIL: C++ exception with __CxxFrameHandler4 data - compilation failed"
+    FAILED=1
+fi
+
+
+# test 4 (optional): verification of __CxxFrameHandler4 data in executables built by Visual Studio 2019+
+if [ -n "$FH4_EXECUTABLES" ]; then
+    mkdir -p "$WORK/fh4_executables"
+    cd "$WORK/fh4_executables" || exit 1
+    for EXE in $FH4_EXECUTABLES; do
+        NAME=$(basename "$EXE" .exe)
+        if RESULT=$("$TESTS_DIR/roundtrip_win64.sh" "$EXE" "$WORK/fh4_executables/$NAME"); then
+            if python3 "$TESTS_DIR/verify_fh4.py" "$EXE" "$RESULT" > "$NAME.verify.txt"; then
+                echo "PASS: __CxxFrameHandler4 data in $NAME.exe ($(tail -1 "$NAME.verify.txt"))"
+            else
+                cat "$NAME.verify.txt"
+                echo "FAIL: __CxxFrameHandler4 data in $NAME.exe"
+                FAILED=1
+            fi
+        else
+            echo "$RESULT"
+            echo "FAIL: $NAME.exe - recompilation failed"
+            FAILED=1
+        fi
+    done
+fi
+
+
+# test 5 (optional): Windows executables (built by Microsoft with MSVC)
 if [ -n "$WINDOWS_DIR" ]; then
     mkdir -p "$WORK/windows"
     cd "$WORK/windows" || exit 1
