@@ -154,6 +154,24 @@ static int SR_is_padding_byte(unsigned int Entry, output_data *item)
     return (item->type == OT_UNKNOWN && item->len == 0 && item->str == NULL && item->has_label == 0 && item->align == 0 && (section[Entry].adr[item->ofs] == 0x90 || section[Entry].adr[item->ofs] == 0xCC))?1:0;
 }
 
+// functions keep the alignment of their original address (up to 16): function pointers stay even (Itanium C++ ABI
+// uses bit 0 of pointers to member functions to mark virtual functions) and calls of aligned functions stay fast
+static void SR_disassemble_align_functions(output_data *item, void *data)
+{
+    unsigned int Entry = *(const unsigned int *)data;
+    uint64_t address;
+
+    if (item->type != OT_INSTRUCTION || !item->has_label || item->align != 0) return;
+
+    address = section[Entry].start + item->ofs;
+    if (address < ImageBase || SR_find_pdata_begin((uint_fast32_t)(address - ImageBase)) == NULL) return;
+
+    if ((address & 0x0f) == 0) item->align = 16;
+    else if ((address & 0x07) == 0) item->align = 8;
+    else if ((address & 0x03) == 0) item->align = 4;
+    else if ((address & 0x01) == 0) item->align = 2;
+}
+
 static void SR_disassemble_create_aligns_code(output_data *item, void *data)
 {
 #define DATA ((Entry_region *) data)
@@ -384,6 +402,8 @@ int SR_full_disassembly(void)
         ER.isregion = -1;
 
         section_output_list_ForEach(index, &SR_disassemble_create_aligns_data, (void *) &ER);
+
+        section_output_list_ForEach(index, &SR_disassemble_align_functions, (void *) &index);
     }
 #endif
 
