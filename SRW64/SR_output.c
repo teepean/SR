@@ -31,7 +31,33 @@
 typedef struct _Entry_FILE_ {
     uint_fast32_t Entry;
     FILE *fout;
+    int merge;                  // Linux executables: runs of original bytes are merged (incbin, db with more bytes)
+    uint_fast32_t run_start;    // pending run of original bytes
+    uint_fast32_t run_len;
+    char bin_name[256];         // file with contents of section (incbin)
 } Entry_FILE;
+
+static void SR_flush_run(Entry_FILE *EF)
+{
+    uint_fast32_t index;
+
+    if (EF->run_len == 0) return;
+
+    if (EF->run_len >= 16 && EF->bin_name[0] != 0)
+    {
+        fprintf(EF->fout, "incbin \"%s\", %u, %u\n", EF->bin_name, (unsigned int)EF->run_start, (unsigned int)EF->run_len);
+    }
+    else
+    {
+        for (index = 0; index < EF->run_len; index++)
+        {
+            fprintf(EF->fout, ((index & 15) == 0)?"db %i":", %i", section[EF->Entry].adr[EF->run_start + index]);
+            if ((index & 15) == 15 || index + 1 == EF->run_len) fprintf(EF->fout, "\n");
+        }
+    }
+
+    EF->run_len = 0;
+}
 
 typedef struct _Entry_Proc_ {
     uint_fast32_t Entry;
@@ -75,11 +101,54 @@ static int SR_is_start_of_other_section(unsigned int Entry, uint64_t address)
     return 0;
 }
 
+// writes contents of section into file <output>.secNN.bin (used by incbin), returns name of file (without directory)
+static int SR_write_section_bin(const char *fname, unsigned int Entry, char *bin_name, size_t bin_name_size)
+{
+    char *binname, *dotptr, *slash;
+    FILE *fbin;
+
+    binname = (char *) malloc(strlen(fname) + 32);
+    if (binname == NULL) return -1;
+    strcpy(binname, fname);
+    dotptr = strrchr(binname, '.');
+    slash = strrchr(binname, '/');
+    if (dotptr != NULL && (slash == NULL || dotptr > slash)) *dotptr = 0;
+    sprintf(&(binname[strlen(binname)]), ".sec%.2u.bin", Entry + 1);
+
+    fbin = fopen(binname, "wb");
+    if (fbin == NULL)
+    {
+        free(binname);
+        return -1;
+    }
+    fwrite(section[Entry].adr, 1, section[Entry].size_in_file, fbin);
+    fclose(fbin);
+
+    slash = strrchr(binname, '/');
+    strncpy(bin_name, (slash != NULL)?(slash + 1):binname, bin_name_size - 1);
+    bin_name[bin_name_size - 1] = 0;
+    free(binname);
+
+    return 0;
+}
+
 static void SR_write_output_line(output_data *item, void *data)
 {
     char cbuf[64];
 
 #define DATA ((Entry_FILE *) data)
+
+    // continuation of run of original bytes
+    if (DATA->merge)
+    {
+        if (item->type == OT_UNKNOWN && item->str == NULL && item->align == 0 && !item->has_label && item->ofs != 0 &&
+            DATA->run_len != 0 && DATA->run_start + DATA->run_len == item->ofs)
+        {
+            DATA->run_len++;
+            return;
+        }
+        SR_flush_run(DATA);
+    }
 
     if (item->type == OT_NONE && item->ofs != 0 && SR_is_start_of_other_section(DATA->Entry, section[DATA->Entry].start + item->ofs))
     {
@@ -91,7 +160,7 @@ static void SR_write_output_line(output_data *item, void *data)
     {
         if (item->type != OT_NONE)
         {
-            fprintf(DATA->fout, "resb 1\n");
+            fprintf(DATA->fout, "resb %u\n", (unsigned int)(item->len + 1));
         }
         return;
     }
@@ -160,11 +229,20 @@ static void SR_write_output_line(output_data *item, void *data)
         {
             if (item->type == OT_UNKNOWN)
             {
-                fprintf(DATA->fout, "db %i\n", section[DATA->Entry].adr[item->ofs]);
+                if (DATA->merge)
+                {
+                    // start of run of original bytes
+                    DATA->run_start = item->ofs;
+                    DATA->run_len = 1;
+                }
+                else
+                {
+                    fprintf(DATA->fout, "db %i\n", section[DATA->Entry].adr[item->ofs]);
+                }
             }
             else if (item->type != OT_NONE)
             {
-                fprintf(DATA->fout, "resb 1\n");
+                fprintf(DATA->fout, "resb %u\n", (unsigned int)((item->type == OT_UNITIALIZED)?(item->len + 1):1));
             }
         }
     }
@@ -833,7 +911,17 @@ int SR_write_output(const char *fname)
 
             if ( EF.fout == NULL ) return -1;
 
+            // Linux executables: contents of section in file (incbin)
+            EF.merge = (InputFormat == INPUT_ELF)?1:0;
+            EF.run_len = 0;
+            EF.bin_name[0] = 0;
+            if (EF.merge && section[EF.Entry].size_in_file != 0)
+            {
+                if (SR_write_section_bin(fname, EF.Entry, EF.bin_name, sizeof(EF.bin_name))) return -1;
+            }
+
             section_output_list_ForEach(EF.Entry, &SR_write_output_line, (void *) &EF);
+            SR_flush_run(&EF);
 
             // Linux executables: label at end of code section (end of address ranges in exception handling data)
             if (InputFormat == INPUT_ELF && section[EF.Entry].type == ST_CODE)
@@ -853,35 +941,16 @@ int SR_write_output(const char *fname)
     {
         for (EF.Entry = 0; EF.Entry < num_sections; EF.Entry++)
         {
-            char outname[96], *binname, *dotptr, *slash;
-            FILE *fbin;
+            char outname[96];
 
             if (section[EF.Entry].type != ST_CODE) continue;
 
-            binname = (char *) malloc(strlen(fname) + 32);
-            if (binname == NULL) return -1;
-            strcpy(binname, fname);
-            dotptr = strrchr(binname, '.');
-            slash = strrchr(binname, '/');
-            if (dotptr != NULL && (slash == NULL || dotptr > slash)) *dotptr = 0;
-            sprintf(&(binname[strlen(binname)]), ".orig%.2u.bin", (unsigned int)(EF.Entry + 1));
-
-            fbin = fopen(binname, "wb");
-            if (fbin == NULL)
-            {
-                free(binname);
-                return -1;
-            }
-            fwrite(section[EF.Entry].adr, 1, section[EF.Entry].size_in_file, fbin);
-            fclose(fbin);
+            if (SR_write_section_bin(fname, EF.Entry, EF.bin_name, sizeof(EF.bin_name))) return -1;
 
             SR_elf_output_section_name(outname, EF.Entry);
-            slash = strrchr(binname, '/');
             fprintf(EF.fout, "\nsection %s.orig progbits alloc exec nowrite align=%u\n", outname, (unsigned int)section[EF.Entry].align);
             fprintf(EF.fout, "srw_orig_%u:\n", (unsigned int)EF.Entry);
-            fprintf(EF.fout, "incbin \"%s\"\n", (slash != NULL)?(slash + 1):binname);
-
-            free(binname);
+            fprintf(EF.fout, "incbin \"%s\"\n", EF.bin_name);
         }
     }
 

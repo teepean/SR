@@ -28,7 +28,8 @@ no build system).
   * 64-bit absolute memory offsets are printed as `[qword 0x...]`
   * `vmovd` with 64-bit general purpose register is printed as `vmovq`
   * multi-byte `nop` with memory operand gets operand size
-  * `prefetchw` / `prefetch` don't get operand size
+  * `prefetchw` / `prefetch` / `clflush` / `clflushopt` don't get operand size
+  * memory operand of `vcmpss` (and its predicate forms like `vcmpltss`) doesn't get operand size (NASM 2.16 rejects `dword`)
 * `libudis86/extern.h`: removed `register` keyword from the prototype of
   `ud_clear_insn` (C++17 doesn't allow it).
 * `libudis86/decode.c`: operand size tables (`/o`) of instructions with 3-byte

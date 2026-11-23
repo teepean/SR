@@ -48,6 +48,7 @@
 
 typedef struct _elf_dynsym_ {
     char *name;
+    char *asm_name;         // name in generated assembler file ($name or srw_sym_<index> - renamed by objcopy)
     const char *version;    // version name (NULL = unversioned)
     const char *library;    // library which defines the version (NULL = unknown)
     uint64_t value;
@@ -133,72 +134,261 @@ static int add_dynrel(elf_dynrel **list, unsigned int *count, uint64_t address, 
     return 0;
 }
 
-// relative relocation from RELR table (implicit addend: value in file at the location)
-static int relr_add(const uint8_t *file, int64_t file_size, const ELF64_Ehdr *header, const ELF64_Shdr *sections, uint64_t location)
+static const ELF64_Ehdr *ld_header;
+static const ELF64_Phdr *ld_segments;
+
+// file offset of virtual address (0 = not found)
+static uint64_t va_to_offset(uint64_t va, uint64_t size)
 {
     unsigned int index;
 
-    for (index = 0; index < header->e_shnum; index++)
+    for (index = 0; index < ld_header->e_phnum; index++)
+    {
+        if (ld_segments[index].p_type == PT_LOAD && va >= ld_segments[index].p_vaddr && va + size <= ld_segments[index].p_vaddr + ld_segments[index].p_filesz)
+        {
+            return ld_segments[index].p_offset + (va - ld_segments[index].p_vaddr);
+        }
+    }
+    return 0;
+}
+
+// relative relocation from RELR table (implicit addend: value in file at the location)
+static int relr_add(const uint8_t *file, int64_t file_size, uint64_t location)
+{
+    uint64_t offset, value;
+
+    offset = va_to_offset(location, 8);
+    if (offset == 0 || (int64_t)(offset + 8) > file_size) return 0;
+
+    memcpy(&value, file + offset, 8);
+    return add_dynrel(&relatives, &num_relatives, location + ElfLoadBias, 0, R_X86_64_RELATIVE, (int64_t)(value + ElfLoadBias));
+}
+
+// relative relocations in compact format (RELR, -z pack-relative-relocs): addends are in the relocated locations
+static int process_relr(const uint8_t *file, int64_t file_size, const uint64_t *entries, uint64_t num_entries)
+{
+    uint64_t entry, where;
+
+    where = 0;
+    for (entry = 0; entry < num_entries; entry++)
     {
         uint64_t value;
+        unsigned int bit;
 
-        if (!(sections[index].sh_flags & SHF_ALLOC) || sections[index].sh_type == SHT_NOBITS) continue;
-        if (location < sections[index].sh_addr || location + 8 > sections[index].sh_addr + sections[index].sh_size) continue;
-        if ((int64_t)(sections[index].sh_offset + (location - sections[index].sh_addr) + 8) > file_size) return 0;
+        value = entries[entry];
+        if ((value & 1) == 0)
+        {
+            // address
+            if (relr_add(file, file_size, value)) return -1;
+            where = value + 8;
+        }
+        else
+        {
+            // bitmap of the following 63 words
+            for (bit = 0; (value >>= 1) != 0; bit++)
+            {
+                if (value & 1)
+                {
+                    if (relr_add(file, file_size, where + 8 * (uint64_t)bit)) return -1;
+                }
+            }
+            where += 63 * 8;
+        }
+    }
 
-        memcpy(&value, file + sections[index].sh_offset + (location - sections[index].sh_addr), 8);
-        return add_dynrel(&relatives, &num_relatives, location + ElfLoadBias, 0, R_X86_64_RELATIVE, (int64_t)(value + ElfLoadBias));
+    return 0;
+}
+
+static int process_relocations(const ELF64_Rela *relocations, uint64_t num_relocations)
+{
+    uint64_t relocation;
+
+    for (relocation = 0; relocation < num_relocations; relocation++)
+    {
+        unsigned int type, sym;
+        uint64_t address;
+        int64_t addend;
+        int ret;
+
+        type = (unsigned int)(relocations[relocation].r_info & 0xffffffff);
+        sym = (unsigned int)(relocations[relocation].r_info >> 32);
+        address = relocations[relocation].r_offset + ElfLoadBias;
+        addend = relocations[relocation].r_addend;
+
+        if (sym >= num_dynsyms) continue;
+
+        ret = 0;
+        switch (type)
+        {
+            case R_X86_64_GLOB_DAT:
+            case R_X86_64_JUMP_SLOT:
+            case R_X86_64_TPOFF64:
+                if (sym == 0) break;
+                ret = add_dynrel(&got_slots, &num_got_slots, address, sym, type, addend);
+                break;
+            case R_X86_64_64:
+                if (sym == 0) break;
+                ret = add_dynrel(&data_relocs, &num_data_relocs, address, sym, type, addend);
+                break;
+            case R_X86_64_COPY:
+                dynsyms[sym].copy = 1;
+                ret = add_dynrel(&copies, &num_copies, address, sym, type, addend);
+                break;
+            case R_X86_64_RELATIVE:
+                // pointer in position independent executable
+                ret = add_dynrel(&relatives, &num_relatives, address, 0, type, addend + (int64_t)ElfLoadBias);
+                break;
+            case R_X86_64_IRELATIVE:
+                fprintf(stderr, "Warning: IRELATIVE relocation is not supported in dynamically linked executable: 0x%" PRIx64 "\n", address);
+                break;
+            case R_X86_64_DTPMOD64:
+            case R_X86_64_DTPOFF64:
+                fprintf(stderr, "Warning: general dynamic TLS relocation is not supported: 0x%" PRIx64 " (%s)\n", address, dynsyms[sym].name);
+                break;
+            default:
+                fprintf(stderr, "Warning: unknown dynamic relocation type %u: 0x%" PRIx64 "\n", type, address);
+                break;
+        }
+        if (ret) return -1;
     }
 
     return 0;
 }
 
 // loads dynamic linking information (called by ELF loader)
-int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, const void *shdrs)
+int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, const void *shdrs, const void *phdrs)
 {
     const ELF64_Ehdr *header = (const ELF64_Ehdr *) ehdr;
     const ELF64_Shdr *sections = (const ELF64_Shdr *) shdrs;
-    const ELF64_Shdr *dynsym_sec, *versym_sec, *verneed_sec, *dynamic_sec;
     const char **version_names, **version_files;
     unsigned int index, max_version;
+    uint64_t dynsym_off, dynsym_size, dynstr_off, dynstr_size, versym_off, versym_size, verneed_off, verneed_size, dynamic_off, dynamic_size;
+    uint64_t dt_strtab, dt_strsz, dt_symtab, dt_hash, dt_versym, dt_verneed, dt_rela, dt_relasz, dt_jmprel, dt_pltrelsz, dt_relr, dt_relrsz;
+    int has_rela_sections;
 
-    dynsym_sec = NULL;
-    versym_sec = NULL;
-    verneed_sec = NULL;
-    dynamic_sec = NULL;
+    ld_header = header;
+    ld_segments = (const ELF64_Phdr *) phdrs;
+
+    dynsym_off = dynsym_size = dynstr_off = dynstr_size = versym_off = versym_size = verneed_off = verneed_size = dynamic_off = dynamic_size = 0;
+    has_rela_sections = 0;
     for (index = 0; index < header->e_shnum; index++)
     {
         if ((int64_t)(sections[index].sh_offset + ((sections[index].sh_type == SHT_NOBITS)?0:sections[index].sh_size)) > file_size) continue;
 
         switch (sections[index].sh_type)
         {
-            case SHT_DYNSYM: dynsym_sec = &(sections[index]); break;
-            case SHT_GNU_versym: versym_sec = &(sections[index]); break;
-            case SHT_GNU_verneed: verneed_sec = &(sections[index]); break;
-            case SHT_DYNAMIC: dynamic_sec = &(sections[index]); break;
+            case SHT_DYNSYM:
+                dynsym_off = sections[index].sh_offset;
+                dynsym_size = sections[index].sh_size;
+                if (sections[index].sh_link < header->e_shnum)
+                {
+                    dynstr_off = sections[sections[index].sh_link].sh_offset;
+                    dynstr_size = sections[sections[index].sh_link].sh_size;
+                }
+                break;
+            case SHT_GNU_versym: versym_off = sections[index].sh_offset; versym_size = sections[index].sh_size; break;
+            case SHT_GNU_verneed: verneed_off = sections[index].sh_offset; verneed_size = sections[index].sh_size; break;
+            case SHT_DYNAMIC: dynamic_off = sections[index].sh_offset; dynamic_size = sections[index].sh_size; break;
+            case SHT_RELA:
+            case SHT_RELR:
+                if (sections[index].sh_flags & SHF_ALLOC) has_rela_sections = 1;
+                break;
             default: break;
         }
     }
 
-    if (dynsym_sec == NULL || dynsym_sec->sh_link >= header->e_shnum)
+    // dynamic section from program headers
+    if (dynamic_size == 0)
+    {
+        for (index = 0; index < header->e_phnum; index++)
+        {
+            if (ld_segments[index].p_type == PT_DYNAMIC && (int64_t)(ld_segments[index].p_offset + ld_segments[index].p_filesz) <= file_size)
+            {
+                dynamic_off = ld_segments[index].p_offset;
+                dynamic_size = ld_segments[index].p_filesz;
+            }
+        }
+    }
+
+    // dynamic tags
+    dt_strtab = dt_strsz = dt_symtab = dt_hash = dt_versym = dt_verneed = dt_rela = dt_relasz = dt_jmprel = dt_pltrelsz = dt_relr = dt_relrsz = 0;
+    {
+        uint64_t entry;
+
+        for (entry = 0; (entry + 1) * sizeof(ELF64_Dyn) <= dynamic_size; entry++)
+        {
+            const ELF64_Dyn *dyn = (const ELF64_Dyn *) (file + dynamic_off + entry * sizeof(ELF64_Dyn));
+
+            if (dyn->d_tag == DT_NULL) break;
+            switch (dyn->d_tag)
+            {
+                case 2: dt_pltrelsz = dyn->d_val; break;
+                case 4: dt_hash = dyn->d_val; break;
+                case 5: dt_strtab = dyn->d_val; break;
+                case 6: dt_symtab = dyn->d_val; break;
+                case 7: dt_rela = dyn->d_val; break;
+                case 8: dt_relasz = dyn->d_val; break;
+                case 10: dt_strsz = dyn->d_val; break;
+                case 23: dt_jmprel = dyn->d_val; break;
+                case 35: dt_relrsz = dyn->d_val; break;
+                case 36: dt_relr = dyn->d_val; break;
+                case 0x6ffffff0: dt_versym = dyn->d_val; break;
+                case 0x6ffffffe: dt_verneed = dyn->d_val; break;
+                default: break;
+            }
+        }
+    }
+
+    // dynamic symbol table from dynamic tags (number of symbols from hash table)
+    if (dynsym_size == 0 && dt_symtab != 0 && dt_hash != 0)
+    {
+        uint64_t hash_off;
+        uint32_t counts[2];
+
+        hash_off = va_to_offset(dt_hash, 8);
+        if (hash_off != 0)
+        {
+            memcpy(counts, file + hash_off, 8);
+            dynsym_size = (uint64_t)counts[1] * sizeof(ELF64_Sym);
+            dynsym_off = va_to_offset(dt_symtab, dynsym_size);
+            if (dynsym_off == 0) dynsym_size = 0;
+        }
+    }
+    if (dynstr_size == 0 && dt_strtab != 0 && dt_strsz != 0)
+    {
+        dynstr_off = va_to_offset(dt_strtab, dt_strsz);
+        if (dynstr_off != 0) dynstr_size = dt_strsz;
+    }
+    if (versym_size == 0 && dt_versym != 0 && dynsym_size != 0)
+    {
+        versym_size = (dynsym_size / sizeof(ELF64_Sym)) * 2;
+        versym_off = va_to_offset(dt_versym, versym_size);
+        if (versym_off == 0) versym_size = 0;
+    }
+    if (verneed_size == 0 && dt_verneed != 0)
+    {
+        verneed_off = va_to_offset(dt_verneed, sizeof(ELF64_Verneed));
+        if (verneed_off != 0) verneed_size = (uint64_t)file_size - verneed_off;
+    }
+
+    if (dynsym_size == 0 || dynstr_size == 0 || (int64_t)(dynsym_off + dynsym_size) > file_size || (int64_t)(dynstr_off + dynstr_size) > file_size)
     {
         fprintf(stderr, "Error: dynamic symbol table not found\n");
         return -1;
     }
 
     // strings
-    dyn_strings_size = sections[dynsym_sec->sh_link].sh_size;
-    if ((int64_t)(sections[dynsym_sec->sh_link].sh_offset + dyn_strings_size) > file_size) return -1;
+    dyn_strings_size = dynstr_size;
     dyn_strings = (char *) malloc(dyn_strings_size + 1);
     if (dyn_strings == NULL) return -1;
-    memcpy(dyn_strings, file + sections[dynsym_sec->sh_link].sh_offset, dyn_strings_size);
+    memcpy(dyn_strings, file + dynstr_off, dyn_strings_size);
     dyn_strings[dyn_strings_size] = 0;
 
     // versions (verneed): version index -> version name, library
     max_version = 0;
     version_names = NULL;
     version_files = NULL;
-    if (verneed_sec != NULL)
+    if (verneed_size != 0)
     {
         uint64_t pos;
         unsigned int count;
@@ -208,19 +398,19 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
         if (version_names == NULL || version_files == NULL) return -1;
 
         pos = 0;
-        for (count = 0; count < 4096 && pos + sizeof(ELF64_Verneed) <= verneed_sec->sh_size; count++)
+        for (count = 0; count < 4096 && pos + sizeof(ELF64_Verneed) <= verneed_size; count++)
         {
             const ELF64_Verneed *vn;
             uint64_t aux_pos;
             unsigned int aux;
 
-            vn = (const ELF64_Verneed *) (file + verneed_sec->sh_offset + pos);
+            vn = (const ELF64_Verneed *) (file + verneed_off + pos);
             aux_pos = pos + vn->vn_aux;
-            for (aux = 0; aux < vn->vn_cnt && aux_pos + sizeof(ELF64_Vernaux) <= verneed_sec->sh_size; aux++)
+            for (aux = 0; aux < vn->vn_cnt && aux_pos + sizeof(ELF64_Vernaux) <= verneed_size; aux++)
             {
                 const ELF64_Vernaux *vna;
 
-                vna = (const ELF64_Vernaux *) (file + verneed_sec->sh_offset + aux_pos);
+                vna = (const ELF64_Vernaux *) (file + verneed_off + aux_pos);
                 version_names[vna->vna_other & 0x7fff] = dyn_string(vna->vna_name);
                 version_files[vna->vna_other & 0x7fff] = dyn_string(vn->vn_file);
                 if ((vna->vna_other & 0x7fff) > max_version) max_version = vna->vna_other & 0x7fff;
@@ -234,7 +424,7 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
     }
 
     // dynamic symbols
-    num_dynsyms = (unsigned int)(dynsym_sec->sh_size / sizeof(ELF64_Sym));
+    num_dynsyms = (unsigned int)(dynsym_size / sizeof(ELF64_Sym));
     dynsyms = (elf_dynsym *) calloc(num_dynsyms + 1, sizeof(elf_dynsym));
     if (dynsyms == NULL) return -1;
 
@@ -243,7 +433,7 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
         const ELF64_Sym *sym;
         uint16_t versym;
 
-        sym = (const ELF64_Sym *) (file + dynsym_sec->sh_offset + index * sizeof(ELF64_Sym));
+        sym = (const ELF64_Sym *) (file + dynsym_off + index * sizeof(ELF64_Sym));
         dynsyms[index].name = (char *) dyn_string(sym->st_name);
         dynsyms[index].value = sym->st_value + ((sym->st_shndx != SHN_UNDEF && sym->st_shndx < SHN_LORESERVE)?ElfLoadBias:0);
         dynsyms[index].size = sym->st_size;
@@ -251,9 +441,9 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
         dynsyms[index].bind = sym->st_info >> 4;
         dynsyms[index].defined = (sym->st_shndx != SHN_UNDEF)?1:0;
 
-        if (versym_sec != NULL && index * 2 + 2 <= versym_sec->sh_size && version_names != NULL)
+        if (versym_size != 0 && index * 2 + 2 <= versym_size && version_names != NULL)
         {
-            versym = *(const uint16_t *) (file + versym_sec->sh_offset + index * 2);
+            versym = *(const uint16_t *) (file + versym_off + index * 2);
             if ((versym & 0x7fff) > 1 && (versym & 0x7fff) <= max_version)
             {
                 dynsyms[index].version = version_names[versym & 0x7fff];
@@ -266,65 +456,59 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
     if (version_names != NULL) free((void *)version_names);
     if (version_files != NULL) free((void *)version_files);
 
-    // relocations
-    for (index = 0; index < header->e_shnum; index++)
+    // names for assembler (NASM identifiers can't contain characters like + or -, or start with digit)
+    for (index = 1; index < num_dynsyms; index++)
     {
-        const ELF64_Rela *relocations;
-        uint64_t num_relocations, relocation;
+        const char *ch;
+        int valid;
 
-        if (sections[index].sh_type != SHT_RELA || !(sections[index].sh_flags & SHF_ALLOC)) continue;
-        if ((int64_t)(sections[index].sh_offset + sections[index].sh_size) > file_size) continue;
-
-        relocations = (const ELF64_Rela *) (file + sections[index].sh_offset);
-        num_relocations = sections[index].sh_size / sizeof(ELF64_Rela);
-
-        for (relocation = 0; relocation < num_relocations; relocation++)
+        ch = dynsyms[index].name;
+        valid = ((*ch >= 'A' && *ch <= 'Z') || (*ch >= 'a' && *ch <= 'z') || *ch == '_' || *ch == '.' || *ch == '?')?1:0;
+        for (; valid && *ch; ch++)
         {
-            unsigned int type, sym;
-            uint64_t address;
-            int64_t addend;
-            int ret;
+            if (!((*ch >= 'A' && *ch <= 'Z') || (*ch >= 'a' && *ch <= 'z') || (*ch >= '0' && *ch <= '9') ||
+                  *ch == '_' || *ch == '$' || *ch == '#' || *ch == '@' || *ch == '~' || *ch == '.' || *ch == '?')) valid = 0;
+        }
 
-            type = (unsigned int)(relocations[relocation].r_info & 0xffffffff);
-            sym = (unsigned int)(relocations[relocation].r_info >> 32);
-            address = relocations[relocation].r_offset + ElfLoadBias;
-            addend = relocations[relocation].r_addend;
+        dynsyms[index].asm_name = (char *) malloc(strlen(dynsyms[index].name) + 32);
+        if (dynsyms[index].asm_name == NULL) return -1;
+        if (valid) sprintf(dynsyms[index].asm_name, "$%s", dynsyms[index].name);
+        else sprintf(dynsyms[index].asm_name, "srw_sym_%u", index);
+    }
 
-            if (sym >= num_dynsyms) continue;
+    // relocations (sections, or dynamic tags if there are no relocation sections)
+    if (has_rela_sections)
+    {
+        for (index = 0; index < header->e_shnum; index++)
+        {
+            if (!(sections[index].sh_flags & SHF_ALLOC)) continue;
+            if ((int64_t)(sections[index].sh_offset + sections[index].sh_size) > file_size) continue;
 
-            ret = 0;
-            switch (type)
+            if (sections[index].sh_type == SHT_RELA)
             {
-                case R_X86_64_GLOB_DAT:
-                case R_X86_64_JUMP_SLOT:
-                case R_X86_64_TPOFF64:
-                    if (sym == 0) break;
-                    ret = add_dynrel(&got_slots, &num_got_slots, address, sym, type, addend);
-                    break;
-                case R_X86_64_64:
-                    if (sym == 0) break;
-                    ret = add_dynrel(&data_relocs, &num_data_relocs, address, sym, type, addend);
-                    break;
-                case R_X86_64_COPY:
-                    dynsyms[sym].copy = 1;
-                    ret = add_dynrel(&copies, &num_copies, address, sym, type, addend);
-                    break;
-                case R_X86_64_RELATIVE:
-                    // pointer in position independent executable
-                    ret = add_dynrel(&relatives, &num_relatives, address, 0, type, addend + (int64_t)ElfLoadBias);
-                    break;
-                case R_X86_64_IRELATIVE:
-                    fprintf(stderr, "Warning: IRELATIVE relocation is not supported in dynamically linked executable: 0x%" PRIx64 "\n", address);
-                    break;
-                case R_X86_64_DTPMOD64:
-                case R_X86_64_DTPOFF64:
-                    fprintf(stderr, "Warning: general dynamic TLS relocation is not supported: 0x%" PRIx64 " (%s)\n", address, dynsyms[sym].name);
-                    break;
-                default:
-                    fprintf(stderr, "Warning: unknown dynamic relocation type %u: 0x%" PRIx64 "\n", type, address);
-                    break;
+                if (process_relocations((const ELF64_Rela *) (file + sections[index].sh_offset), sections[index].sh_size / sizeof(ELF64_Rela))) return -1;
             }
-            if (ret) return -1;
+            else if (sections[index].sh_type == SHT_RELR)
+            {
+                if (process_relr(file, file_size, (const uint64_t *) (file + sections[index].sh_offset), sections[index].sh_size / 8)) return -1;
+            }
+        }
+    }
+    else
+    {
+        uint64_t offset;
+
+        if (dt_rela != 0 && dt_relasz != 0 && (offset = va_to_offset(dt_rela, dt_relasz)) != 0)
+        {
+            if (process_relocations((const ELF64_Rela *) (file + offset), dt_relasz / sizeof(ELF64_Rela))) return -1;
+        }
+        if (dt_jmprel != 0 && dt_pltrelsz != 0 && (offset = va_to_offset(dt_jmprel, dt_pltrelsz)) != 0)
+        {
+            if (process_relocations((const ELF64_Rela *) (file + offset), dt_pltrelsz / sizeof(ELF64_Rela))) return -1;
+        }
+        if (dt_relr != 0 && dt_relrsz != 0 && (offset = va_to_offset(dt_relr, dt_relrsz)) != 0)
+        {
+            if (process_relr(file, file_size, (const uint64_t *) (file + offset), dt_relrsz / 8)) return -1;
         }
     }
 
@@ -335,61 +519,21 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
         dynsyms[index].imported = ((!dynsyms[index].defined && dynsyms[index].name[0] != 0) || dynsyms[index].copy)?1:0;
     }
 
-    // relative relocations in compact format (RELR, -z pack-relative-relocs): addends are in the relocated locations
-    for (index = 0; index < header->e_shnum; index++)
-    {
-        const uint64_t *entries;
-        uint64_t num_entries, entry, where;
-
-        if (sections[index].sh_type != SHT_RELR) continue;
-        if ((int64_t)(sections[index].sh_offset + sections[index].sh_size) > file_size) continue;
-
-        entries = (const uint64_t *) (file + sections[index].sh_offset);
-        num_entries = sections[index].sh_size / 8;
-        where = 0;
-        for (entry = 0; entry < num_entries; entry++)
-        {
-            uint64_t value, location;
-            unsigned int bit;
-
-            value = entries[entry];
-            if ((value & 1) == 0)
-            {
-                // address
-                location = value;
-                if (relr_add(file, file_size, header, sections, location)) return -1;
-                where = location + 8;
-            }
-            else
-            {
-                // bitmap of the following 63 words
-                for (bit = 0; (value >>= 1) != 0; bit++)
-                {
-                    if (value & 1)
-                    {
-                        if (relr_add(file, file_size, header, sections, where + 8 * (uint64_t)bit)) return -1;
-                    }
-                }
-                where += 63 * 8;
-            }
-        }
-    }
-
     if (num_got_slots) qsort(got_slots, num_got_slots, sizeof(elf_dynrel), dynrel_compare);
     if (num_copies) qsort(copies, num_copies, sizeof(elf_dynrel), dynrel_compare);
 
     // dynamic section: needed libraries, rpath, init/fini
     interp[0] = 0;
     rpath[0] = 0;
-    if (dynamic_sec != NULL)
+    if (dynamic_size != 0)
     {
         uint64_t entry;
 
-        for (entry = 0; (entry + 1) * sizeof(ELF64_Dyn) <= dynamic_sec->sh_size; entry++)
+        for (entry = 0; (entry + 1) * sizeof(ELF64_Dyn) <= dynamic_size; entry++)
         {
             const ELF64_Dyn *dyn;
 
-            dyn = (const ELF64_Dyn *) (file + dynamic_sec->sh_offset + entry * sizeof(ELF64_Dyn));
+            dyn = (const ELF64_Dyn *) (file + dynamic_off + entry * sizeof(ELF64_Dyn));
             if (dyn->d_tag == DT_NULL) break;
 
             switch (dyn->d_tag)
@@ -432,6 +576,14 @@ int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, co
         {
             memcpy(interp, file + shdr->sh_offset, shdr->sh_size);
             interp[shdr->sh_size] = 0;
+        }
+    }
+    for (index = 0; index < header->e_phnum && interp[0] == 0; index++)
+    {
+        if (ld_segments[index].p_type == PT_INTERP && ld_segments[index].p_filesz < sizeof(interp) && (int64_t)(ld_segments[index].p_offset + ld_segments[index].p_filesz) <= file_size)
+        {
+            memcpy(interp, file + ld_segments[index].p_offset, ld_segments[index].p_filesz);
+            interp[ld_segments[index].p_filesz] = 0;
         }
     }
     if (interp[0] == 0) strcpy(interp, "/lib64/ld-linux-x86-64.so.2");
@@ -526,7 +678,7 @@ int SR_elf_dyn_reference_label(char *cbuf, uint64_t address)
     stub = find_plt_stub(address);
     if (stub != NULL)
     {
-        strcpy(cbuf, dynsyms[stub->sym].name);
+        strcpy(cbuf, dynsyms[stub->sym].asm_name);
         return 1;
     }
 
@@ -571,6 +723,28 @@ static int set_data_string(uint64_t address, const char *str)
     if (output->str == NULL) return -1;
 
     return 0;
+}
+
+// output with label at address (uninitialized data is one output - it's split)
+static output_data *labeled_output(uint_fast32_t SecNum, uint_fast32_t RelAdr)
+{
+    output_data *lower, *output;
+
+    output = section_output_list_FindEntryEqual(SecNum, RelAdr);
+    if (output == NULL)
+    {
+        lower = section_output_list_FindEntryLower(SecNum, RelAdr);
+        if (lower == NULL || lower->type != OT_UNITIALIZED || lower->ofs + lower->len < RelAdr) return NULL;
+
+        output = section_output_list_Insert(SecNum, RelAdr);
+        if (output == NULL) return NULL;
+        output->type = OT_UNITIALIZED;
+        output->len = lower->ofs + lower->len - RelAdr;
+        lower->len = RelAdr - lower->ofs - 1;
+    }
+
+    output->has_label = 1;
+    return output;
 }
 
 // "dq label" for address of symbol defined in executable (or object copied into executable)
@@ -672,7 +846,7 @@ int SR_elf_dyn_process(void)
 
         if (!SR_get_section_reladr_exact(plt_stubs[index].address, &SecNum, &RelAdr)) continue;
         if (section_extrn_list_FindEntryEqual(SecNum, RelAdr) != NULL) continue;
-        if (section_extrn_list_Insert(SecNum, RelAdr, dynsyms[plt_stubs[index].sym].name, NULL) == NULL) return -1;
+        if (section_extrn_list_Insert(SecNum, RelAdr, dynsyms[plt_stubs[index].sym].asm_name, NULL) == NULL) return -1;
     }
 
     // GOT entries: imports (accesses from code), addresses of symbols (for original code)
@@ -696,14 +870,14 @@ int SR_elf_dyn_process(void)
         extrn = section_extrn_list_FindEntryEqual(SecNum, RelAdr);
         if (extrn == NULL)
         {
-            extrn = section_extrn_list_Insert(SecNum, RelAdr, dynsyms[got_slots[index].sym].name, NULL);
+            extrn = section_extrn_list_Insert(SecNum, RelAdr, dynsyms[got_slots[index].sym].asm_name, NULL);
             if (extrn == NULL) return -1;
             extrn->is_import = 1;
         }
 
         if (got_slots[index].type != R_X86_64_TPOFF64)
         {
-            sprintf(buf, "dq %s", dynsyms[got_slots[index].sym].name);
+            sprintf(buf, "dq %s", dynsyms[got_slots[index].sym].asm_name);
             if (set_data_string(got_slots[index].address, buf) == 0) written++;
         }
     }
@@ -718,9 +892,9 @@ int SR_elf_dyn_process(void)
             continue;
         }
 
-        if (data_relocs[index].addend > 0) sprintf(buf, "dq %s+%" PRIi64, dynsyms[data_relocs[index].sym].name, data_relocs[index].addend);
-        else if (data_relocs[index].addend < 0) sprintf(buf, "dq %s-%" PRIi64, dynsyms[data_relocs[index].sym].name, -data_relocs[index].addend);
-        else sprintf(buf, "dq %s", dynsyms[data_relocs[index].sym].name);
+        if (data_relocs[index].addend > 0) sprintf(buf, "dq %s+%" PRIi64, dynsyms[data_relocs[index].sym].asm_name, data_relocs[index].addend);
+        else if (data_relocs[index].addend < 0) sprintf(buf, "dq %s-%" PRIi64, dynsyms[data_relocs[index].sym].asm_name, -data_relocs[index].addend);
+        else sprintf(buf, "dq %s", dynsyms[data_relocs[index].sym].asm_name);
 
         if (set_data_string(data_relocs[index].address, buf) == 0) written++;
     }
@@ -748,13 +922,11 @@ int SR_elf_dyn_process(void)
     for (index = 1; index < num_dynsyms; index++)
     {
         uint_fast32_t SecNum, RelAdr;
-        output_data *output;
 
         if (!dynsyms[index].defined || dynsyms[index].imported || dynsyms[index].bind == STB_LOCAL || dynsyms[index].name[0] == 0) continue;
         if (!SR_get_section_reladr_exact(dynsyms[index].value, &SecNum, &RelAdr)) continue;
 
-        output = section_output_list_FindEntryEqual(SecNum, RelAdr);
-        if (output != NULL) output->has_label = 1;
+        labeled_output(SecNum, RelAdr);
 
         // exported functions are code entries
         if (section[SecNum].type == ST_CODE && dynsyms[index].type == STT_FUNC && !SR_is_ignored(SecNum, RelAdr))
@@ -837,8 +1009,8 @@ void SR_elf_dyn_write_externs(FILE *fout)
     for (index = 1; index < num_dynsyms; index++)
     {
         if (!dynsyms[index].imported) continue;
-        fprintf(fout, "extern %s%s ; %s %s\n", dynsyms[index].name, (dynsyms[index].bind == STB_WEAK && !dynsyms[index].copy)?":weak":"",
-                (dynsyms[index].library != NULL)?dynsyms[index].library:"-", (dynsyms[index].version != NULL)?dynsyms[index].version:"-");
+        fprintf(fout, "extern %s%s ; %s %s %s\n", dynsyms[index].asm_name, (dynsyms[index].bind == STB_WEAK && !dynsyms[index].copy)?":weak":"",
+                dynsyms[index].name, (dynsyms[index].library != NULL)?dynsyms[index].library:"-", (dynsyms[index].version != NULL)?dynsyms[index].version:"-");
     }
 }
 
@@ -854,7 +1026,7 @@ void SR_elf_dyn_write_copy_references(FILE *fout)
     fprintf(fout, "section srw.copyref progbits alloc exec nowrite align=16\n");
     for (index = 0; index < num_copies; index++)
     {
-        fprintf(fout, "lea rax, [rel %s]\n", dynsyms[copies[index].sym].name);
+        fprintf(fout, "lea rax, [rel %s]\n", dynsyms[copies[index].sym].asm_name);
     }
 }
 
@@ -885,17 +1057,17 @@ void SR_elf_dyn_write_exports(FILE *fout)
 
         if (dynsyms[index].type == STT_FUNC || dynsyms[index].type == STT_GNU_IFUNC)
         {
-            fprintf(fout, "global %s:function\n", dynsyms[index].name);
+            fprintf(fout, "global %s:function\n", dynsyms[index].asm_name);
         }
         else if (dynsyms[index].type == STT_OBJECT || dynsyms[index].type == STT_TLS)
         {
-            fprintf(fout, "global %s:data %u\n", dynsyms[index].name, (unsigned int)dynsyms[index].size);
+            fprintf(fout, "global %s:data %u\n", dynsyms[index].asm_name, (unsigned int)dynsyms[index].size);
         }
         else
         {
-            fprintf(fout, "global %s\n", dynsyms[index].name);
+            fprintf(fout, "global %s\n", dynsyms[index].asm_name);
         }
-        fprintf(fout, "%s equ %s\n", dynsyms[index].name, label);
+        fprintf(fout, "%s equ %s\n", dynsyms[index].asm_name, label);
 
         if (strcmp(dynsyms[index].name, "_init") == 0) has_init = 1;
         if (strcmp(dynsyms[index].name, "_fini") == 0) has_fini = 1;
@@ -978,6 +1150,42 @@ int SR_elf_dyn_write_imports(const char *fname)
     }
 
     fclose(fout);
+
+    // renaming of symbols which aren't valid in assembler (objcopy @<file> object)
+    {
+        unsigned int renamed;
+
+        renamed = 0;
+        for (index = 1; index < num_dynsyms; index++)
+        {
+            if (dynsyms[index].asm_name != NULL && dynsyms[index].asm_name[0] != '$' && (dynsyms[index].imported || is_exported(index))) renamed++;
+        }
+
+        if (renamed != 0)
+        {
+            name = (char *) malloc(strlen(fname) + 16);
+            if (name == NULL) return -1;
+            strcpy(name, fname);
+            dotptr = strrchr(name, '.');
+            slash = strrchr(name, '/');
+            if (dotptr != NULL && (slash == NULL || dotptr > slash)) *dotptr = 0;
+            strcat(name, ".symrename");
+
+            fout = fopen(name, "wt");
+            free(name);
+            if (fout == NULL) return -1;
+
+            for (index = 1; index < num_dynsyms; index++)
+            {
+                if (dynsyms[index].asm_name != NULL && dynsyms[index].asm_name[0] != '$' && (dynsyms[index].imported || is_exported(index)))
+                {
+                    fprintf(fout, "--redefine-sym %s=%s\n", dynsyms[index].asm_name, dynsyms[index].name);
+                }
+            }
+            fclose(fout);
+        }
+    }
+
     return 0;
 }
 
@@ -994,7 +1202,16 @@ const char *SR_elf_dyn_interp(void)
 void SR_elf_dyn_free(void)
 {
     if (dyn_strings != NULL) free(dyn_strings);
-    if (dynsyms != NULL) free(dynsyms);
+    if (dynsyms != NULL)
+    {
+        unsigned int index;
+
+        for (index = 0; index < num_dynsyms; index++)
+        {
+            if (dynsyms[index].asm_name != NULL) free(dynsyms[index].asm_name);
+        }
+        free(dynsyms);
+    }
     if (got_slots != NULL) free(got_slots);
     if (data_relocs != NULL) free(data_relocs);
     if (copies != NULL) free(copies);

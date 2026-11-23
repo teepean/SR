@@ -48,6 +48,7 @@ EXTERNAL_VARIABLE int InputFormat;                      // INPUT_PE or INPUT_ELF
 EXTERNAL_VARIABLE uint64_t CodeBase;                    // address of recompiled code (ELF)
 EXTERNAL_VARIABLE int ElfPie;                           // position independent executable (ELF)
 EXTERNAL_VARIABLE uint64_t ElfLoadBias;                 // address of position independent executable (ELF)
+EXTERNAL_VARIABLE uint64_t ElfHeadersBase;              // address of headers of new executable (ELF, 0 = image base)
 EXTERNAL_VARIABLE uint64_t ImageBase;                   // image base
 EXTERNAL_VARIABLE uint_fast32_t SizeOfImage;            // size of image
 EXTERNAL_VARIABLE uint_fast32_t SizeOfHeaders;          // size of headers
@@ -133,7 +134,7 @@ int SR_elf_is_noret_name(const char *name);
 int SR_elf_add_fixup(uint64_t source, uint64_t target);
 
 // SRW64_elf_dyn.c
-int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, const void *shdrs);
+int SR_elf_dyn_load(const uint8_t *file, int64_t file_size, const void *ehdr, const void *shdrs, const void *phdrs);
 int SR_elf_dyn_process(void);
 int SR_elf_dyn_is_tls_got(uint64_t address);
 int SR_elf_dyn_reference_label(char *cbuf, uint64_t address);

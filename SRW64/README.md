@@ -39,7 +39,8 @@ Output files:
 * *output.resdump* -- raw contents of the resource section
 * *output.ld* -- linker script (only Linux executables)
 * *output.imports* -- interpreter, needed libraries and imported symbols (only dynamically linked Linux executables)
-* *output.origNN.bin* -- original code of section NN (only Linux executables, see `keep_original_code`)
+* *output.secNN.bin* -- contents of section NN (only Linux executables -- the generated files include the original data and the original code which is kept using `incbin`)
+* *output.symrename* -- renaming of symbols which aren't valid in NASM (only dynamically linked Linux executables, see below)
 
 The generated assembler file includes files *srw64inc.inc* (from the *x64-support* subdirectory), *misc.inc* and *extern.inc* (game specific files, they can be empty).
 
@@ -111,9 +112,13 @@ Static-pie executables and shared libraries are not supported.
 
 Executables which are not position independent don't contain relocations, so pointers in data can't be found reliably.
 Therefore all sections except code keep their original addresses and only the recompiled code is moved (to a new address after the original image, printed as *Address of recompiled code*).
-Position independent executables are placed at address 0x400000 (the recompiled executable is not position independent) -- their pointers in data are known from relative relocations (also in compact format RELR), so the data isn't searched for pointers:
+Position independent executables are placed at address 0x410000 or higher (aligned like the segments; the recompiled executable is not position independent and its headers are at address 0x400000) -- their pointers in data are known from relative relocations (also in compact format RELR), so the data isn't searched for pointers.
 
-* The generated linker script (*output.ld*) places the sections (named `srw.<original name>`) at their original addresses and the recompiled code (section `.text`) at the new address.
+Executables without section headers (or with section headers which don't describe all loaded segments -- e.g. executables converted from other platforms) are supported too: sections are created from the program headers (executable segments are code, writable segments are data, the part after the file data is uninitialized data, thread local storage from `PT_TLS`, `.eh_frame` from `PT_GNU_EH_FRAME`) and the dynamic linking information is read using the dynamic tags.
+
+* The generated linker script (*output.ld*) places the sections (named `srw.<original name>`, sections created from program headers are named `srw.load<segment>`) at their original addresses and the recompiled code (section `.text`) at the new address.
+* The original data is included from *output.secNN.bin* (`incbin`) and uninitialized data is written as `resb <size>`, so the generated files stay small also for big executables.
+
 * Only references to code are converted:
   * RIP-relative addresses, calls and jumps,
   * immediate values which are addresses of functions (in `mov`, `cmp` and `push` instructions),
@@ -122,7 +127,7 @@ Position independent executables are placed at address 0x400000 (the recompiled 
   * addresses of IFUNC resolvers in IRELATIVE relocations (`.rela.plt`).
 * Functions (and their sizes) are taken from the symbol table, so the executable should not be stripped (without symbols, the code is found only from the entry point and from references).
   Cold parts of functions (`foo.cold`) are considered to be parts of the functions.
-* Functions which can't be decoded (AVX-512/EVEX instructions are not supported by udis86 -- glibc contains such variants of string and math functions) are not recompiled: the original code is kept at its original address (sections `srw.<name>.orig` with contents from *output.origNN.bin*) and references to it use labels in these sections (`srw_orig_<section>+<offset>`). Addresses outside of sections (e.g. undefined weak functions with address 0) use symbols `srw_abs_<address>` defined in the linker script.
+* Functions which can't be decoded (AVX-512/EVEX instructions are not supported by udis86 -- glibc contains such variants of string and math functions) are not recompiled: the original code is kept at its original address (sections `srw.<name>.orig` with contents from *output.secNN.bin*) and references to it use labels in these sections (`srw_orig_<section>+<offset>`). Addresses outside of sections (e.g. undefined weak functions with address 0) use symbols `srw_abs_<address>` defined in the linker script.
   The functions are listed by SRW64 (`Note: function is kept in original code`). This can be disabled with `keep_original_code=no` in *SR.cfg* (then such functions must be handled using SCI files).
 * Thread local storage keeps its layout (`.tdata`, `.tbss`), so offsets relative to `fs:` stay valid.
 * The entry point gets the name `srw_entry` (used in the linker script).
@@ -141,8 +146,10 @@ Dynamically linked executables use the same shared libraries as the original exe
 * Imported symbols are external symbols in the generated file. Calls of PLT stubs and calls/jumps through GOT are calls/jumps of the symbols, other accesses to GOT use GOT of the new executable (`wrt ..gotpc`, `wrt ..gottpoff`), the original GOT entries get the addresses of the symbols (for original code which is kept).
 * Objects copied into the executable (COPY relocations, e.g. `stdout`, C++ type information) stay at their original addresses: the generated file contains references which make the linker create COPY relocations, and the script [tests/fixcopy_elf.py](tests/fixcopy_elf.py) moves the relocations and the dynamic symbols to the original addresses after linking (the original code which is kept uses the original addresses too). Data relocations with symbols are written as `dq symbol+addend`.
 * Symbols exported by the original executable are exported again (link with `-E`); `_init`, `_fini`, `.init_array`, `.fini_array` keep their roles (dynamic tags).
+* Symbol names which are valid in NASM get prefix `$` (names like `div` or `abs` aren't keywords then), other names (e.g. names with `+`, `-` or starting with a digit) are written as `srw_sym_<index>` and renamed in the object file using *output.symrename*: `objcopy @output.symrename output.o`.
 * The linker needs the libraries with the imported symbols -- the script [tests/mkstubs_elf.py](tests/mkstubs_elf.py) creates stub libraries from *output.imports* (same names, symbols with the same versions, types and sizes), the real libraries are used at runtime:
 
+        objcopy @output.symrename output.o      # only if output.symrename exists
         mkstubs_elf.py output.imports stubs     # prints: -dynamic-linker <interpreter> [-rpath <path>] <stub libraries>
         ld <printed arguments> -E --eh-frame-hdr -T output.ld output.o -o program
         fixcopy_elf.py program output.imports   # only if output.imports contains lines "copy"

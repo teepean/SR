@@ -43,6 +43,15 @@ int SR_initial_disassembly(void)
         // debug information is not part of output
         if (section[Entry].type == ST_DEBUG) continue;
 
+        // Linux executables: uninitialized data is one output (written as resb <size>, labels are relative to the start)
+        if (InputFormat == INPUT_ELF && section[Entry].type == ST_UDATA && section[Entry].size != 0)
+        {
+            output = section_output_list_Insert(Entry, 0);
+            if (output == NULL) return -1;
+            output->type = OT_UNITIALIZED;
+            output->len = section[Entry].size - 1;
+        }
+        else
         for (ofs = 0; ofs < section[Entry].size; ofs++)
         {
             output = section_output_list_Insert(Entry, ofs);

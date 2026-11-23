@@ -23,6 +23,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS 
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <string.h>
 #include "types.h"
 #include "extern.h"
 #include "decode.h"
@@ -215,8 +216,9 @@ ud_translate_intel(struct ud* u)
       /* SRW64: NASM needs operand size for multi-byte nop */
       ud_asmprintf(u, (u->opr_mode == 16)?"word ":((u->opr_mode == 64)?"qword ":"dword "));
       cast = 0;
-    } else if (u->mnemonic == UD_Iprefetchw || u->mnemonic == UD_Iprefetch) {
-      /* SRW64: NASM doesn't accept operand size for prefetchw */
+    } else if (u->mnemonic == UD_Iprefetchw || u->mnemonic == UD_Iprefetch ||
+               u->mnemonic == UD_Iclflush || u->mnemonic == UD_Iclflushopt) {
+      /* SRW64: NASM doesn't accept operand size for prefetchw, clflush */
       cast = 0;
     }
     gen_operand(u, &u->operand[0], cast);
@@ -235,10 +237,16 @@ ud_translate_intel(struct ud* u)
 
   if (u->operand[2].type != UD_NONE) {
     int cast = 0;
+    const char *mnemonic = ud_lookup_mnemonic(u->mnemonic);
+    size_t length = (mnemonic != NULL)?strlen(mnemonic):0;
     ud_asmprintf(u, ", ");
     if (u->operand[2].type == UD_OP_MEM &&
         u->operand[2].size != u->operand[1].size) {
       cast = 1;
+    }
+    if (cast && length > 6 && strncmp(mnemonic, "vcmp", 4) == 0 && strcmp(mnemonic + length - 2, "ss") == 0) {
+      /* SRW64: NASM doesn't accept operand size for memory operand of vcmpss */
+      cast = 0;
     }
     gen_operand(u, &u->operand[2], cast);
   }

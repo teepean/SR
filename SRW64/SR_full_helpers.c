@@ -236,7 +236,7 @@ int SR_disassemble_find_noret(uint64_t address)
         if (extrn != NULL && InputFormat == INPUT_ELF)
         {
             // Linux executables: imported function (GOT entry, PLT stub)
-            if (SR_elf_is_noret_name(extrn->proc)) return 1;
+            if (SR_elf_is_noret_name((extrn->proc[0] == '$')?(extrn->proc + 1):extrn->proc)) return 1;
         }
         else if (extrn != NULL && extrn->is_import)
         {

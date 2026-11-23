@@ -66,7 +66,9 @@ def main():
 
     stubs = []
     for library in needed:
-        base = os.path.join(out_dir, library.replace("/", "_"))
+        # file name of stub (the library name can be a path, e.g. $ORIGIN/lib/libx.so), the name is SONAME
+        file_name = library.replace("/", "_").replace("$", "_")
+        base = os.path.join(out_dir, file_name)
         asm_lines = []
         versions = {}
         defined = set()
@@ -76,30 +78,32 @@ def main():
             defined.add(name)
             if version != "-":
                 versions.setdefault(version, []).append(name)
+            # quoted names (names can contain characters like # + -)
+            quoted = '"%s"' % name
             if sym_type == "OBJECT":
-                asm_lines += ["\t.data", "\t.globl %s" % name, "\t.type %s, @object" % name,
-                              "\t.size %s, %d" % (name, size), "%s:" % name, "\t.zero %d" % max(size, 1)]
+                asm_lines += ["\t.data", "\t.globl %s" % quoted, "\t.type %s, @object" % quoted,
+                              "\t.size %s, %d" % (quoted, size), "%s:" % quoted, "\t.zero %d" % max(size, 1)]
             elif sym_type == "TLS":
-                asm_lines += ["\t.section .tbss,\"awT\",@nobits", "\t.globl %s" % name, "\t.type %s, @tls_object" % name,
-                              "\t.size %s, %d" % (name, size), "%s:" % name, "\t.zero %d" % max(size, 1)]
+                asm_lines += ["\t.section .tbss,\"awT\",@nobits", "\t.globl %s" % quoted, "\t.type %s, @tls_object" % quoted,
+                              "\t.size %s, %d" % (quoted, size), "%s:" % quoted, "\t.zero %d" % max(size, 1)]
             else:
-                asm_lines += ["\t.text", "\t.globl %s" % name, "\t.type %s, @function" % name, "%s:" % name, "\tret"]
+                asm_lines += ["\t.text", "\t.globl %s" % quoted, "\t.type %s, @function" % quoted, "%s:" % quoted, "\tret"]
 
         with open(base + ".s", "w") as f:
             f.write("\n".join(asm_lines) + "\n\t.section .note.GNU-stack,\"\",@progbits\n")
 
-        command = [compiler, "-shared", "-nostdlib", "-o", os.path.join(out_dir, library), base + ".s", "-Wl,-soname," + library]
+        command = [compiler, "-shared", "-nostdlib", "-o", os.path.join(out_dir, file_name), base + ".s", "-Wl,-soname," + library]
         if versions:
             with open(base + ".map", "w") as f:
                 for version, names in versions.items():
-                    f.write("%s {\n    global:\n%s};\n" % (version, "".join("        %s;\n" % n for n in names)))
+                    f.write("%s {\n    global:\n%s};\n" % (version, "".join("        \"%s\";\n" % n for n in names)))
             command.append("-Wl,--version-script=" + base + ".map")
 
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0:
             print(result.stderr, file=sys.stderr)
             return 1
-        stubs.append(os.path.join(out_dir, library))
+        stubs.append(os.path.join(out_dir, file_name))
 
     args = ["-dynamic-linker", interp]
     if rpath:

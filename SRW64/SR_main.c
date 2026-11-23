@@ -327,6 +327,7 @@ static void initialize_values(void)
 	CodeBase = 0;
 	ElfPie = 0;
 	ElfLoadBias = 0;
+	ElfHeadersBase = 0;
 	ImageBase = 0;
 	SizeOfImage = 0;
 	SizeOfHeaders = 0;

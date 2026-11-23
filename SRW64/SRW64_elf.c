@@ -317,9 +317,443 @@ static int elf_link_cold_parts(void)
     return 0;
 }
 
+typedef struct _elf_region_ {
+    uint64_t start, end;
+    const char *name;
+    section_type type;
+    int tls;
+} elf_region;
+
+static uint8_t *elf_segment_memory = NULL;
+static elf_region elf_dropped[64];          // sections which are not part of output (notes, dynamic linking information)
+static unsigned int elf_num_dropped = 0;
+
+static int elf_region_compare(const void *p1, const void *p2)
+{
+    const elf_region *r1 = (const elf_region *)p1;
+    const elf_region *r2 = (const elf_region *)p2;
+
+    return (r1->start < r2->start)?-1:((r1->start > r2->start)?1:0);
+}
+
+// creates section from part of segment
+static int elf_new_section(const char *name, uint64_t start, uint64_t size, uint64_t file_size, section_type type, int tls, uint_fast32_t align, uint8_t *memory, uint64_t *max_section_end)
+{
+    unsigned int Entry;
+
+    if (num_sections >= MAX_SECTIONS)
+    {
+        fprintf(stderr, "Error: Too many sections\n");
+        return -1;
+    }
+
+    Entry = num_sections;
+    num_sections++;
+
+    memset(&(section[Entry]), 0, sizeof(section_data));
+    strncpy(section[Entry].name, name, sizeof(section[Entry].name) - 1);
+    section[Entry].start = start;
+    section[Entry].virtaddr = (uint_fast32_t)(start - ImageBase);
+    section[Entry].size = (uint_fast32_t)size;
+    section[Entry].size_in_file = (uint_fast32_t)file_size;
+    section[Entry].adr = memory;
+    section[Entry].align = align;
+    section[Entry].tls = tls;
+    section[Entry].type = type;
+
+    if (!(tls && type == ST_UDATA))
+    {
+        SR_add_orig_section(section[Entry].virtaddr, section[Entry].size, memory);
+        if (section[Entry].virtaddr < FirstSectionRVA) FirstSectionRVA = section[Entry].virtaddr;
+        if (start + size > *max_section_end) *max_section_end = start + size;
+    }
+
+    fprintf(stderr, "name: %s (seg%.2i) - 0x%" PRIx64 " - %u - type %i%s (from program headers)\n", section[Entry].name, Entry + 1, section[Entry].start, (unsigned int)section[Entry].size, section[Entry].type, (tls)?" - tls":"");
+    return 0;
+}
+
+// sections for parts of loaded segments which are not described by section headers
+static uint64_t elf_va_to_offset(const ELF64_Ehdr *header, const ELF64_Phdr *segments, uint64_t va, uint64_t size)
+{
+    unsigned int index;
+
+    for (index = 0; index < header->e_phnum; index++)
+    {
+        uint64_t seg_va = segments[index].p_vaddr + ElfLoadBias;
+
+        if (segments[index].p_type == PT_LOAD && va >= seg_va && va + size <= seg_va + segments[index].p_filesz)
+        {
+            return segments[index].p_offset + (va - seg_va);
+        }
+    }
+    return 0;
+}
+
+static int elf_add_segment_sections(const uint8_t *file, int64_t file_size, const ELF64_Ehdr *header, const ELF64_Phdr *segments, uint64_t *max_section_end, int is_dynamic)
+{
+    elf_region special[24], pieces[256];
+    unsigned int num_special, num_pieces, index, k, Entry, num_existing, has_tbss;
+    uint64_t total_memory, tls_va, tls_filesz, tls_memsz, tls_align;
+    uint8_t *memory;
+    static char names[256][32];
+    int pass;
+
+    num_existing = num_sections;
+
+    // special regions: TLS template, exception handling data, dynamic section, interpreter
+    num_special = 0;
+    tls_va = tls_filesz = tls_memsz = 0;
+    tls_align = 1;
+    for (index = 0; index < header->e_phnum; index++)
+    {
+        const ELF64_Phdr *ph = &(segments[index]);
+        uint64_t va = ph->p_vaddr + ElfLoadBias;
+
+        switch (ph->p_type)
+        {
+            case 7: // PT_TLS
+                tls_va = va;
+                tls_filesz = ph->p_filesz;
+                tls_memsz = ph->p_memsz;
+                tls_align = (ph->p_align > 1)?ph->p_align:1;
+                if (ph->p_filesz != 0)
+                {
+                    special[num_special].start = va;
+                    special[num_special].end = va + ph->p_filesz;
+                    special[num_special].name = ".tdata";
+                    special[num_special].type = ST_DATA;
+                    special[num_special].tls = 1;
+                    num_special++;
+                }
+                break;
+            case 0x6474e550: // PT_GNU_EH_FRAME
+                special[num_special].start = va;
+                special[num_special].end = va + ph->p_memsz;
+                special[num_special].name = ".eh_frame_hdr";
+                special[num_special].type = ST_RDATA;
+                special[num_special].tls = 0;
+                num_special++;
+
+                // .eh_frame (address from .eh_frame_hdr, size from records)
+                if (ph->p_filesz >= 8 && (int64_t)(ph->p_offset + 8) <= file_size && file[ph->p_offset] == 1 && file[ph->p_offset + 1] == 0x1b)
+                {
+                    int32_t eh_ptr;
+                    uint64_t eh_va, pos, limit;
+                    unsigned int seg;
+
+                    memcpy(&eh_ptr, file + ph->p_offset + 4, 4);
+                    eh_va = va + 4 + (int64_t)eh_ptr;
+
+                    for (seg = 0; seg < header->e_phnum; seg++)
+                    {
+                        uint64_t seg_va = segments[seg].p_vaddr + ElfLoadBias;
+
+                        if (segments[seg].p_type != PT_LOAD || eh_va < seg_va || eh_va >= seg_va + segments[seg].p_filesz) continue;
+
+                        pos = segments[seg].p_offset + (eh_va - seg_va);
+                        limit = segments[seg].p_offset + segments[seg].p_filesz;
+                        while (pos + 4 <= limit && (int64_t)(pos + 4) <= file_size)
+                        {
+                            uint32_t length;
+
+                            memcpy(&length, file + pos, 4);
+                            pos += 4;
+                            if (length == 0 || length == 0xffffffff) break;
+                            pos += length;
+                        }
+                        if (pos > limit) pos = limit;
+
+                        special[num_special].start = eh_va;
+                        special[num_special].end = eh_va + (pos - (segments[seg].p_offset + (eh_va - seg_va)));
+                        special[num_special].name = ".eh_frame";
+                        special[num_special].type = ST_RDATA;
+                        special[num_special].tls = 0;
+                        num_special++;
+                        break;
+                    }
+                }
+                break;
+            case PT_DYNAMIC:
+                special[num_special].start = va;
+                special[num_special].end = va + ph->p_memsz;
+                special[num_special].name = ".dynamic";
+                special[num_special].type = ST_DATA;
+                special[num_special].tls = 0;
+                num_special++;
+                break;
+            case PT_INTERP:
+                special[num_special].start = va;
+                special[num_special].end = va + ph->p_memsz;
+                special[num_special].name = ".interp";
+                special[num_special].type = ST_RDATA;
+                special[num_special].tls = 0;
+                num_special++;
+                break;
+            default:
+                break;
+        }
+        if (num_special >= 7) break;
+    }
+
+    // dynamic linking information (from dynamic section)
+    for (index = 0; index < header->e_phnum; index++)
+    {
+        uint64_t pos, end, strtab, strsz, rela, relasz, jmprel, pltrelsz, relr, relrsz, hash, symtab;
+
+        if (segments[index].p_type != PT_DYNAMIC) continue;
+
+        strtab = strsz = rela = relasz = jmprel = pltrelsz = relr = relrsz = hash = symtab = 0;
+        pos = segments[index].p_offset;
+        end = pos + segments[index].p_filesz;
+        for (; pos + 16 <= end && (int64_t)(pos + 16) <= file_size; pos += 16)
+        {
+            int64_t tag;
+            uint64_t val;
+
+            memcpy(&tag, file + pos, 8);
+            memcpy(&val, file + pos + 8, 8);
+            if (tag == 0) break;
+            switch (tag)
+            {
+                case 4: hash = val + ElfLoadBias; break;
+                case 5: strtab = val + ElfLoadBias; break;
+                case 6: symtab = val + ElfLoadBias; break;
+                case 7: rela = val + ElfLoadBias; break;
+                case 8: relasz = val; break;
+                case 10: strsz = val; break;
+                case 23: jmprel = val + ElfLoadBias; break;
+                case 2: pltrelsz = val; break;
+                case 36: relr = val + ElfLoadBias; break;
+                case 35: relrsz = val; break;
+                default: break;
+            }
+        }
+
+#define ADD_SPECIAL(START, SIZE, NAME) if ((START) != 0 && (SIZE) != 0 && num_special < 24) { special[num_special].start = (START); special[num_special].end = (START) + (SIZE); special[num_special].name = (NAME); special[num_special].type = ST_RDATA; special[num_special].tls = 0; num_special++; }
+        ADD_SPECIAL(strtab, strsz, ".dynstr")
+        ADD_SPECIAL(rela, relasz, ".rela.dyn")
+        ADD_SPECIAL(jmprel, pltrelsz, ".rela.plt")
+        ADD_SPECIAL(relr, relrsz, ".relr.dyn")
+        if (hash != 0)
+        {
+            uint64_t hash_ofs;
+            uint32_t counts[2];
+
+            hash_ofs = elf_va_to_offset(header, segments, hash, 8);
+            if (hash_ofs != 0 && (int64_t)(hash_ofs + 8) <= file_size)
+            {
+                memcpy(counts, file + hash_ofs, 8);
+                ADD_SPECIAL(hash, (2 + (uint64_t)counts[0] + counts[1]) * 4, ".hash")
+                ADD_SPECIAL(symtab, (uint64_t)counts[1] * sizeof(ELF64_Sym), ".dynsym")
+            }
+        }
+#undef ADD_SPECIAL
+        break;
+    }
+
+    // uncovered parts of segments
+    num_pieces = 0;
+    for (index = 0; index < header->e_phnum && num_pieces < 250; index++)
+    {
+        const ELF64_Phdr *ph = &(segments[index]);
+        uint64_t seg_start, seg_end, file_end, position;
+        unsigned int piece_count;
+
+        if (ph->p_type != PT_LOAD || ph->p_memsz == 0) continue;
+
+        seg_start = ph->p_vaddr + ElfLoadBias;
+        seg_end = seg_start + ph->p_memsz;
+        file_end = seg_start + ph->p_filesz;
+
+        // only segments which aren't described by section headers at all (gaps between sections are padding, headers)
+        for (Entry = 0; Entry < num_existing; Entry++)
+        {
+            if (section[Entry].tls && section[Entry].type == ST_UDATA) continue;
+            if (section[Entry].start < seg_end && section[Entry].start + section[Entry].size > seg_start) break;
+        }
+        if (Entry < num_existing) continue;
+        for (k = 0; k < elf_num_dropped; k++)
+        {
+            if (elf_dropped[k].start < seg_end && elf_dropped[k].end > seg_start) break;
+        }
+        if (k < elf_num_dropped) continue;
+
+        piece_count = 0;
+        position = seg_start;
+        while (position < seg_end && num_pieces < 250)
+        {
+            uint64_t next, cover_end, boundary;
+            int covered;
+
+            // covered by existing section ?
+            covered = 0;
+            cover_end = 0;
+            next = seg_end;
+            for (Entry = 0; Entry < num_existing; Entry++)
+            {
+                if (section[Entry].tls && section[Entry].type == ST_UDATA) continue;
+                if (section[Entry].size == 0) continue;
+                if (section[Entry].start <= position && position < section[Entry].start + section[Entry].size)
+                {
+                    covered = 1;
+                    if (section[Entry].start + section[Entry].size > cover_end) cover_end = section[Entry].start + section[Entry].size;
+                }
+                else if (section[Entry].start > position && section[Entry].start < next)
+                {
+                    next = section[Entry].start;
+                }
+            }
+            for (k = 0; k < elf_num_dropped; k++)
+            {
+                if (elf_dropped[k].end <= elf_dropped[k].start) continue;
+                if (elf_dropped[k].start <= position && position < elf_dropped[k].end)
+                {
+                    covered = 1;
+                    if (elf_dropped[k].end > cover_end) cover_end = elf_dropped[k].end;
+                }
+                else if (elf_dropped[k].start > position && elf_dropped[k].start < next)
+                {
+                    next = elf_dropped[k].start;
+                }
+            }
+            if (covered)
+            {
+                position = (cover_end < seg_end)?cover_end:seg_end;
+                continue;
+            }
+
+            // boundaries: end of file data, special regions
+            if (position < file_end && file_end < next) next = file_end;
+            boundary = next;
+            for (k = 0; k < num_special; k++)
+            {
+                if (special[k].start > position && special[k].start < boundary) boundary = special[k].start;
+                if (special[k].start <= position && special[k].end > position && special[k].end < boundary) boundary = special[k].end;
+            }
+
+            pieces[num_pieces].start = position;
+            pieces[num_pieces].end = boundary;
+            pieces[num_pieces].tls = 0;
+            pieces[num_pieces].name = NULL;
+            if (position >= file_end)
+            {
+                pieces[num_pieces].type = ST_UDATA;
+                snprintf(names[num_pieces], sizeof(names[0]), ".load%u.bss", index);
+            }
+            else
+            {
+                for (k = 0; k < num_special; k++)
+                {
+                    if (special[k].start <= position && special[k].end > position) break;
+                }
+                if (k < num_special)
+                {
+                    pieces[num_pieces].type = special[k].type;
+                    pieces[num_pieces].tls = special[k].tls;
+                    snprintf(names[num_pieces], sizeof(names[0]), "%s", special[k].name);
+                }
+                else
+                {
+                    // code: executable and not writable, data: writable
+                    pieces[num_pieces].type = ((ph->p_flags & 1) && !(ph->p_flags & 2))?ST_CODE:((ph->p_flags & 2)?ST_DATA:ST_RDATA);
+                    if (piece_count == 0) snprintf(names[num_pieces], sizeof(names[0]), ".load%u", index);
+                    else snprintf(names[num_pieces], sizeof(names[0]), ".load%u.%u", index, piece_count);
+                    piece_count++;
+                }
+            }
+            pieces[num_pieces].name = names[num_pieces];
+            num_pieces++;
+            position = boundary;
+        }
+    }
+
+    // uninitialized thread local storage
+    has_tbss = 0;
+    for (Entry = 0; Entry < num_existing; Entry++)
+    {
+        if (section[Entry].tls && section[Entry].type == ST_UDATA) has_tbss = 1;
+    }
+
+    if (num_pieces == 0 && (has_tbss || tls_memsz <= tls_filesz)) return 0;
+
+    // memory for sections
+    total_memory = 16;
+    for (k = 0; k < num_pieces; k++)
+    {
+        total_memory += ((pieces[k].end - pieces[k].start) + 15) & ~UINT64_C(15);
+    }
+    if (!has_tbss && tls_memsz > tls_filesz) total_memory += ((tls_memsz - tls_filesz) + 15) & ~UINT64_C(15);
+    if (total_memory > UINT64_C(0x80000000))
+    {
+        fprintf(stderr, "Error: Image too big\n");
+        return -1;
+    }
+
+    elf_segment_memory = (uint8_t *) calloc(1, (size_t)total_memory);
+    if (elf_segment_memory == NULL)
+    {
+        fprintf(stderr, "Error: Not enough memory\n");
+        return -1;
+    }
+    memory = elf_segment_memory;
+
+    qsort(pieces, num_pieces, sizeof(elf_region), elf_region_compare);
+
+    for (pass = 0, k = 0; k < num_pieces; k++)
+    {
+        uint64_t size, file_part;
+        uint_fast32_t align;
+
+        size = pieces[k].end - pieces[k].start;
+        file_part = 0;
+        align = 1;
+
+        if (pieces[k].type != ST_UDATA)
+        {
+            // copy data from file
+            for (index = 0; index < header->e_phnum; index++)
+            {
+                const ELF64_Phdr *ph = &(segments[index]);
+                uint64_t seg_start = ph->p_vaddr + ElfLoadBias;
+
+                if (ph->p_type != PT_LOAD || pieces[k].start < seg_start || pieces[k].end > seg_start + ph->p_filesz) continue;
+                if ((int64_t)(ph->p_offset + (pieces[k].start - seg_start) + size) > file_size) continue;
+
+                memcpy(memory, file + ph->p_offset + (pieces[k].start - seg_start), (size_t)size);
+                file_part = size;
+                break;
+            }
+            if (file_part == 0)
+            {
+                fprintf(stderr, "Error: segment data outside of file: 0x%" PRIx64 "\n", pieces[k].start);
+                return -1;
+            }
+        }
+
+        // dynamic linking information is created again by the linker
+        if (is_dynamic && elf_is_dynamic_section(pieces[k].name)) continue;
+
+        if (pieces[k].tls) align = (uint_fast32_t)tls_align;
+        else if (pieces[k].type == ST_CODE) align = 16;
+
+        if (elf_new_section(pieces[k].name, pieces[k].start, size, file_part, pieces[k].type, pieces[k].tls, align, memory, max_section_end)) return -1;
+        memory += (size + 15) & ~UINT64_C(15);
+    }
+    (void)pass;
+
+    if (!has_tbss && tls_memsz > tls_filesz)
+    {
+        // (alignment 1 - the position in TLS block must stay the same, the TLS block is aligned by .tdata)
+        if (elf_new_section(".tbss", tls_va + tls_filesz, tls_memsz - tls_filesz, 0, ST_UDATA, 1, (tls_filesz != 0)?1:(uint_fast32_t)tls_align, memory, max_section_end)) return -1;
+    }
+
+    return 0;
+}
+
 int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
 {
     const ELF64_Ehdr *header;
+    ELF64_Ehdr header_copy;
     const ELF64_Shdr *sections;
     const ELF64_Phdr *segments;
     const char *section_names;
@@ -380,23 +814,22 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
         return -1;
     }
 
-    if (header->e_shoff == 0 || header->e_shnum == 0 || header->e_shentsize != sizeof(ELF64_Shdr) ||
-        (int64_t)(header->e_shoff + header->e_shnum * sizeof(ELF64_Shdr)) > file_size ||
-        header->e_shstrndx >= header->e_shnum)
-    {
-        fprintf(stderr, "Error: executables without section headers are not supported\n");
-        return -1;
-    }
-
     segments = (const ELF64_Phdr *) (file + header->e_phoff);
     sections = (const ELF64_Shdr *) (file + header->e_shoff);
 
-    if ((int64_t)(sections[header->e_shstrndx].sh_offset + sections[header->e_shstrndx].sh_size) > file_size)
+    // executable without (valid) section headers - sections are created from program headers
+    header_copy = *header;
+    if (header->e_shoff == 0 || header->e_shnum == 0 || header->e_shentsize != sizeof(ELF64_Shdr) ||
+        (int64_t)(header->e_shoff + header->e_shnum * sizeof(ELF64_Shdr)) > file_size ||
+        header->e_shstrndx >= header->e_shnum ||
+        (int64_t)(sections[header->e_shstrndx].sh_offset + sections[header->e_shstrndx].sh_size) > file_size)
     {
-        fprintf(stderr, "Error: invalid section names\n");
-        return -1;
+        fprintf(stderr, "\tExecutable without section headers\n");
+        header_copy.e_shnum = 0;
+        header_copy.e_shstrndx = 0;
     }
-    section_names = (const char *) (file + sections[header->e_shstrndx].sh_offset);
+    header = &header_copy;
+    section_names = (header->e_shnum != 0)?(const char *) (file + sections[header->e_shstrndx].sh_offset):"";
 
     // image base and size from loaded segments
     min_address = UINT64_MAX;
@@ -426,10 +859,21 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
         return -1;
     }
 
-    // position independent executable is placed at address 0x400000
+    // position independent executable is placed at address 0x410000 (or higher, the address is aligned like the segments)
+    // - space for headers of new executable at address 0x400000
+    ElfHeadersBase = 0;
     if (ElfPie && min_address < UINT64_C(0x400000))
     {
-        ElfLoadBias = UINT64_C(0x400000) - (min_address & ~UINT64_C(0xfff));
+        uint64_t max_align;
+
+        max_align = 0x1000;
+        for (index = 0; index < header->e_phnum; index++)
+        {
+            if (segments[index].p_type == PT_LOAD && segments[index].p_align > max_align && segments[index].p_align <= UINT64_C(0x200000)) max_align = segments[index].p_align;
+        }
+
+        ElfLoadBias = (UINT64_C(0x410000) - (min_address & ~UINT64_C(0xfff)) + max_align - 1) & ~(max_align - 1);
+        ElfHeadersBase = UINT64_C(0x400000);
         min_address += ElfLoadBias;
         max_address += ElfLoadBias;
         fprintf(stderr, "\tPosition independent executable: load address 0x%" PRIx64 "\n", ElfLoadBias);
@@ -479,6 +923,7 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
 
     // sections
     num_sections = 0;
+    elf_num_dropped = 0;
     import_list = NULL;
     pdata_list = NULL;
     pdata_count = 0;
@@ -492,13 +937,20 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
         shdr = &(sections[index]);
         if (!(shdr->sh_flags & SHF_ALLOC) || shdr->sh_size == 0) continue;
 
-        name = (shdr->sh_name < sections[header->e_shstrndx].sh_size)?(section_names + shdr->sh_name):"";
+        name = (header->e_shnum != 0 && shdr->sh_name < sections[header->e_shstrndx].sh_size)?(section_names + shdr->sh_name):"";
 
         // notes are not needed (and the space after ELF headers is needed for new program headers)
-        if (shdr->sh_type == SHT_NOTE) continue;
-
         // dynamic linking information is created again by the linker
-        if (is_dynamic && elf_is_dynamic_section(name)) continue;
+        if (shdr->sh_type == SHT_NOTE || (is_dynamic && elf_is_dynamic_section(name)))
+        {
+            if (elf_num_dropped < 64)
+            {
+                elf_dropped[elf_num_dropped].start = shdr->sh_addr + ElfLoadBias;
+                elf_dropped[elf_num_dropped].end = shdr->sh_addr + ElfLoadBias + shdr->sh_size;
+                elf_num_dropped++;
+            }
+            continue;
+        }
 
         if (num_sections >= MAX_SECTIONS)
         {
@@ -559,6 +1011,9 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
 
         fprintf(stderr, "name: %s (seg%.2i) - 0x%" PRIx64 " - %u - type %i%s\n", section[Entry].name, Entry + 1, section[Entry].start, (unsigned int)section[Entry].size, section[Entry].type, (section[Entry].tls)?" - tls":"");
     }
+
+    // parts of loaded segments which are not described by section headers (e.g. converted executables)
+    if (elf_add_segment_sections(file, file_size, header, segments, &max_section_end, is_dynamic)) return -1;
 
     // address of recompiled code
     CodeBase = ((max_section_end + UINT64_C(0xfffff)) & ~UINT64_C(0xfffff)) + UINT64_C(0x100000);
@@ -709,7 +1164,7 @@ int SRW64_LoadElf(const uint8_t *file, int64_t file_size)
     // dynamic linking information
     if (is_dynamic)
     {
-        if (SR_elf_dyn_load(file, file_size, header, sections)) return -1;
+        if (SR_elf_dyn_load(file, file_size, header, sections, segments)) return -1;
     }
 
     // functions from exception handling data (.eh_frame), which are not in symbol table (e.g. stripped executable)
@@ -1261,7 +1716,9 @@ int SR_write_linker_script(const char *fname)
     }
     for (Entry = 1; Entry < count; Entry++)
     {
-        for (index = Entry; index > 0 && section[order[index - 1]].start > section[order[index]].start; index--)
+        // (thread local storage sections must be adjacent - uninitialized TLS has the same address as the following section)
+        for (index = Entry; index > 0 && (section[order[index - 1]].start > section[order[index]].start ||
+                                          (section[order[index - 1]].start == section[order[index]].start && section[order[index]].tls && !section[order[index - 1]].tls)); index--)
         {
             unsigned int tmp;
             int tmp2;
@@ -1294,7 +1751,7 @@ int SR_write_linker_script(const char *fname)
     }
     if (elf_absolute_count != 0) fprintf(fout, "\n");
     fprintf(fout, "SECTIONS\n{\n");
-    fprintf(fout, "    . = 0x%" PRIx64 " + SIZEOF_HEADERS;\n", ImageBase);
+    fprintf(fout, "    . = 0x%" PRIx64 " + SIZEOF_HEADERS;\n", (ElfHeadersBase != 0)?ElfHeadersBase:ImageBase);
     if (dynamic)
     {
         fprintf(fout, "    .interp : { *(.interp) }\n");
@@ -1383,6 +1840,12 @@ void SR_elf_output_section_name(char *buf, unsigned int Entry)
 void SR_elf_free(void)
 {
     unsigned int Entry;
+
+    if (elf_segment_memory != NULL)
+    {
+        free(elf_segment_memory);
+        elf_segment_memory = NULL;
+    }
 
     SR_elf_dyn_free();
 

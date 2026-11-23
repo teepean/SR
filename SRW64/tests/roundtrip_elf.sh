@@ -62,6 +62,11 @@ while :; do
     python3 repair_short_jumps.py
 done
 
+# symbols which aren't valid in assembler get their names
+if [ -f "$NAME.symrename" ]; then
+    objcopy @"$NAME.symrename" "$NAME.o" || { echo "renaming of symbols failed"; exit 1; }
+fi
+
 # link (sections are placed by the generated linker script)
 # (--eh-frame-hdr: the unwinder finds the new .eh_frame of the recompiled code using PT_GNU_EH_FRAME)
 if [ -f "$NAME.imports" ]; then
