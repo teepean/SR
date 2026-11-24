@@ -118,7 +118,7 @@ The scripts read paths from the environment: `PS5_EBOOT` (converted executable),
 
 * `pushmap.py <pushmap file> [min per frame]`: marker tree with the game functions that push each marker and their callers (`SR_EXE=<SRW64 build>` when the log comes from the recompiled program)
 * `srmap.py <SRW64 build> <address>...`: maps addresses of the recompiled program back to the original program, using the `loc_<original address>` symbols (also a module for the other scripts)
-* `disgcn.py <code file> [bytes]`: RDNA2 (gfx1030) disassembly of a dumped shader up to the first `s_endpgm` (needs `llvm-mc`)
+* `disgcn.py <code file> [bytes]`: PS5 GPU (gfx1013) disassembly of a dumped shader up to the first `s_endpgm` (needs `llvm-mc`)
 * `clothdump.py <file>`: prints a `YSR_CLOTHDUMP` snapshot (work items per phase, pipelines with thread group sizes, per-record tables with the fields that are shared and those that differ)
 * `map_sites.py <log> [pattern]`: maps addresses from logs (e.g. readback sites) to functions and disassembly
 * `strxref.py <string>...`: code and data references to strings
