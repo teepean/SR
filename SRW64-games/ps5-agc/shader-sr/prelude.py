@@ -45,6 +45,9 @@ def prelude(threads, lds_dwords, nvgpr, probes=False):
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_samplerless_texture_functions : require
+#extension GL_EXT_shader_image_load_formatted : require
 #extension GL_EXT_shader_16bit_storage : require
 #extension GL_EXT_shader_8bit_storage : require
 #extension GL_KHR_shader_subgroup_basic : require
@@ -232,6 +235,7 @@ uint buf_load16_at(BufAddr b, int extra) { return b.ok ? uint(W16(b.dev + uint64
 uint buf_load8_at(BufAddr b, int extra) { return b.ok ? uint(W8(b.dev + uint64_t(extra)).v) : 0u; }
 void buf_store32(BufAddr b, int extra, uint v) { if (b.ok) W32(b.dev + uint64_t(extra)).v = v; }
 void buf_store16(BufAddr b, uint v) { if (b.ok) W16(b.dev).v = uint16_t(v); }
+void buf_store8(BufAddr b, uint v) { if (b.ok) W8(b.dev).v = uint8_t(v); }
 const uint FORMATS[78] = uint[78](FORMAT_TABLE);
 vec4 buf_load_format(BufAddr ba) {
     uint fmt = (ba.w3 >> 12) & 0x7fu;
@@ -276,6 +280,47 @@ float sin_rev(float x) { return sin(x * 6.28318530717958647692); }
 float fract_f32(float x) { return isinf(x) ? 0.0 : min(x - floor(x), uintBitsToFloat(0x3f7fffffu)); }
 uint cvt_u32_f32(float x) { return isnan(x) ? 0u : (x >= 4294967296.0 ? 0xffffffffu : (x <= 0.0 ? 0u : uint(x))); }
 uint mulhi_u32(uint a, uint b) { uint hi, lo; umulExtended(a, b, hi, lo); return hi; }
+// float -> int with GCN's saturation (NaN -> 0)
+int cvt_i32_f32(float x) { return isnan(x) ? 0 : (x >= 2147483648.0 ? 0x7fffffff : (x <= -2147483648.0 ? int(0x80000000u) : int(x))); }
+int cvt_flr_i32_f32(float x) { return cvt_i32_f32(floor(x)); }
+// bitfield extract with GCN's operands (offset and width masked to 5 bits; width 0 -> 0)
+uint bfe_u32(uint a, uint o, uint w) {
+    o &= 31u; w &= 31u;
+    return w == 0u ? 0u : (o + w < 32u ? bitfieldExtract(a, int(o), int(w)) : a >> o);
+}
+uint bfe_i32(uint a, uint o, uint w) {
+    o &= 31u; w &= 31u;
+    return w == 0u ? 0u : uint(o + w < 32u ? bitfieldExtract(int(a), int(o), int(w)) : int(a) >> o);
+}
+// cube map helpers (v_cubeid / sc / tc / ma): the major axis is z, then y, then x
+float cube_id(float x, float y, float z) {
+    float ax = abs(x), ay = abs(y), az = abs(z);
+    return (az >= ax && az >= ay) ? (z < 0.0 ? 5.0 : 4.0) : ((ay >= ax) ? (y < 0.0 ? 3.0 : 2.0) : (x < 0.0 ? 1.0 : 0.0));
+}
+float cube_sc(float x, float y, float z) {
+    float ax = abs(x), ay = abs(y), az = abs(z);
+    return (az >= ax && az >= ay) ? (z < 0.0 ? -x : x) : ((ay >= ax) ? x : (x < 0.0 ? z : -z));
+}
+float cube_tc(float x, float y, float z) {
+    float ax = abs(x), ay = abs(y), az = abs(z);
+    return (az >= ax && az >= ay) ? -y : ((ay >= ax) ? (y < 0.0 ? -z : z) : -y);
+}
+float cube_ma(float x, float y, float z) {
+    float ax = abs(x), ay = abs(y), az = abs(z);
+    return (az >= ax && az >= ay) ? 2.0 * z : ((ay >= ax) ? 2.0 * y : 2.0 * x);
+}
+// a cube image as Kyty binds it: a 2D array of faces; the guest's layer coordinate is slice * 8 + face
+uint cube_layer(uint guest) { return guest - ((guest >> 3) << 1); }
+// f32 -> f16 bits rounding toward zero (v_cvt_pkrtz_f16_f32)
+uint f2h_rtz(float f) {
+    uint x = floatBitsToUint(f);
+    uint sign = (x >> 16) & 0x8000u, e = (x >> 23) & 0xffu, m = x & 0x7fffffu;
+    if (e == 0xffu) return sign | 0x7c00u | (m != 0u ? 0x200u | (m >> 13) : 0u);
+    int ue = int(e) - 112;
+    if (ue >= 31) return sign | 0x7bffu;
+    if (ue <= 0) return ue < -10 ? sign : sign | ((m | 0x800000u) >> uint(14 - ue));
+    return sign | (uint(ue) << 10) | (m >> 13);
+}
 bool cmp_class(float x, uint mask) {
     uint bits = floatBitsToUint(x);
     uint neg = bits >> 31, e = (bits >> 23) & 0xffu, m = bits & 0x7fffffu;

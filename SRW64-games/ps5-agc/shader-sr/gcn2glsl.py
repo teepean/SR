@@ -22,6 +22,7 @@ import struct
 import sys
 
 import gcnisa
+import images
 
 WAVE = 64
 
@@ -197,9 +198,24 @@ class Translator:
             for h in (0, 1):
                 for item in halves[h]:
                     self.cur.append((item[0], item[1], h))
+            self.trace(inst)
             return
         self.h = None
         self.translate_one(inst)
+        self.trace(inst)
+
+    TRACE = set(int(x, 16) for x in __import__('os').environ.get('SHADER_SR_TRACE', '').split(',') if x)
+
+    def trace(self, inst):
+        """SHADER_SR_TRACE=<hex pc>,...: after the instruction, lane 0 of workgroup 0 records its destination
+        registers in the probe slots (logged as s_load entries at address 0xffff0000_<pc>, one per dword; needs
+        SHADER_SR_PROBES)"""
+        if inst.off not in self.TRACE or not inst.ops or inst.ops[0].kind not in ('reg',):
+            return
+        d = inst.ops[0]
+        for k in range(d.count):
+            name = ('v%d_0' % (d.first + k)) if d.file == 'v' else ('s%d' % (d.first + k))
+            self.emit('probe_sload(0xffff000000000000ul | %dul | (%dul << 32), %s);' % (inst.off, k, name))
 
     def translate_one(self, inst):
         op, b, ops = inst.op, inst.base, inst.ops
@@ -212,7 +228,7 @@ class Translator:
         for prefix, h in (('v_cmpx_', self.op_vcmpx), ('v_cmp_', self.op_vcmp), ('s_cmp_', self.op_scmp),
                           ('s_load_', self.op_sload), ('s_buffer_load_', self.op_sbufload),
                           ('buffer_load_', self.op_bufload), ('buffer_store_', self.op_bufstore),
-                          ('buffer_atomic_', self.op_bufatomic),
+                          ('buffer_atomic_', self.op_bufatomic), ('image_', self.op_image),
                           ('global_load_', self.op_globalload), ('ds_', self.op_ds)):
             if b.startswith(prefix):
                 h(inst)
@@ -273,6 +289,212 @@ class Translator:
             else:
                 srcs.append(self.src_f32(o, inst))
         self.write_v_f32(inst, d, 'fma(%s, %s, %s)' % tuple(srcs))
+
+    def fma_mix_expr(self, inst):
+        d, a, c, e = inst.ops
+        op_sel, op_sel_hi = inst.mod_list('op_sel'), inst.mod_list('op_sel_hi')
+        srcs = [self.f16_operand(o, op_sel[k], inst) if op_sel_hi[k] else self.src_f32(o, inst)
+                for k, o in enumerate((a, c, e))]
+        expr = 'fma(%s, %s, %s)' % tuple(srcs)
+        return 'clamp(%s, 0.0, 1.0)' % expr if inst.mods.get('clamp') else expr
+
+    def op_v_fma_mixlo_f16(self, inst):
+        d = inst.ops[0]
+        self.write_v_u32(inst, d, '((%s & 0xffff0000u) | uint(float16BitsToUint16(float16_t(%s))))' % (
+            self.reg(d), self.fma_mix_expr(inst)))
+
+    def op_v_fma_mixhi_f16(self, inst):
+        d = inst.ops[0]
+        self.write_v_u32(inst, d, '((%s & 0xffffu) | (uint(float16BitsToUint16(float16_t(%s))) << 16))' % (
+            self.reg(d), self.fma_mix_expr(inst)))
+
+    # --- packed f16 (VOP3P: op_sel picks the half for the low result, op_sel_hi (default 1) for the high one)
+    def pk_operand(self, o, inst, k, lane):
+        op_sel = inst.mod_list('op_sel')
+        op_sel_hi = inst.mod_list('op_sel_hi') if 'op_sel_hi' in inst.mods else [1, 1, 1]
+        neg = inst.mod_list('neg_lo' if lane == 0 else 'neg_hi')
+        half = op_sel[k] if lane == 0 else op_sel_hi[k]
+        if o.kind == 'const':
+            if o.text in gcnisa.INLINE_FLOATS:
+                e = 'float16_t(%r)' % struct.unpack('<f', struct.pack('<I', gcnisa.INLINE_FLOATS[o.text]))[0]
+            elif getattr(o, 'literal', False) or o.text.startswith('0x'):
+                e = 'uint16BitsToHalf(uint16_t(0x%04xu))' % ((o.value >> (16 * half)) & 0xffff)
+            else:
+                e = 'uint16BitsToHalf(uint16_t(0x%04xu))' % (o.value & 0xffff)   # inline integer: both halves
+        else:
+            e = 'unpackFloat2x16(%s).%s' % (self.src_u32(o), 'y' if half else 'x')
+        if neg[k] if k < len(neg) else 0:
+            e = '(-%s)' % e
+        return e
+
+    def pk_result(self, inst, d, lo, hi):
+        if inst.mods.get('clamp'):
+            lo, hi = 'clamp(%s, float16_t(0.0), float16_t(1.0))' % lo, 'clamp(%s, float16_t(0.0), float16_t(1.0))' % hi
+        self.write_v_u32(inst, d, 'packFloat2x16(f16vec2(%s, %s))' % (lo, hi))
+
+    def op_v_pk_fma_f16(self, inst):
+        d, a, c, e = inst.ops
+        lanes = [tuple(self.pk_operand(o, inst, k, lane) for k, o in enumerate((a, c, e))) for lane in (0, 1)]
+        self.pk_result(inst, d, 'fma(%s, %s, %s)' % lanes[0], 'fma(%s, %s, %s)' % lanes[1])
+
+    def pk2(self, inst, fmt):
+        d, a, c = inst.ops
+        lanes = [tuple(self.pk_operand(o, inst, k, lane) for k, o in enumerate((a, c))) for lane in (0, 1)]
+        self.pk_result(inst, d, fmt % lanes[0], fmt % lanes[1])
+
+    def op_v_pk_mul_f16(self, inst):
+        self.pk2(inst, '(%s * %s)')
+
+    def op_v_pk_add_f16(self, inst):
+        self.pk2(inst, '(%s + %s)')
+
+    def op_v_pk_min_f16(self, inst):
+        self.pk2(inst, 'min(%s, %s)')
+
+    def op_v_pk_max_f16(self, inst):
+        self.pk2(inst, 'max(%s, %s)')
+
+    def op_v_pk_fmac_f16(self, inst):
+        d, a, c = inst.ops
+        self.write_v_u32(inst, d, 'packFloat2x16(fma(unpackFloat2x16(%s), unpackFloat2x16(%s), unpackFloat2x16(%s)))' % (
+            self.src_u32(a), self.src_u32(c), self.reg(d)))
+
+    def op_v_cvt_pkrtz_f16_f32(self, inst):
+        d, a, c = inst.ops
+        self.write_v_u32(inst, d, '(f2h_rtz(%s) | (f2h_rtz(%s) << 16))' % (self.src_f32(a, inst, 0),
+                                                                        self.src_f32(c, inst, 1)))
+
+    def op_v_cvt_f16_f32(self, inst):
+        d, a = inst.ops
+        self.write_v_u32(inst, d, 'uint(float16BitsToUint16(float16_t(%s)))' % self.src_f32(a, inst, 0))
+
+    def op_v_cvt_i32_f32(self, inst):
+        d, a = inst.ops
+        self.write_v_u32(inst, d, 'uint(cvt_i32_f32(%s))' % self.src_f32(a, inst, 0))
+
+    def op_v_cvt_flr_i32_f32(self, inst):
+        d, a = inst.ops
+        self.write_v_u32(inst, d, 'uint(cvt_flr_i32_f32(%s))' % self.src_f32(a, inst, 0))
+
+    def op_v_cvt_f32_u32(self, inst):
+        d, a = inst.ops
+        self.write_v_f32(inst, d, 'float(%s)' % self.src_int(a, inst, 0))
+
+    def op_v_cvt_f32_ubyte1(self, inst):
+        d, a = inst.ops
+        self.write_v_f32(inst, d, 'float((%s >> 8) & 0xffu)' % self.src_u32(a))
+
+    def op_v_cvt_f32_ubyte2(self, inst):
+        d, a = inst.ops
+        self.write_v_f32(inst, d, 'float((%s >> 16) & 0xffu)' % self.src_u32(a))
+
+    def op_v_cvt_f32_ubyte3(self, inst):
+        d, a = inst.ops
+        self.write_v_f32(inst, d, 'float(%s >> 24)' % self.src_u32(a))
+
+    def op_v_bfi_b32(self, inst):
+        d, a, c, e = inst.ops
+        x, y, z = self.src_int(a, inst, 0), self.src_int(c, inst, 1), self.src_int(e, inst, 2)
+        self.write_v_u32(inst, d, '((%s & %s) | (~%s & %s))' % (x, y, x, z))
+
+    def op_v_bfe_u32(self, inst):
+        d, a, c, e = inst.ops
+        self.write_v_u32(inst, d, 'bfe_u32(%s, %s, %s)' % (self.src_int(a, inst, 0), self.src_int(c, inst, 1),
+                                                         self.src_int(e, inst, 2)))
+
+    def op_v_bfe_i32(self, inst):
+        d, a, c, e = inst.ops
+        self.write_v_u32(inst, d, 'bfe_i32(%s, %s, %s)' % (self.src_int(a, inst, 0), self.src_int(c, inst, 1),
+                                                         self.src_int(e, inst, 2)))
+
+    def op_v_min3_f32(self, inst):
+        d, a, c, e = inst.ops
+        self.write_v_f32(inst, d, 'min(min(%s, %s), %s)' % (self.src_f32(a, inst), self.src_f32(c, inst),
+                                                           self.src_f32(e, inst)))
+
+    def op_v_max3_f32(self, inst):
+        d, a, c, e = inst.ops
+        self.write_v_f32(inst, d, 'max(max(%s, %s), %s)' % (self.src_f32(a, inst), self.src_f32(c, inst),
+                                                           self.src_f32(e, inst)))
+
+    def op_v_med3_i32(self, inst):
+        d, a, c, e = inst.ops
+        x, y, z = ('int(%s)' % self.src_int(o, inst, k) for k, o in enumerate((a, c, e)))
+        self.write_v_u32(inst, d, 'uint(max(min(%s, %s), min(max(%s, %s), %s)))' % (x, y, x, y, z))
+
+    def op_v_fmaak_f32(self, inst):
+        d, a, c, k = inst.ops
+        self.write_v_f32(inst, d, 'fma(%s, %s, %s)' % (self.src_f32(a, inst), self.src_f32(c, inst), f32const(k.value)))
+
+    def op_v_fmamk_f32(self, inst):
+        d, a, k, c = inst.ops
+        self.write_v_f32(inst, d, 'fma(%s, %s, %s)' % (self.src_f32(a, inst), f32const(k.value), self.src_f32(c, inst)))
+
+    def cube(self, inst, fn):
+        d, x, y, z = inst.ops
+        self.write_v_f32(inst, d, '%s(%s, %s, %s)' % (fn, self.src_f32(x, inst), self.src_f32(y, inst),
+                                                      self.src_f32(z, inst)))
+
+    def op_v_cubeid_f32(self, inst):
+        self.cube(inst, 'cube_id')
+
+    def op_v_cubesc_f32(self, inst):
+        self.cube(inst, 'cube_sc')
+
+    def op_v_cubetc_f32(self, inst):
+        self.cube(inst, 'cube_tc')
+
+    def op_v_cubema_f32(self, inst):
+        self.cube(inst, 'cube_ma')
+
+    def permlane(self, inst, cross):
+        """v_permlane16 / v_permlanex16: lane i of each 16-lane row reads lane sel[i] of its own row (x16: of the other
+        row of its 32); the shuffle runs for every thread (outside the exec guard)"""
+        d, src, lo, hi = inst.ops
+        sel = '((%s < 8u ? (%s >> ((%s) * 4u)) : (%s >> ((%s - 8u) * 4u))) & 15u)' % (
+            '(LANE & 15u)', self.sval(lo), '(LANE & 15u)', self.sval(hi), '(LANE & 15u)')
+        row = '((LANE & 16u) ^ 16u)' if cross else '(LANE & 16u)'
+        self.emit('{ uint pl_ = subgroupShuffle(%s, %s | %s); if (EX) %s = pl_; }' % (self.reg(src), row, sel, self.reg(d)),
+                  valu=True)
+        self.wave_points.add(inst.off)
+
+    def op_v_permlane16_b32(self, inst):
+        self.permlane(inst, False)
+
+    def op_v_madak_f32(self, inst):
+        d, a, c, k = inst.ops
+        self.write_v_f32(inst, d, 'fma_unfused(%s, %s, %s)' % (self.src_f32(a, inst), self.src_f32(c, inst),
+                                                               f32const(k.value)))
+
+    # --- scalar
+    def op_s_lshr_b32(self, inst):
+        d, a, c = inst.ops
+        self.emit('%s = %s >> (%s & 31u); SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_ashr_i32(self, inst):
+        d, a, c = inst.ops
+        self.emit('%s = uint(int(%s) >> (%s & 31u)); SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c),
+                                                                        self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_pack_ll_b32_b16(self, inst):
+        d, a, c = inst.ops
+        self.emit('%s = (%s & 0xffffu) | (%s << 16);' % (self.reg(d), self.sval(a), self.sval(c)))
+        self.set_kind(d, 'value')
+
+    def op_s_mulk_i32(self, inst):
+        d, k = inst.ops
+        v = k.value & 0xffff
+        v = v - 0x10000 if v & 0x8000 else v
+        self.emit('%s = uint(int(%s) * %d);' % (self.reg(d), self.reg(d), v))
+        self.set_kind(d, 'value')
+
+    def op_s_bfe_u32(self, inst):
+        d, a, c = inst.ops
+        self.emit('{ uint b_ = %s; %s = bfe_u32(%s, b_ & 31u, (b_ >> 16) & 0x7fu); SCC = %s != 0u; }' % (
+            self.sval(c), self.reg(d), self.sval(a), self.reg(d)))
+        self.set_kind(d, 'value')
 
     def op_v_cvt_f32_f16(self, inst):
         d, a = inst.ops
@@ -372,7 +594,8 @@ class Translator:
     def op_v_permlanex16_b32(self, inst):
         d, a, s1, s2 = inst.ops
         if not (s1.kind == 'const' and s2.kind == 'const' and s1.value == 0xffffffff and s2.value == 0xffffffff):
-            self.unknown['v_permlanex16 with lane selects'] += 1
+            self.permlane(inst, True)
+            return
         # lane i reads lane (i ^ 16) of the other row within the same 32 lanes (selects -1: reverse order?)
         # with selects 0xffffffff every lane picks lane 15 of the other row -> row broadcast of lane 15/31
         self.write_v_u32(inst, d, 'permlanex16_ff(%s)' % self.src_u32(a))
@@ -877,8 +1100,15 @@ class Translator:
             self.emit('if (EX) %s = (%s & 0xffffu) | (buf_load16(buf_addr(%s)) << 16);' % (self.reg(d), self.reg(d), a))
         elif b == 'buffer_load_sshort':
             self.emit('if (EX) %s = uint(bitfieldExtract(int(buf_load16(buf_addr(%s))), 0, 16));' % (self.reg(d), a))
+        elif b == 'buffer_load_ushort':
+            self.emit('if (EX) %s = buf_load16(buf_addr(%s));' % (self.reg(d), a))
+        elif b == 'buffer_load_ubyte':
+            self.emit('if (EX) %s = buf_load8_at(buf_addr(%s), 0);' % (self.reg(d), a))
+        elif b == 'buffer_load_sbyte':
+            self.emit('if (EX) %s = uint(bitfieldExtract(int(buf_load8_at(buf_addr(%s), 0)), 0, 8));' % (self.reg(d), a))
         else:
             self.unknown[inst.op] += 1
+            self.emit('/* UNHANDLED %s */' % inst.text)
 
     def op_bufstore(self, inst):
         data, vaddr, vs, soff = inst.ops
@@ -892,6 +1122,12 @@ class Translator:
                 a, self.reg(data)))
         elif b == 'buffer_store_short_d16_hi':
             self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); buf_store16(ba_, %s >> 16); }' % (
+                a, self.reg(data)))
+        elif b == 'buffer_store_byte':
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); buf_store8(ba_, %s & 0xffu); }' % (
+                a, self.reg(data)))
+        elif b == 'buffer_store_byte_d16_hi':
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); buf_store8(ba_, (%s >> 16) & 0xffu); }' % (
                 a, self.reg(data)))
         else:
             self.unknown[inst.op] += 1
@@ -912,6 +1148,147 @@ class Translator:
         old = '%s = ' % self.reg(data) if inst.mods.get('glc') else ''
         self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) %s%s(W32(ba_.dev).v, %s); }' % (
             a, old, fn, self.reg(data)))
+
+    # --- images (against the images Kyty binds for the program's specialisation, see images.py)
+    def img_addr(self, o, k):
+        if o.kind == 'vlist':
+            return 'v%d_%d' % (o.list[k], self.h)
+        return self.reg(o, k)
+
+    def op_image(self, inst):
+        m = self.images.map.get(inst.off) if getattr(self, 'images', None) is not None else None
+        if m is None:
+            self.unknown[inst.op] += 1
+            self.emit('/* UNHANDLED %s */' % inst.text)
+            return
+        img, smp = m
+        b = inst.base
+        vdata, vaddr, t, s = images.operands(inst)
+        dmask = int(inst.mods.get('dmask', '0x1'), 0)
+        d16 = 'd16' in inst.mods
+        dim = inst.mods.get('dim', '')
+        if dim not in images.GUEST_DIM:
+            raise images.Unsupported('%s: dimension %s' % (inst, dim))
+        ncoord, layered = images.GUEST_DIM[dim]
+        if img.get('conversion', 0) or img.get('srgb', 0):
+            raise images.Unsupported('%s: image %d needs a format conversion' % (inst, img['index']))
+        var = 'IMG%d[%d]' % (img['binding'], img['element'])
+        numeric = img['numeric']
+        vec = {images.NUMERIC_FLOAT: 'vec', images.NUMERIC_UINT: 'uvec', images.NUMERIC_SINT: 'ivec'}[numeric]
+        fam = images.family(b)
+        comps = [c for c in range(4) if (dmask >> c) & 1]
+        swz = img.get('swizzle', 0xfac)
+        if img['class'] == images.CLASS_STORAGE and swz != 0xfac:
+            raise images.Unsupported('%s: storage image %d with swizzle %#x' % (inst, img['index'], swz))
+
+        def bits(e):
+            return {images.NUMERIC_FLOAT: 'floatBitsToUint(%s)', images.NUMERIC_UINT: '%s',
+                    images.NUMERIC_SINT: 'uint(%s)'}[numeric] % e
+
+        def results(r):
+            """the VGPR writes for the components dmask selects (d16: two per register)"""
+            if not d16:
+                return ' '.join('%s = %s;' % (self.reg(vdata, k), bits('%s.%s' % (r, 'xyzw'[c])))
+                                for k, c in enumerate(comps))
+            out = []
+            for k in range(0, len(comps), 2):
+                pair = comps[k:k + 2]
+                if numeric == images.NUMERIC_FLOAT:
+                    halves = ['uint(float16BitsToUint16(float16_t(%s.%s)))' % (r, 'xyzw'[c]) for c in pair]
+                else:
+                    halves = ['(uint(%s.%s) & 0xffffu)' % (r, 'xyzw'[c]) for c in pair]
+                e = halves[0] if len(halves) == 1 else '(%s | (%s << 16))' % (halves[0], halves[1])
+                out.append('%s = %s;' % (self.reg(vdata, k // 2), e))
+            return ' '.join(out)
+
+        kn = images.KYTY_COORDS.get(img['dim'])
+        if kn is None or img['dim'] in (images.DIM_2D_MSAA, images.DIM_2D_MSAA_ARRAY):
+            raise images.Unsupported('%s: image dimension %d' % (inst, img['dim']))
+
+        def coords(conv, scalar, k0=0, sample=False):
+            """the bound image's coordinates from the instruction's address; Kyty's conventions: a 1D image is a 2D
+            view of one row (row centre 0.5 when sampled, row 0 when fetched); a cube is a 2D array of faces
+            (guest s, t in [1, 2]; guest layer = slice * 8 + face)"""
+            c = [conv % self.img_addr(vaddr, k0 + k) if k < ncoord else conv % '0u' for k in range(kn)]
+            if img.get('cube') and sample and kn == 3:
+                c[0], c[1] = '(%s - 1.0)' % c[0], '(%s - 1.0)' % c[1]
+                c[2] = 'float(cube_layer(uint(%s)))' % c[2]
+            if img['dim'] in images.ONE_DIMENSIONAL:
+                c.insert(1, '0.5' if sample else '0')
+            n = len(c)
+            return c[0] if n == 1 else '%s%d(%s)' % (scalar, n, ', '.join(c))
+
+        if fam == 'load':
+            if b != 'image_load':
+                raise images.Unsupported('%s' % inst)
+            coord = coords('int(%s)', 'ivec')
+            if img['class'] == images.CLASS_SAMPLED:
+                e = 'texelFetch(%s, %s, 0)' % (var, coord)
+            else:
+                e = 'imageLoad(%s, %s)' % (var, coord)
+            self.emit('if (EX) { %s4 r_ = %s; %s }' % (vec, e, results('r_')))
+            return
+        if fam == 'store':
+            if b != 'image_store' or d16:
+                raise images.Unsupported('%s' % inst)
+            coord = coords('int(%s)', 'ivec')
+            val = {images.NUMERIC_FLOAT: 'uintBitsToFloat(%s)', images.NUMERIC_UINT: '%s',
+                   images.NUMERIC_SINT: 'int(%s)'}[numeric]
+            zero = {images.NUMERIC_FLOAT: '0.0', images.NUMERIC_UINT: '0u', images.NUMERIC_SINT: '0'}[numeric]
+            data, k = [], 0
+            for ch in range(4):
+                if (dmask >> ch) & 1:
+                    data.append(val % self.reg(vdata, k))
+                    k += 1
+                else:
+                    data.append(zero)
+            self.emit('if (EX) imageStore(%s, %s, %s4(%s));' % (var, coord, vec, ', '.join(data)))
+            return
+        if b == 'image_get_resinfo':
+            # vaddr: mip level; dmask: x width, y height, z depth / layers, w mip count
+            if img['class'] != images.CLASS_SAMPLED:
+                raise images.Unsupported('%s: size of a storage image' % inst)
+            kdim = img['dim']
+            n = {images.DIM_1D: 1, images.DIM_1D_ARRAY: 2, images.DIM_2D: 2, images.DIM_2D_ARRAY: 3,
+                 images.DIM_3D: 3}.get(kdim)
+            if n is None:
+                raise images.Unsupported('%s: dimension %d' % (inst, kdim))
+            size = 'textureSize(%s, int(%s))' % (var, self.img_addr(vaddr, 0))
+            vals = ['uint(sz_)' if n == 1 else 'uint(sz_.%s)' % 'xyz'[c] for c in range(n)]
+            while len(vals) < 3:
+                vals.append('1u')
+            vals.append('uint(textureQueryLevels(%s))' % var)
+            self.emit('if (EX) { %s sz_ = %s; %s }' % ('int' if n == 1 else 'ivec%d' % n, size, ' '.join(
+                '%s = %s;' % (self.reg(vdata, k), vals[c]) for k, c in enumerate(comps))))
+            return
+        if fam == 'sample':
+            if b not in ('image_sample_lz', 'image_sample_l', 'image_gather4_lz', 'image_sample_c_lz'):
+                raise images.Unsupported('%s' % inst)
+            if img['class'] != images.CLASS_SAMPLED:
+                raise images.Unsupported('%s: sampling a storage image' % inst)
+            k = 0
+            ref = None
+            if b == 'image_sample_c_lz':
+                ref = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, 0)
+                k = 1
+            lod = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, k + ncoord) if b == 'image_sample_l' else '0.0'
+            kdim = images.DIM_SUFFIX[img['dim']]
+            pre = {images.NUMERIC_FLOAT: '', images.NUMERIC_UINT: 'u', images.NUMERIC_SINT: 'i'}[numeric]
+            smpvar = 'SMP[%d]' % smp['index']
+            if ref is not None:
+                raise images.Unsupported('%s: depth compare' % inst)
+            comb = '%ssampler%s(%s, %s)' % (pre, kdim, var, smpvar)
+            coord = coords('uintBitsToFloat(%s)', 'vec', k, sample=True)
+            if b == 'image_gather4_lz':
+                if len(comps) != 1:
+                    raise images.Unsupported('%s: gather of %d components' % (inst, len(comps)))
+                e = 'textureGather(%s, %s, %d)' % (comb, coord, comps[0])
+                comps = [0, 1, 2, 3]
+            else:
+                e = 'textureLod(%s, %s, %s)' % (comb, coord, lod)
+            self.emit('if (EX) { %s4 r_ = %s; %s }' % (vec, e, results('r_')))
+            return
+        raise images.Unsupported('%s' % inst)
 
     def op_globalload(self, inst):
         d, vaddr, saddr = inst.ops
@@ -937,12 +1314,68 @@ class Translator:
         else:
             self.unknown[inst.op] += 1
 
+    def ds_swizzle(self, inst):
+        """ds_swizzle_b32: a lane permutation within each 32 lanes (one half of a lane pair = one warp); the shuffle
+        runs for every thread (outside the exec guard), the write only for active lanes"""
+        d, src = inst.ops
+        off = inst.mods.get('offset', '0')
+        m = re.match(r'swizzle\((\w+)(?:,(.*))?\)$', off)
+        lane = 'LANE & 31u'
+        if m:
+            mode, args = m.group(1), [a.strip().strip('"') for a in (m.group(2) or '').split(',') if a.strip()]
+            if mode == 'BITMASK_PERM':
+                and_m = or_m = xor_m = 0
+                for k, ch in enumerate(args[0]):
+                    bit = 1 << (4 - k)
+                    if ch == '1':
+                        or_m |= bit
+                    elif ch == 'p':
+                        and_m |= bit
+                    elif ch == 'i':
+                        and_m |= bit
+                        xor_m |= bit
+                src_lane = '((((%s) & %du) | %du) ^ %du)' % (lane, and_m, or_m, xor_m)
+            elif mode == 'SWAP':
+                src_lane = '((%s) ^ %du)' % (lane, int(args[0]))
+            elif mode == 'REVERSE':
+                src_lane = '((%s) ^ %du)' % (lane, int(args[0]) - 1)
+            elif mode == 'BROADCAST':
+                src_lane = '(((%s) & %du) | %du)' % (lane, ~(int(args[0]) - 1) & 31, int(args[1]))
+            elif mode == 'QUAD_PERM':
+                q = sum(int(a) << (2 * k) for k, a in enumerate(args))
+                src_lane = '(((%s) & 28u) | ((0x%02xu >> (((%s) & 3u) * 2u)) & 3u))' % (lane, q, lane)
+            else:
+                raise ValueError('ds_swizzle mode %s' % mode)
+        else:
+            v = int(off, 0)
+            if v & 0x8000:
+                q = v & 0xff
+                src_lane = '(((%s) & 28u) | ((0x%02xu >> (((%s) & 3u) * 2u)) & 3u))' % (lane, q, lane)
+            else:
+                src_lane = '((((%s) & %du) | %du) ^ %du)' % (lane, v & 31, (v >> 5) & 31, (v >> 10) & 31)
+        self.emit('{ uint sw_ = subgroupShuffle(%s, %s); if (EX) %s = sw_; }' % (self.reg(src), src_lane, self.reg(d)),
+                  valu=True)
+        self.wave_points.add(inst.off)
+
     def op_ds(self, inst):
         b = inst.base
+        if b == 'ds_swizzle_b32':
+            self.ds_swizzle(inst)
+            return
         o0 = int(inst.mods.get('offset0', '0'), 0)
         o1 = int(inst.mods.get('offset1', '0'), 0)
         off = int(inst.mods.get('offset', '0'), 0)
         self.lds_points.add(inst.off)
+        if b in ('ds_read_addtid_b32', 'ds_write_addtid_b32'):
+            # address: M0[15:0] + offset + the lane's index in the wave * 4
+            a = '((s124 & 0xffffu) + %du + LANE * 4u) >> 2' % off
+            if b == 'ds_read_addtid_b32':
+                self.emit('if (EX) %s = LDS[%s];' % (self.reg(inst.ops[0]), a))
+                self.lds_reads.add(inst.off)
+            else:
+                self.emit('if (EX) LDS[%s] = %s;' % (a, self.reg(inst.ops[0])))
+                self.lds_writes.add(inst.off)
+            return
         if b in ('ds_read_b32', 'ds_read_b64', 'ds_read_b128'):
             d, addr = inst.ops
             n = {'ds_read_b32': 1, 'ds_read_b64': 2, 'ds_read_b128': 4}[b]
@@ -993,7 +1426,7 @@ INT2 = {
 INT3 = {
     'v_add3_u32': '(%s + %s + %s)', 'v_lshl_add_u32': '((%s << (%s & 31u)) + %s)',
     'v_mad_u32_u24': '((%s & 0xffffffu) * (%s & 0xffffffu) + %s)',
-    'v_lshl_or_b32': '((%s << (%s & 31u)) | %s)',
+    'v_lshl_or_b32': '((%s << (%s & 31u)) | %s)', 'v_and_or_b32': '((%s & %s) | %s)',
 }
 
 
@@ -1256,12 +1689,15 @@ def classify(tr, st):
 
 
 # ---------------------------------------------------------------------------------------------- exec guards
+# instructions whose register operands are all read (stores: their data is operand 0; atomics: read conservatively)
 GUARD_STORE = ('buffer_store', 'ds_write', 'global_store', 'flat_store', 'scratch_store', 'v_cmp_', 'v_cmpx', 'ds_min',
                'ds_max', 'ds_add', 'ds_sub', 'ds_and', 'ds_or', 'ds_xor', 'ds_inc', 'ds_dec', 'buffer_atomic',
-               'global_atomic', 'flat_atomic')
+               'global_atomic', 'flat_atomic', 'image_store', 'image_atomic', 'tbuffer_store')
 
 
 def guard_vregs(o):
+    if o is not None and o.kind == 'vlist':
+        return list(o.list)
     return [o.first + q for q in range(o.count)] if o is not None and o.kind == 'reg' and o.file == 'v' else []
 
 
@@ -1283,7 +1719,7 @@ def guard_vuses(i):
         out += guard_vregs(o)
     # the destination is read too: multiply-accumulate, 16-bit writes that keep the other half (d16 loads, 16-bit
     # ALU with op_sel), SDWA with UNUSED_PRESERVE, DPP (lanes without a valid source keep the old value)
-    if (b in ('v_mac_f32', 'v_fmac_f32', 'v_mac_legacy_f32', 'v_fmac_legacy_f32', 'v_mac_f16', 'v_fmac_f16') or
+    if (b.startswith(('v_mac_', 'v_fmac_', 'v_pk_fmac_', 'v_fma_mixlo', 'v_fma_mixhi')) or
             'd16' in b or b.startswith('v_writelane') or 'UNUSED_PRESERVE' in i.text or 'dpp' in i.op or
             (b.endswith(('_f16', '_u16', '_i16', '_b16')) and 'op_sel' in i.text)):
         out += guard_vregs(ops[0])
@@ -1461,7 +1897,8 @@ def exec_guards_needed(insts):
 
     defs = [guard_vdefs(i) for i in insts]
     uses = [guard_vuses(i) for i in insts]
-    xlane = [i.base.startswith(('v_readlane', 'v_readfirstlane', 'v_permlane')) or 'dpp' in i.op for i in insts]
+    xlane = [i.base.startswith(('v_readlane', 'v_readfirstlane', 'v_permlane', 'ds_swizzle', 'ds_permute',
+                                'ds_bpermute')) or 'dpp' in i.op for i in insts]
     pend_in = [dict() for _ in range(n)]
     need = set()
     changed, rounds = True, 0
@@ -1603,9 +2040,12 @@ def innermost_end_outer(stack):
     return 1 << 30
 
 
-def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=False):
+def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=False, resources=None, shape=None,
+                     tidig=0):
     insts = gcnisa.decode(path)
     tr = Translator(insts, threads, lds_bytes, user_sgprs, tgid_sgpr)
+    tr.images = (images.ImageMap(insts, images.load_resources(resources), all_sgpr_defs, user_sgprs)
+                 if resources else None)
     install_reversed(tr)
     tr.wave_points, tr.lds_points, tr.lds_reads, tr.lds_writes = set(), set(), set(), set()
     tr.ballot_index = set()
@@ -1852,6 +2292,8 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     body = '\n'.join(out)
     flags_decl = '\n'.join('    bool %s = false;' % flag(b) for b in sorted(used_flags))
     lines = [prelude.prelude(threads, tr.lds_dwords, nvgpr, probes)]
+    if tr.images is not None:
+        lines.append(tr.images.declarations())
     # initial SGPRs as the hardware sets them: user data s[0..user_count), then the enabled workgroup ids; one guest
     # dispatch per workgroup when the user data comes from a table (its workgroup ids are 0)
     lines.append('''uint initial_sgpr(uint n) {
@@ -1876,10 +2318,24 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     lines.append('    LANE0 = gl_SubgroupInvocationID; LANE1 = LANE0 + 32u;')
     for n in sorted(tr.used_s):
         lines.append('    uint s%d = %s;' % (n, 'initial_sgpr(%du)' % n if n < 32 else '0u'))
+    # the thread id VGPRs as the hardware sets them (COMPUTE_PGM_RSRC2.TIDIG_COMP_CNT): v0 = x, v1 = y (1+), v2 = z (2+)
+    # of the lane's position in the workgroup; lanes are numbered x fastest (wave * 64 + lane)
+    tx, ty, tz = shape if shape else (threads, 1, 1)
+
+    def tid(n, h):
+        flat = 'gl_SubgroupID * 64u + LANE%d' % h
+        if ty == 1 and tz == 1:
+            return flat if n == 0 else None
+        if n == 0:
+            return '(%s) %% %du' % (flat, tx)
+        if n == 1 and tidig >= 1:
+            return '((%s) / %du) %% %du' % (flat, tx, ty)
+        if n == 2 and tidig >= 2:
+            return '(%s) / %du' % (flat, tx * ty)
+        return None
     for n in sorted(tr.used_v):
-        # v0: the guest's local thread id (wave * 64 + lane)
         for h in (0, 1):
-            lines.append('    uint v%d_%d = %s;' % (n, h, ('gl_SubgroupID * 64u + LANE%d' % h) if n == 0 else '0u'))
+            lines.append('    uint v%d_%d = %s;' % (n, h, tid(n, h) or '0u'))
     lines.append('    EXM = 3u; SCC = false;')
     lines.append(flags_decl)
     lines.append(body)
@@ -1910,8 +2366,13 @@ def main():
     ap.add_argument('--tgid-sgpr', type=int, default=2)
     ap.add_argument('--reach-out', help='write the scalar load chains (scalar_reach) to this file')
     ap.add_argument('--probes', action='store_true', help='compile the probes (pc.debug) in')
+    ap.add_argument('--resources', help="Kyty's images and samplers of the program's specialisation (.res dump)")
+    ap.add_argument('--shape', help='workgroup shape x,y,z (default: threads,1,1)')
+    ap.add_argument('--tidig', type=int, default=0, help='thread id components in v0..v2 (TIDIG_COMP_CNT)')
     a = ap.parse_args()
-    glsl, tr = translate_shader(a.code, a.threads, a.lds_bytes, a.user_sgprs, a.tgid_sgpr, a.probes)
+    shape = tuple(int(x) for x in a.shape.split(',')) if a.shape else None
+    glsl, tr = translate_shader(a.code, a.threads, a.lds_bytes, a.user_sgprs, a.tgid_sgpr, a.probes, a.resources,
+                                shape, a.tidig)
     open(a.out, 'w').write(glsl)
     if a.reach_out:
         with open(a.reach_out, 'w') as f:
