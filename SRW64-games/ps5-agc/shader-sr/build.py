@@ -37,12 +37,13 @@ def main():
         comp = os.path.join(work, name + '.comp')
         reach_new = os.path.join(out, name + '.reach.new')
         print(run([sys.executable, os.path.join(HERE, 'gcn2glsl.py'), code, comp, '--threads', str(threads),
-                   '--lds-bytes', str(lds), '--reach-out', reach_new]).strip())
+                   '--lds-bytes', str(lds), '--reach-out', reach_new] +
+                  (['--probes'] if os.environ.get('SHADER_SR_PROBES') else [])).strip())
         raw = os.path.join(work, name + '.spv')
         run(['glslc', '--target-env=vulkan1.3', '-O0', '-o', raw, comp])
         spv_new = os.path.join(out, name + '.spv.new')
         opt = os.path.join(work, name + '_opt.spv')
-        run(['spirv-opt', '-O', '--max-id-bound=268435455', raw, '-o', opt])
+        run(['spirv-opt', '-O', '--compact-ids', '--max-id-bound=268435455', raw, '-o', opt])
         # RDNA rounds a multiply and an add separately: no FMA contraction by the driver
         run([sys.executable, os.path.join(HERE, 'nocontract.py'), opt, spv_new])
         run(['spirv-val', '--target-env', 'vulkan1.3', spv_new])

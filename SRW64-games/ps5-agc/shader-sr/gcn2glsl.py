@@ -643,7 +643,8 @@ class Translator:
         addr = 'packUint2x32(uvec2(%s, %s & 0xffffu))' % (self.reg(base, 0), self.reg(base, 1))
         # one translation per load (at its first dword: a load does not cross a 16 KB page)
         loads = ' '.join('%s = sld32(d_ == 0ul ? 0ul : d_ + %dul);' % (self.reg(d, k), 4 * k) for k in range(n))
-        self.emit('{ uint64_t d_ = xlate(%s + %dul); %s }' % (addr, offset, loads))
+        self.emit('{ uint64_t d_ = sxlate(%s + %dul, %du); %s probe_sload(%s + %dul, %s); }' % (
+            addr, offset, 4 * n, loads, addr, offset, self.reg(d, 0)))
         self.set_kind(d, 'value')
 
     def op_sbufload(self, inst):
@@ -658,9 +659,8 @@ class Translator:
         w = [self.reg(vs, k) for k in range(4)]
         loads = ' '.join('%s = (o_ + %du < %s) ? sld32(d_ == 0ul ? 0ul : d_ + %dul) : 0u;' % (
             self.reg(d, k), 4 * k, w[2], 4 * k) for k in range(d.count))
-        self.emit('{ uint o_ = %s + %du; uint64_t b_ = xlate(packUint2x32(uvec2(%s, %s & 0xffffu))); '
-                  'uint64_t d_ = (o_ < %s && b_ != 0ul) ? b_ + uint64_t(o_) : 0ul; %s }' % (
-                      soff, imm, w[0], w[1], w[2], loads))
+        self.emit('{ uint o_ = %s + %du; uint64_t d_ = o_ < %s ? sxlate(packUint2x32(uvec2(%s, %s & 0xffffu)) + '
+                  'uint64_t(o_), %du) : 0ul; %s }' % (soff, imm, w[2], w[0], w[1], 4 * d.count, loads))
         self.set_kind(d, 'value')
 
     # --- vector memory
@@ -697,12 +697,14 @@ class Translator:
         b = inst.base
         a = self.mubuf_addr(inst, vaddr, vs, soff)
         if b.startswith('buffer_store_dword'):
-            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); %s }' % (a, ' '.join(
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); %s }' % (a, ' '.join(
                 'buf_store32(ba_, %d, %s);' % (4 * k, self.reg(data, k)) for k in range(data.count))))
         elif b == 'buffer_store_short':
-            self.emit('if (EX) buf_store16(buf_addr(%s), %s & 0xffffu);' % (a, self.reg(data)))
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); buf_store16(ba_, %s & 0xffffu); }' % (
+                a, self.reg(data)))
         elif b == 'buffer_store_short_d16_hi':
-            self.emit('if (EX) buf_store16(buf_addr(%s), %s >> 16);' % (a, self.reg(data)))
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); buf_store16(ba_, %s >> 16); }' % (
+                a, self.reg(data)))
         else:
             self.unknown[inst.op] += 1
 
@@ -910,7 +912,7 @@ def scalar_reach(insts, user_sgprs):
     s_load from (node + offset); each node gets the extent read through it. Program order: a pair stops being a
     node once anything else writes it. Returns [(kind, a, b, extent)]: ('user', sgpr, 0, extent) or
     ('load', parent node, offset, extent); unbounded extents (offset in an SGPR) are left to the emulator's own
-    tracking."""
+    tracking. ('vsharp', parent node, offset, 0): a V# that s_buffer_loads read through (its whole range)."""
     nodes = []
     holder = {}        # SGPR -> (node, byte offset) of the dword loaded into it
     redefined = set()
@@ -932,7 +934,28 @@ def scalar_reach(insts, user_sgprs):
         nodes.append([key[0], key[1], key[2], 0])
         return len(nodes) - 1
 
+    def vsharp_of(base):
+        """a V# in s[r:r+3] loaded by one s_load from (node + offset): ('vsharp', node, offset)"""
+        if base.kind != 'reg' or base.file != 's' or base.count != 4:
+            return None
+        parts = [holder.get(base.first + k) for k in range(4)]
+        if any(p is None for p in parts) or any(p[0] != parts[0][0] or p[1] != parts[0][1] + 4 * k
+                                                for k, p in enumerate(parts)):
+            return None
+        key = ('vsharp', parts[0][0], parts[0][1])
+        for i, n in enumerate(nodes):
+            if tuple(n[:3]) == key:
+                return i
+        nodes.append([key[0], key[1], key[2], 0])
+        return len(nodes) - 1
+
     for i in insts:
+        if i.base.startswith('s_buffer_load_dword'):
+            vsharp_of(i.ops[1])         # the emulator reads the V# and snapshots its range
+            for r in i.ops[0].regs():
+                holder.pop(int(r[1:]), None)
+                redefined.add(int(r[1:]))
+            continue
         if i.base.startswith('s_load_dword'):
             d, base, off = i.ops
             n = node_of(base)
@@ -1110,7 +1133,7 @@ def innermost_end_outer(stack):
     return 1 << 30
 
 
-def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr):
+def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=False):
     insts = gcnisa.decode(path)
     tr = Translator(insts, threads, lds_bytes, user_sgprs, tgid_sgpr)
     install_reversed(tr)
@@ -1333,14 +1356,21 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr):
     nvgpr = max(tr.max_v, 1)
     body = '\n'.join(out)
     flags_decl = '\n'.join('    bool %s = false;' % flag(b) for b in sorted(used_flags))
-    lines = [prelude.prelude(threads, tr.lds_dwords, nvgpr)]
+    lines = [prelude.prelude(threads, tr.lds_dwords, nvgpr, probes)]
     # initial SGPRs as the hardware sets them: user data s[0..user_count), then the enabled workgroup ids; one guest
     # dispatch per workgroup when the user data comes from a table (its workgroup ids are 0)
     lines.append('''uint initial_sgpr(uint n) {
-    if (n < pc.user_count) {
-        return pc.user_table != 0ul ? UserTable(pc.user_table).v[gl_WorkGroupID.x * 16u + n] : pc.user[n];
+    uvec3 id = gl_WorkGroupID;
+    if (pc.user_table != 0ul) {
+        // batched guest dispatches: user data and workgroup id of this workgroup's dispatch
+        uint base = WgMap(pc.wg_map).v[gl_WorkGroupID.x] * 24u;
+        UserTable t = UserTable(pc.user_table);
+        if (n < pc.user_count) return t.v[base + n];
+        uint lin = gl_WorkGroupID.x - t.v[base + 16u], gx = max(t.v[base + 17u], 1u), gy = max(t.v[base + 18u], 1u);
+        id = uvec3(lin % gx, (lin / gx) % gy, lin / (gx * gy));
+    } else if (n < pc.user_count) {
+        return pc.user[n];
     }
-    uvec3 id = pc.user_table != 0ul ? uvec3(0u) : gl_WorkGroupID;
     uint k = pc.user_count;
     if ((pc.tgid_mask & 1u) != 0u) { if (n == k) return id.x; k++; }
     if ((pc.tgid_mask & 2u) != 0u) { if (n == k) return id.y; k++; }
@@ -1360,6 +1390,13 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr):
     lines.append('void main() {')
     lines.append('    if (pc.pages == 0ul) return;   // a check that could not save the outputs: run nothing')
     lines.append('    FAULT_PAGE = NUM_PAGES;')
+    lines.append('    PROBE_N = 0u;')
+    lines.append('    SCALARS = pc.scalars;')
+    lines.append('    if (pc.user_table != 0ul) {')
+    lines.append('        uint base_ = WgMap(pc.wg_map).v[gl_WorkGroupID.x] * 24u;')
+    lines.append('        SCALARS = packUint2x32(uvec2(UserTable(pc.user_table).v[base_ + 20u], '
+                 'UserTable(pc.user_table).v[base_ + 21u]));')
+    lines.append('    }')
     lines.append('    wave_sync_init();')
     lines.append('    body();')
     lines.append('    record_faults();')
@@ -1376,8 +1413,9 @@ def main():
     ap.add_argument('--user-sgprs', type=int, default=2)
     ap.add_argument('--tgid-sgpr', type=int, default=2)
     ap.add_argument('--reach-out', help='write the scalar load chains (scalar_reach) to this file')
+    ap.add_argument('--probes', action='store_true', help='compile the probes (pc.debug) in')
     a = ap.parse_args()
-    glsl, tr = translate_shader(a.code, a.threads, a.lds_bytes, a.user_sgprs, a.tgid_sgpr)
+    glsl, tr = translate_shader(a.code, a.threads, a.lds_bytes, a.user_sgprs, a.tgid_sgpr, a.probes)
     open(a.out, 'w').write(glsl)
     if a.reach_out:
         with open(a.reach_out, 'w') as f:
