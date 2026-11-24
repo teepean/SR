@@ -1,0 +1,82 @@
+// wavetest.comp - stress test of the two-warp handshake (wave_sync) that wave64 operations use in multi-wave
+// workgroups: every guest wave (2 warps) runs its own number of rounds of wave_any / readlane exchanges, inside
+// control flow that differs between the waves of a workgroup (no workgroup barrier can be used there).
+// out[wg * WAVES + wave] = checksum; out[n] = handshakes that gave up (bounded spin)
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_vote : require
+
+#ifndef THREADS
+#define THREADS 512
+#endif
+#define WAVES (THREADS / 64)
+layout(local_size_x = THREADS) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Out { uint v[]; };
+layout(push_constant) uniform Push { uint64_t out_addr; uint rounds; uint seed; } pc;
+
+shared uint XCHG[THREADS];
+shared uint WAVE_FLAG[THREADS / 32];
+shared uint WSYNC[THREADS / 32];
+uint SYNC_GEN;
+uint GAVE_UP;
+
+// as prelude.py: plain atomics and memoryBarrierShared (no Vulkan memory model)
+void wave_sync() {
+    SYNC_GEN++;
+    memoryBarrierShared();
+    subgroupBarrier();
+    if (subgroupElect()) atomicExchange(WSYNC[gl_SubgroupID], SYNC_GEN);
+    uint spins = 0u;
+    while (atomicOr(WSYNC[gl_SubgroupID ^ 1u], 0u) < SYNC_GEN) {
+        if (++spins > 4000000u) { GAVE_UP++; break; }
+    }
+    memoryBarrierShared();
+    subgroupBarrier();
+}
+bool wave_any(bool b) {
+    bool w = subgroupAny(b);
+    if (subgroupElect()) WAVE_FLAG[gl_SubgroupID] = w ? 1u : 0u;
+    wave_sync();
+    bool r = WAVE_FLAG[gl_SubgroupID & ~1u] != 0u || WAVE_FLAG[gl_SubgroupID | 1u] != 0u;
+    wave_sync();
+    return r;
+}
+uint wave_readlane(uint x, uint lane) {
+    XCHG[gl_LocalInvocationIndex] = x;
+    wave_sync();
+    uint r = XCHG[(gl_LocalInvocationIndex & ~63u) + (lane & 63u)];
+    wave_sync();
+    return r;
+}
+
+uint hash(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }
+
+void main() {
+    if (subgroupElect()) WSYNC[gl_SubgroupID] = 0u;
+    SYNC_GEN = 0u;
+    GAVE_UP = 0u;
+    barrier();
+    uint wave = gl_LocalInvocationIndex >> 6, lane = gl_LocalInvocationIndex & 63u;
+    uint h = hash(pc.seed ^ (gl_WorkGroupID.x * 977u) ^ (wave * 131u));
+    uint my_rounds = pc.rounds + (h & 63u);           // differs between the waves of a workgroup
+    uint sum = 0u;
+    uint value = hash(h ^ lane);
+    for (uint r = 0u; ; r++) {
+        // wave-level loop exit: the wave continues while any of its lanes wants to
+        bool want = r < my_rounds + ((value >> 3) & 1u) * (lane & 1u);
+        if (!wave_any(want)) break;
+        uint pick = wave_readlane(value, (h + r) & 63u);
+        if (((h >> (r & 15u)) & 1u) != 0u) {          // wave-level branch: wave-uniform, differs between waves
+            pick ^= wave_readlane(value + r, (h * 7u + r) & 63u);
+        }
+        sum = sum * 31u + pick;
+        value = hash(value + pick);
+    }
+    barrier();   // guest s_barrier: every wave reaches it
+    uint total = wave_readlane(sum, 0u) + wave_readlane(sum, 63u);
+    if (lane == 0u) Out(pc.out_addr).v[gl_WorkGroupID.x * WAVES + wave] = total;
+    if (GAVE_UP != 0u) atomicAdd(Out(pc.out_addr).v[gl_NumWorkGroups.x * WAVES], GAVE_UP);
+}

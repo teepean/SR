@@ -197,7 +197,7 @@ class Translator:
             d, a, c, e = ops[0], ops[1], ops[2], ops[3]
             self.write_v_u32(inst, d, f % (self.src_int(a, inst, 0), self.src_int(c, inst, 1), self.src_int(e, inst, 2)))
             return
-        if b in ('s_waitcnt', 's_nop', 's_inst_prefetch'):
+        if b in ('s_waitcnt', 's_nop', 's_inst_prefetch', 's_barrier'):   # s_barrier: barrier() in the emission
             return
         self.unknown[op] += 1
         self.emit('/* UNHANDLED %s */' % inst.text)
@@ -820,7 +820,7 @@ def install_reversed(tr):
 # ---------------------------------------------------------------------------------------------------------- structure
 LANE_BRANCHES = ('s_cbranch_execz', 's_cbranch_execnz', 's_cbranch_vccz', 's_cbranch_vccnz')
 CROSS_LANE = ('v_readlane_b32', 'v_permlanex16_b32', 'v_writelane_b32', 'ds_swizzle_b32', 'ds_bpermute_b32',
-              'ds_permute_b32')
+              'ds_permute_b32', 's_barrier')
 
 
 class Structure:
@@ -902,6 +902,54 @@ def uses_of(inst):
     if inst.base.startswith(('buffer_store', 'ds_write', 'ds_min', 'ds_max', 's_cmp', 's_bitcmp')):
         regs += inst.ops[0].regs()
     return regs
+
+
+def scalar_reach(insts, user_sgprs):
+    """The guest memory the scalar loads read, as pointer chains from the user data, for the emulator to bring
+    CPU-written tables up to date before a dispatch: nodes are 64-bit pointers, a user SGPR pair or a pair loaded by an
+    s_load from (node + offset); each node gets the extent read through it. Program order: a pair stops being a
+    node once anything else writes it. Returns [(kind, a, b, extent)]: ('user', sgpr, 0, extent) or
+    ('load', parent node, offset, extent); unbounded extents (offset in an SGPR) are left to the emulator's own
+    tracking."""
+    nodes = []
+    holder = {}        # SGPR -> (node, byte offset) of the dword loaded into it
+    redefined = set()
+
+    def node_of(base):
+        if base.kind != 'reg' or base.file != 's' or base.count < 2:
+            return None
+        r = base.first
+        a, b = holder.get(r), holder.get(r + 1)
+        if a is not None and b is not None and a[0] == b[0] and b[1] == a[1] + 4:
+            key = ('load', a[0], a[1])
+        elif r + 1 < user_sgprs and r not in redefined and r + 1 not in redefined:
+            key = ('user', r, 0)
+        else:
+            return None
+        for i, n in enumerate(nodes):
+            if tuple(n[:3]) == key:
+                return i
+        nodes.append([key[0], key[1], key[2], 0])
+        return len(nodes) - 1
+
+    for i in insts:
+        if i.base.startswith('s_load_dword'):
+            d, base, off = i.ops
+            n = node_of(base)
+            offset = 0 if off.kind == 'null' else (off.value if off.kind == 'const' else None)
+            for r in d.regs():
+                holder.pop(int(r[1:]), None)
+                redefined.add(int(r[1:]))
+            if n is None or offset is None:
+                continue
+            nodes[n][3] = max(nodes[n][3], offset + 4 * d.count)
+            for k in range(d.count):
+                holder[d.first + k] = (n, offset + 4 * k)
+            continue
+        for r in all_sgpr_defs(i):
+            holder.pop(int(r[1:]), None)
+            redefined.add(int(r[1:]))
+    return [tuple(n) for n in nodes]
 
 
 def classify(tr, st):
@@ -1081,189 +1129,207 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr):
         per_inst.append(tr.cur)
         if i.off in tr.ballot_uses:
             tr.ballot_index.add(k)
-    wave, lane_branch, per_lane_loops = classify(tr, st)
-    ekt = exec_known_true(insts, st, lane_branch, wave)
-    # readfirstlane where the wave may be partly inactive goes through the wave (a wave point); repeat until stable
-    readfirst = [k for k, i in enumerate(insts) if i.off in tr.readfirst_offs]
-    while True:
-        through_wave = [k for k in readfirst if not ekt[k] and k not in tr.ballot_index]
-        if not through_wave:
-            break
-        tr.ballot_index.update(through_wave)
+    tr.reach = scalar_reach(insts, user_sgprs)
+    # classify and emit; LDS reads that follow LDS writes inside lane-level regions (cross-lane data through LDS,
+    # which the guest wave orders by executing in lockstep) become wave points, then again until none is left
+    per_inst_orig = [list(x) for x in per_inst]
+    notes_before = len(tr.notes)
+    for attempt in range(8):
+        per_inst = [list(x) for x in per_inst_orig]
+        tr.notes[notes_before:] = []
         wave, lane_branch, per_lane_loops = classify(tr, st)
         ekt = exec_known_true(insts, st, lane_branch, wave)
-    for k in readfirst:
-        per_inst[k] = [(t.replace('readfirst(', '(' if ekt[k] else 'wave_readfirst('), v) for t, v in per_inst[k]]
-    tr.notes.append('readfirstlane: %d with the whole wave active, %d through the wave' % (
-        sum(1 for k in readfirst if ekt[k]), sum(1 for k in readfirst if not ekt[k])))
-    tr.notes.append('exec known to be set before %d of %d instructions' % (sum(ekt), len(ekt)))
-    tr.notes.append('%d forward branches, %d loops; %d lane-dependent branches, %d of them decided for the wave; '
-                    '%d per-lane loops' % (len(st.fwd), len(st.loops), len(lane_branch), len(wave),
-                                           len(per_lane_loops)))
+        # readfirstlane where the wave may be partly inactive goes through the wave (a wave point); repeat until stable
+        readfirst = [k for k, i in enumerate(insts) if i.off in tr.readfirst_offs]
+        while True:
+            through_wave = [k for k in readfirst if not ekt[k] and k not in tr.ballot_index]
+            if not through_wave:
+                break
+            tr.ballot_index.update(through_wave)
+            wave, lane_branch, per_lane_loops = classify(tr, st)
+            ekt = exec_known_true(insts, st, lane_branch, wave)
+        for k in readfirst:
+            per_inst[k] = [(t.replace('readfirst(', '(' if ekt[k] else 'wave_readfirst('), v) for t, v in per_inst[k]]
+        tr.notes.append('readfirstlane: %d with the whole wave active, %d through the wave' % (
+            sum(1 for k in readfirst if ekt[k]), sum(1 for k in readfirst if not ekt[k])))
+        tr.notes.append('exec known to be set before %d of %d instructions' % (sum(ekt), len(ekt)))
+        tr.notes.append('%d forward branches, %d loops; %d lane-dependent branches, %d of them decided for the wave; '
+                        '%d per-lane loops' % (len(st.fwd), len(st.loops), len(lane_branch), len(wave),
+                                               len(per_lane_loops)))
 
-    def cond(k):
-        i = insts[k]
-        lane = k in lane_branch
-        w = k in wave
-        if i.op == 's_branch':
-            return 'true'
-        if i.op == 's_cbranch_scc0':
-            return '!SCC'
-        if i.op == 's_cbranch_scc1':
-            return 'SCC'
-        if i.op in ('s_cbranch_execz', 's_cbranch_execnz'):
-            e = 'wave_any(EX)' if w else 'EX'
-            return ('!' + e) if i.op == 's_cbranch_execz' else e
-        if i.op in ('s_cbranch_vccz', 's_cbranch_vccnz'):
-            if not lane:
-                e = '((s106 | s107) != 0u)'
-            else:
-                e = 'wave_any(s106 != 0u)' if w else '(s106 != 0u)'
-            return ('!' + e) if i.op == 's_cbranch_vccz' else e
-        raise ValueError(i)
-
-    flag = lambda b: 'F%05x' % insts[b].off
-    n = len(insts)
-    out = []
-    used_flags = set()
-    for h, j in st.loops.items():
-        used_flags.update(b for b in st.fwd if h <= b <= j)
-
-    def is_lane(b):
-        return b in lane_branch and b not in wave
-
-    class Blk:
-        def __init__(self, kind, end, lane, flag=None, header=None, else_to=None):
-            self.kind, self.end, self.lane, self.flag, self.header, self.else_to = kind, end, lane, flag, header, else_to
-
-    stack = []
-    pending = {}                  # crossing branch index -> target: instructions before the target are skipped
-
-    def put(text, extra=0):
-        out.append('    ' * (1 + len(stack) + extra) + text)
-
-    def scope_end():
-        for blk in reversed(stack):
-            return blk.end if blk.kind != 'loop' else blk.end + 1
-        return n + 1
-
-    def loop_blk():
-        for blk in reversed(stack):
-            if blk.kind == 'loop':
-                return blk
-        return None
-
-    def lane_here():
-        return any(blk.lane for blk in stack)
-
-    def open_guards(k):
-        """guards of pending crossing branches that are not open in the current scope"""
-        open_flags = set(blk.flag for blk in stack if blk.kind == 'guard')
-        lp = loop_blk()
-        for b, t in sorted(pending.items(), key=lambda x: -x[1]):
-            if b in open_flags or t <= k:
-                continue
-            if lp is not None and t > lp.end and not (lp.header <= b <= lp.end):
-                pass
-            end = min(t, scope_end())
-            if end <= k:
-                continue
-            put('if (!%s) {' % flag(b))
-            stack.append(Blk('guard', end, is_lane(b), flag=b))
-
-    dirty = False
-    for k, i in enumerate(insts):
-        # close blocks ending here (if/else/guard), with if -> else conversion
-        while stack and stack[-1].kind != 'loop' and stack[-1].end == k:
-            blk = stack.pop()
-            if blk.kind == 'if' and blk.else_to is not None:
-                put('} else {')
-                stack.append(Blk('else', blk.else_to, blk.lane))
-            else:
-                put('}')
-        for b in [b for b, t in pending.items() if t <= k]:
-            del pending[b]
-        open_guards(k)
-        # loop headers (outermost first)
-        for h, j in sorted(((h, j) for h, j in st.loops.items() if h == k), key=lambda x: -x[1]):
-            per_lane = h in per_lane_loops
-            put('for (;;) {  // loop %05x..%05x%s' % (insts[h].off, insts[j].off, ' (per lane)' if per_lane else ''))
-            stack.append(Blk('loop', j, per_lane, header=h))
-            inner = [b for b in st.fwd if h <= b <= j]
-            if inner:
-                put(' '.join('%s = false;' % flag(b) for b in inner))
-            if any(insts[x].off in tr.lds_writes for x in range(h, j + 1)) and not lane_here():
-                put('barrier();  // LDS written in this loop')
-        if i.off in tr.lds_reads and dirty and not lane_here():
-            put('barrier();  // LDS written before')
-            dirty = False
-        if i.off in tr.lds_writes:
-            dirty = True
-        for text, valu in per_inst[k]:
-            if ekt[k]:
-                put(text.replace('if (EX) ', '').replace('EX && ', ''))
-                continue
-            if valu and not text.startswith(('if (EX', '{')):
-                prefix = '    ' * (1 + len(stack)) + 'if (EX) { '
-                if out and out[-1].startswith(prefix) and out[-1].endswith(' }'):
-                    out[-1] = out[-1][:-2] + ' ' + text + ' }'
+        def cond(k):
+            i = insts[k]
+            lane = k in lane_branch
+            w = k in wave
+            if i.op == 's_branch':
+                return 'true'
+            if i.op == 's_cbranch_scc0':
+                return '!SCC'
+            if i.op == 's_cbranch_scc1':
+                return 'SCC'
+            if i.op in ('s_cbranch_execz', 's_cbranch_execnz'):
+                e = 'wave_any(EX)' if w else 'EX'
+                return ('!' + e) if i.op == 's_cbranch_execz' else e
+            if i.op in ('s_cbranch_vccz', 's_cbranch_vccnz'):
+                if not lane:
+                    e = '((s106 | s107) != 0u)'
                 else:
-                    put('if (EX) { %s }' % text)
-            else:
-                put(text)
-        if i.op == 's_barrier':
-            put('barrier();')
-        if k in st.fwd:
-            t = st.fwd[k]
-            c = cond(k)
-            tgt = insts[t].off if t < n else 0
-            top = stack[-1] if stack else None
+                    e = 'wave_any(s106 != 0u)' if w else '(s106 != 0u)'
+                return ('!' + e) if i.op == 's_cbranch_vccz' else e
+            raise ValueError(i)
+
+        flag = lambda b: 'F%05x' % insts[b].off
+        n = len(insts)
+        out = []
+        used_flags = set()
+        for h, j in st.loops.items():
+            used_flags.update(b for b in st.fwd if h <= b <= j)
+
+        def is_lane(b):
+            return b in lane_branch and b not in wave
+
+        class Blk:
+            def __init__(self, kind, end, lane, flag=None, header=None, else_to=None):
+                self.kind, self.end, self.lane, self.flag, self.header, self.else_to = kind, end, lane, flag, header, else_to
+
+        stack = []
+        pending = {}                  # crossing branch index -> target: instructions before the target are skipped
+
+        def put(text, extra=0):
+            out.append('    ' * (1 + len(stack) + extra) + text)
+
+        def scope_end():
+            for blk in reversed(stack):
+                return blk.end if blk.kind != 'loop' else blk.end + 1
+            return n + 1
+
+        def loop_blk():
+            for blk in reversed(stack):
+                if blk.kind == 'loop':
+                    return blk
+            return None
+
+        def lane_here():
+            return any(blk.lane for blk in stack)
+
+        def open_guards(k):
+            """guards of pending crossing branches that are not open in the current scope"""
+            open_flags = set(blk.flag for blk in stack if blk.kind == 'guard')
             lp = loop_blk()
-            if t == k + 1:
-                pass
-            elif i.op == 's_branch' and top is not None and top.kind == 'if' and top.end == k + 1 and \
-                    top.else_to is None and t <= (stack[-2].end if len(stack) > 1 and stack[-2].kind != 'loop'
-                                                  else (stack[-2].end + 1 if len(stack) > 1 else n + 1)):
-                top.else_to = t                                   # then-part ends: "} else {" up to t
-            elif t <= scope_end():
-                if c == 'true':
-                    put('if (false) {  // -> %05x' % tgt)
-                    stack.append(Blk('if', t, False))
+            for b, t in sorted(pending.items(), key=lambda x: -x[1]):
+                if b in open_flags or t <= k:
+                    continue
+                if lp is not None and t > lp.end and not (lp.header <= b <= lp.end):
+                    pass
+                end = min(t, scope_end())
+                if end <= k:
+                    continue
+                put('if (!%s) {' % flag(b))
+                stack.append(Blk('guard', end, is_lane(b), flag=b))
+
+        dirty = False
+        unsynced_reads = []    # LDS reads after a write with no wave-uniform point between (inside lane-level regions)
+        for k, i in enumerate(insts):
+            # close blocks ending here (if/else/guard), with if -> else conversion
+            while stack and stack[-1].kind != 'loop' and stack[-1].end == k:
+                blk = stack.pop()
+                if blk.kind == 'if' and blk.else_to is not None:
+                    put('} else {')
+                    stack.append(Blk('else', blk.else_to, blk.lane))
                 else:
-                    put('if (!(%s)) {  // -> %05x' % (c, tgt))
-                    stack.append(Blk('if', t, is_lane(k)))
-            elif lp is not None and t == lp.end + 1 and not any(blk.kind != 'loop' and blk.end > lp.end for blk in
-                                                               stack):
-                put('if (%s) break;  // -> %05x' % (c, tgt))
-            else:
-                put('%s = %s;  // -> %05x (crossing)' % (flag(k), c, tgt))
-                used_flags.add(k)
-                pending[k] = t
-                if lp is not None and t > lp.end:
-                    put('if (%s) break;' % flag(k))
+                    put('}')
+            for b in [b for b, t in pending.items() if t <= k]:
+                del pending[b]
+            open_guards(k)
+            # loop headers (outermost first)
+            for h, j in sorted(((h, j) for h, j in st.loops.items() if h == k), key=lambda x: -x[1]):
+                per_lane = h in per_lane_loops
+                put('for (;;) {  // loop %05x..%05x%s' % (insts[h].off, insts[j].off, ' (per lane)' if per_lane else ''))
+                stack.append(Blk('loop', j, per_lane, header=h))
+                inner = [b for b in st.fwd if h <= b <= j]
+                if inner:
+                    put(' '.join('%s = false;' % flag(b) for b in inner))
+                if any(insts[x].off in tr.lds_writes for x in range(h, j + 1)) and not lane_here():
+                    put('wave_sync();  // LDS written in this loop')
+            if i.off in tr.lds_reads and dirty and not lane_here():
+                put('wave_sync();  // LDS written before')
+                dirty = False
+            elif i.off in tr.lds_reads and dirty:
+                unsynced_reads.append(i.off)
+            if i.off in tr.lds_writes:
+                dirty = True
+            for text, valu in per_inst[k]:
+                if ekt[k]:
+                    put(text.replace('if (EX) ', '').replace('EX && ', ''))
+                    continue
+                if valu and not text.startswith(('if (EX', '{')):
+                    prefix = '    ' * (1 + len(stack)) + 'if (EX) { '
+                    if out and out[-1].startswith(prefix) and out[-1].endswith(' }'):
+                        out[-1] = out[-1][:-2] + ' ' + text + ' }'
+                    else:
+                        put('if (EX) { %s }' % text)
                 else:
-                    end = min(t, scope_end())
-                    put('if (!%s) {' % flag(k))
-                    stack.append(Blk('guard', end, is_lane(k), flag=k))
-        elif k in st.latches:
-            put('if (%s) continue;  // -> %05x' % (cond(k), insts[st.latches[k]].off))
-        elif i.op == 's_endpgm':
-            put('return;')
-        # loop ends (close inner guards first)
-        while stack and any(blk.kind == 'loop' and blk.end == k for blk in stack):
-            blk = stack.pop()
-            if blk.kind != 'loop':
+                    put(text)
+            if i.op == 's_barrier':
+                put('barrier();')
+            if k in st.fwd:
+                t = st.fwd[k]
+                c = cond(k)
+                tgt = insts[t].off if t < n else 0
+                top = stack[-1] if stack else None
+                lp = loop_blk()
+                if t == k + 1:
+                    pass
+                elif i.op == 's_branch' and top is not None and top.kind == 'if' and top.end == k + 1 and \
+                        top.else_to is None and t <= (stack[-2].end if len(stack) > 1 and stack[-2].kind != 'loop'
+                                                      else (stack[-2].end + 1 if len(stack) > 1 else n + 1)):
+                    top.else_to = t                                   # then-part ends: "} else {" up to t
+                elif t <= scope_end():
+                    if c == 'true':
+                        put('if (false) {  // -> %05x' % tgt)
+                        stack.append(Blk('if', t, False))
+                    else:
+                        put('if (!(%s)) {  // -> %05x' % (c, tgt))
+                        stack.append(Blk('if', t, is_lane(k)))
+                elif lp is not None and t == lp.end + 1 and not any(blk.kind != 'loop' and blk.end > lp.end for blk in
+                                                                   stack):
+                    put('if (%s) break;  // -> %05x' % (c, tgt))
+                else:
+                    put('%s = %s;  // -> %05x (crossing)' % (flag(k), c, tgt))
+                    used_flags.add(k)
+                    pending[k] = t
+                    if lp is not None and t > lp.end:
+                        put('if (%s) break;' % flag(k))
+                    else:
+                        end = min(t, scope_end())
+                        put('if (!%s) {' % flag(k))
+                        stack.append(Blk('guard', end, is_lane(k), flag=k))
+            elif k in st.latches:
+                put('if (%s) continue;  // -> %05x' % (cond(k), insts[st.latches[k]].off))
+            elif i.op == 's_endpgm':
+                put('return;')
+            # loop ends (close inner guards first)
+            while stack and any(blk.kind == 'loop' and blk.end == k for blk in stack):
+                blk = stack.pop()
+                if blk.kind != 'loop':
+                    put('}')
+                    continue
+                put('break;', 1)
                 put('}')
-                continue
-            put('break;', 1)
+                outer = loop_blk()
+                for b, t in pending.items():
+                    if blk.header <= b <= blk.end and outer is not None and t > outer.end:
+                        put('if (%s) break;' % flag(b))
+        while stack:
+            stack.pop()
             put('}')
-            outer = loop_blk()
-            for b, t in pending.items():
-                if blk.header <= b <= blk.end and outer is not None and t > outer.end:
-                    put('if (%s) break;' % flag(b))
-    while stack:
-        stack.pop()
-        put('}')
+        if unsynced_reads:
+            tr.notes.append('%d LDS reads follow LDS writes inside lane-level regions (no wave sync there): %s' % (
+                len(unsynced_reads), ' '.join('%05x' % o for o in unsynced_reads[:12])))
+        if not unsynced_reads or attempt == 7:
+            break
+        index_of = {i.off: k for k, i in enumerate(insts)}
+        tr.ballot_index.update(index_of[o] for o in unsynced_reads)
     nvgpr = max(tr.max_v, 1)
     body = '\n'.join(out)
     flags_decl = '\n'.join('    bool %s = false;' % flag(b) for b in sorted(used_flags))
@@ -1294,6 +1360,7 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr):
     lines.append('void main() {')
     lines.append('    if (pc.pages == 0ul) return;   // a check that could not save the outputs: run nothing')
     lines.append('    FAULT_PAGE = NUM_PAGES;')
+    lines.append('    wave_sync_init();')
     lines.append('    body();')
     lines.append('    record_faults();')
     lines.append('}')
@@ -1308,9 +1375,14 @@ def main():
     ap.add_argument('--lds-bytes', type=int, default=2048)
     ap.add_argument('--user-sgprs', type=int, default=2)
     ap.add_argument('--tgid-sgpr', type=int, default=2)
+    ap.add_argument('--reach-out', help='write the scalar load chains (scalar_reach) to this file')
     a = ap.parse_args()
     glsl, tr = translate_shader(a.code, a.threads, a.lds_bytes, a.user_sgprs, a.tgid_sgpr)
     open(a.out, 'w').write(glsl)
+    if a.reach_out:
+        with open(a.reach_out, 'w') as f:
+            for kind, x, off, extent in tr.reach:
+                f.write('%s %d %d %d\n' % (kind, x, off, extent))
     for n in tr.notes:
         print('note:', n)
     if tr.unknown:

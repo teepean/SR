@@ -87,6 +87,9 @@ const uint     NUM_PAGES     = 0x6000000u;      // (2^40 + 512 GB) >> 14
 shared uint LDS[LDS_DWORDS];
 shared uint XCHG[THREADS];
 shared uint WAVE_FLAG[THREADS / 32];
+#if THREADS != 64
+shared uint WSYNC[THREADS / 32];
+#endif
 
 bool EX;
 bool SCC;
@@ -227,29 +230,64 @@ void lds_atomic_max_f32(uint a, uint v) {
 }
 
 // ---------------------------------------------------------------- wave (64 threads = two warps) operations
-// valid only where all threads of the workgroup take part (one wave per workgroup in this version)
+// A guest wave is warps 2w and 2w + 1 of the workgroup. wave_sync: both warps of this wave have arrived (and their
+// shared memory writes are visible): a workgroup barrier when the workgroup is one wave; with several waves, a
+// handshake of the two warps through shared memory (generation counters; the waves of a workgroup take their own
+// paths, so no workgroup barrier can be used), bounded so that it can never hang (counters[2] counts give-ups).
+// Plain atomics and memoryBarrierShared: no Vulkan memory model needed.
+uint SYNC_GEN;
+bool SYNC_BROKEN;   // a handshake gave up: this warp stops waiting (it still signals), so a wave costs at most two bounds
+void wave_sync() {
+#if THREADS == 64
+    barrier();
+#else
+    SYNC_GEN++;
+    memoryBarrierShared();
+    subgroupBarrier();
+    if (subgroupElect()) atomicExchange(WSYNC[gl_SubgroupID], SYNC_GEN);
+    if (!SYNC_BROKEN) {
+        uint spins = 0u;
+        while (atomicOr(WSYNC[gl_SubgroupID ^ 1u], 0u) < SYNC_GEN) {
+            if (++spins > 1000000u) {
+                SYNC_BROKEN = true;
+                if (pc.counters != 0ul && subgroupElect()) atomicAdd(Counters(pc.counters).v[2], 1u);
+                break;
+            }
+        }
+    }
+    memoryBarrierShared();
+    subgroupBarrier();
+#endif
+}
+void wave_sync_init() {
+#if THREADS != 64
+    if (subgroupElect()) WSYNC[gl_SubgroupID] = 0u;
+    SYNC_GEN = 0u;
+    SYNC_BROKEN = false;
+    barrier();
+#endif
+}
 bool wave_any(bool b) {
     bool w = subgroupAny(b);
     if (subgroupElect()) WAVE_FLAG[gl_SubgroupID] = w ? 1u : 0u;
-    barrier();
-    bool r = false;
-    for (uint k = 0u; k < THREADS / 32; k++) r = r || WAVE_FLAG[k] != 0u;
-    barrier();
+    wave_sync();
+    bool r = WAVE_FLAG[gl_SubgroupID & ~1u] != 0u || WAVE_FLAG[gl_SubgroupID | 1u] != 0u;
+    wave_sync();
     return r;
 }
 uvec2 wave_ballot(bool b) {
     uvec4 m = subgroupBallot(b);
     if (subgroupElect()) WAVE_FLAG[gl_SubgroupID] = m.x;
-    barrier();
-    uvec2 r = uvec2(WAVE_FLAG[0], WAVE_FLAG[1]);
-    barrier();
+    wave_sync();
+    uvec2 r = uvec2(WAVE_FLAG[gl_SubgroupID & ~1u], WAVE_FLAG[gl_SubgroupID | 1u]);
+    wave_sync();
     return r;
 }
 uint wave_readlane(uint x, uint lane) {
     XCHG[gl_LocalInvocationIndex] = x;
-    barrier();
-    uint r = XCHG[lane & 63u];
-    barrier();
+    wave_sync();
+    uint r = XCHG[(gl_LocalInvocationIndex & ~63u) + (lane & 63u)];
+    wave_sync();
     return r;
 }
 // v_readfirstlane_b32 where lanes may be inactive: the value of the first lane with EX set
