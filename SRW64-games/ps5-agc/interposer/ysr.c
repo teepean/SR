@@ -10,7 +10,8 @@
 //   [ysr] site ... - the most frequent call sites (return addresses) of dispatches/draws/syncs with their marker
 //
 // Environment: YSR_INTERVAL=<seconds>, YSR_MARKERS=<number of markers printed, default 30>,
-//              YSR_SITES=<number of call sites printed, default 40>, YSR_OFF=1 (no reports)
+//              YSR_SITES=<number of call sites printed, default 40>, YSR_FUNCS=<number of functions by calls/frame>,
+//              YSR_OFF=1 (no reports)
 
 #define _GNU_SOURCE
 #include <dlfcn.h>
@@ -145,6 +146,27 @@ static void *reporter(void *argument)
         }
         memcpy(previous, current, sizeof(marker_info) * (size_t)n);
         if ((env = getenv("YSR_PUSHMAP")) != NULL) write_pushmap(env, flips);
+
+        // YSR_FUNCS=<n>: the n most frequent sceAgc* functions (calls per frame)
+        if ((env = getenv("YSR_FUNCS")) != NULL && atoi(env) > 0)
+        {
+            static uint64_t previous_functions[YSR_NUM_FUNCS];
+            unsigned int print_functions = (unsigned int)atoi(env), f, k = 0;
+            for (f = 0; f < YSR_NUM_FUNCS; f++)
+            {
+                uint64_t value = __atomic_load_n(&function_counts[f], __ATOMIC_RELAXED);
+                if (value != previous_functions[f])
+                {
+                    order[k].index = (int)f;
+                    order[k].value = value - previous_functions[f];
+                    previous_functions[f] = value;
+                    k++;
+                }
+            }
+            qsort(order, k, sizeof(sort_entry), compare_desc);
+            for (f = 0; f < k && f < print_functions; f++)
+                fprintf(stderr, "[ysr] function %-44s %10.1f/frame\n", ysr_names[order[f].index], (double)order[f].value / frames);
+        }
 
         // sync commands by arguments
         {

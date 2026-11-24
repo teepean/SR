@@ -23,6 +23,7 @@ Load it only into the game: `LD_PRELOAD=.../libysr.so ./game_srw64`.
 | Environment | Effect |
 |---|---|
 | `YSR_INTERVAL`, `YSR_MARKERS`, `YSR_SITES`, `YSR_DETAILS` | report interval (s); numbers of markers, call sites and sync-argument lines printed |
+| `YSR_FUNCS=<n>` | the n most frequent `sceAgc*` functions with their calls per frame (state setting calls included) |
 | `YSR_PUSHMAP=<file>` | complete marker push map, rewritten every interval: count, pushes per frame, depth, marker, parent marker, call site and three callers from the rbp chain. PS5 code keeps frame pointers. `tools/pushmap.py` prints it as a tree. |
 | `YSR_HELPER=<start>-<end>` | for calls made from inside this function (e.g. the game's dispatch helper), record the helper's caller |
 | `YSR_WATCH=<start>-<end>` | record call sites of calls that have an argument register inside the range |
