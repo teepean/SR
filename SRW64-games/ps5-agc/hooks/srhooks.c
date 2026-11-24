@@ -313,6 +313,139 @@ int64_t srh_particle_finalize(uint8_t *psys, uint8_t *cb, uint64_t *view_context
     return 0;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// srh_cloth_dispatch: replaces the dispatch loop of the cloth job (PS5 sub_AF18E0, loop 0xAF5A73..0xAF5C1E on the
+// async compute buffer 0x462F240). Called after the game sorted its work items (phase << 61 | record index; record =
+// {pipeline, 304-byte user data table}) with the item count; returns 1 when the native call was recorded (the game's
+// loop is skipped), 0 to run the original loop. SRH_NATIVE contains "cloth": one marker "#native:cloth:<payload>"
+// instead of one g1x1x1 dispatch per instance and a full drain (EOP label + WaitRegMem) between phases.
+// Payload (game frame allocator), little endian:
+//   +0 u32 'YNP1', +4 u32 version 1, +8 u32 count, +12 u32 entry bytes (24),
+//   +16 u64 shader code address per pipeline slot [4], +48 u32 thread group size per slot [4],
+//   +64 entries in the game's order (sorted by phase): u64 table (user data s[0:1]), u32 phase, u32 slot,
+//       u32 vertex count (table +0x30), u32 0
+// Slots: 0 = <= 64 vertices (tg 64), 1 = <= 512 (tg 512), 2 = <= 1152 (tg 512), 3 = more (tg 1024).
+
+#define CLOTH_CB          ((uint8_t *)(0x462F240 + AKY))
+#define CLOTH_RECORDS     (*(uint8_t *const volatile *)(0x462F360 + AKY))
+#define CLOTH_ITEMS       (*(const uint64_t *const volatile *)(0x462F378 + AKY))
+#define CLOTH_STATE_BYTE  (*(volatile uint8_t *)(0x462F2E0 + AKY))
+static const uint64_t cloth_pipelines[4] = { 0x462C670 + AKY, 0x462C690 + AKY, 0x462C650 + AKY, 0x462C750 + AKY };
+
+static int native_cloth;
+static void *(*agc_acb_push_marker)(void *cb, const char *name, uint32_t color);
+static void *(*agc_acb_pop_marker)(void *cb);
+static uint64_t nc_calls, nc_native, nc_fallback, nc_items;
+
+int srh_cloth_dispatch(int32_t count)
+{
+    const uint64_t *items = CLOTH_ITEMS;
+    const uint8_t *records = CLOTH_RECORDS;
+    uint8_t *payload;
+    char marker[64];
+    int32_t index;
+    int slot;
+
+    __atomic_add_fetch(&nc_calls, 1, __ATOMIC_RELAXED);
+    if (!native_cloth || count <= 0 || items == NULL || records == NULL || agc_acb_push_marker == NULL || agc_acb_pop_marker == NULL) return 0;
+    payload = frame_alloc(64 + 24 * (uint64_t)count);
+    if (payload == NULL) { __atomic_add_fetch(&nc_fallback, 1, __ATOMIC_RELAXED); return 0; }
+
+    memset(payload, 0, 64);
+    *(uint32_t *)(payload + 0) = 0x31504e59;
+    *(uint32_t *)(payload + 4) = 1;
+    *(uint32_t *)(payload + 8) = (uint32_t)count;
+    *(uint32_t *)(payload + 12) = 24;
+    for (slot = 0; slot < 4; slot++)
+    {
+        const uint8_t *header = *(uint8_t *const *)(cloth_pipelines[slot] + 0x10);
+        if (header == NULL) continue;
+        *(uint64_t *)(payload + 16 + 8 * slot) = *(const uint64_t *)(header + 0x38);
+        *(uint32_t *)(payload + 48 + 4 * slot) = *(const uint32_t *)(header + 0x40);
+    }
+    for (index = 0; index < count; index++)
+    {
+        uint64_t item = items[index];
+        const uint8_t *record = records + 16 * (item & 0xfffff);
+        uint64_t pipeline = *(const uint64_t *)record;
+        const uint8_t *table = *(uint8_t *const *)(record + 8), *header;
+        uint8_t *entry = payload + 64 + 24 * (size_t)index;
+        for (slot = 0; slot < 4 && cloth_pipelines[slot] != pipeline; slot++);
+        header = (slot < 4) ? *(uint8_t *const *)(pipeline + 0x10) : NULL;
+        // unknown pipeline (e.g. the PS5 Pro variants) or one the game wouldn't dispatch: the original loop runs
+        if (slot == 4 || table == NULL || header == NULL || (*(const uint32_t *)(header + 0x10) & 1) == 0)
+        {
+            __atomic_add_fetch(&nc_fallback, 1, __ATOMIC_RELAXED);
+            return 0;
+        }
+        *(uint64_t *)(entry + 0) = (uint64_t)table;
+        *(uint32_t *)(entry + 8) = (uint32_t)(item >> 61);
+        *(uint32_t *)(entry + 12) = (uint32_t)slot;
+        *(uint32_t *)(entry + 16) = *(const uint32_t *)(table + 0x30);
+        *(uint32_t *)(entry + 20) = 0;
+    }
+
+    snprintf(marker, sizeof(marker), "#native:cloth:%llx", (unsigned long long)(uintptr_t)payload);
+    agc_acb_push_marker(CLOTH_CB, marker, 0);
+    agc_acb_pop_marker(CLOTH_CB);
+    CLOTH_STATE_BYTE = 0;      // as after every item of the original loop
+    __atomic_add_fetch(&nc_native, 1, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&nc_items, (uint64_t)count, __ATOMIC_RELAXED);
+    return 1;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// srh_particle_draw_start_stub: replaces `mov eax, [rax + 8]` at PS5 0x1268F37 in the particle draw function
+// (sub_1268630): the CPU read of an emitter counter block's prefix-sum start (block + 8, written by the GPU finalize)
+// which goes into the draw's user data table (+0x20, rdx). With SRH_NATIVE containing "pdraw" the read is replaced
+// by a GPU copy recorded in the command buffer (rbx) before the draw: sceAgcDcbDmaData(dst = table + 0x20 (memory
+// through L2), src = block + 8 (memory through L2), 4 bytes); the CPU writes 0 as a placeholder. Without it: the
+// original read.
+// In the middle of a function: all general registers except rax and all ymm registers are preserved (xmm1 is live).
+
+static int native_pdraw;
+static uint64_t pd_calls, pd_native;
+// sceAgcDcbDmaData(cb, engine, dst, dst cache policy, dst address, src, src cache policy, src address, bytes,
+//                  wait for previous, write confirm, block engine); dst/src 3 = memory through L2
+static void *(*agc_dcb_dma_data)(void *cb, uint8_t engine, uint8_t dst, uint8_t dst_cache, uint64_t dst_address, uint8_t src,
+                                 uint8_t src_cache, uint64_t src_address, uint32_t bytes, uint8_t wait, uint8_t confirm, uint8_t block);
+
+__attribute__((used)) uint32_t srh_particle_draw_start(uint8_t *cb, uint8_t *table, const uint8_t *block)
+{
+    __atomic_add_fetch(&pd_calls, 1, __ATOMIC_RELAXED);
+    if (!native_pdraw || agc_dcb_dma_data == NULL) return *(const volatile uint32_t *)(block + 8);
+    agc_dcb_dma_data(cb, 0, 3, 0, (uint64_t)(uintptr_t)(table + 0x20), 3, 0, (uint64_t)(uintptr_t)(block + 8), 4, 1, 1, 1);
+    __atomic_add_fetch(&pd_native, 1, __ATOMIC_RELAXED);
+    return 0;
+}
+
+__asm__(
+    "\t.text\n"
+    "\t.globl srh_particle_draw_start_stub\n"
+    "\t.type srh_particle_draw_start_stub, @function\n"
+    "srh_particle_draw_start_stub:\n"
+    "\tpush %rbp\n\tmov %rsp, %rbp\n"
+    "\tpush %rcx\n\tpush %rdx\n\tpush %rsi\n\tpush %rdi\n\tpush %r8\n\tpush %r9\n\tpush %r10\n\tpush %r11\n"
+    "\tand $-32, %rsp\n\tsub $512, %rsp\n"
+    "\tvmovdqu %ymm0, 0(%rsp)\n\tvmovdqu %ymm1, 32(%rsp)\n\tvmovdqu %ymm2, 64(%rsp)\n\tvmovdqu %ymm3, 96(%rsp)\n"
+    "\tvmovdqu %ymm4, 128(%rsp)\n\tvmovdqu %ymm5, 160(%rsp)\n\tvmovdqu %ymm6, 192(%rsp)\n\tvmovdqu %ymm7, 224(%rsp)\n"
+    "\tvmovdqu %ymm8, 256(%rsp)\n\tvmovdqu %ymm9, 288(%rsp)\n\tvmovdqu %ymm10, 320(%rsp)\n\tvmovdqu %ymm11, 352(%rsp)\n"
+    "\tvmovdqu %ymm12, 384(%rsp)\n\tvmovdqu %ymm13, 416(%rsp)\n\tvmovdqu %ymm14, 448(%rsp)\n\tvmovdqu %ymm15, 480(%rsp)\n"
+    "\tmov %rbx, %rdi\n"                  // command buffer
+    "\tmov %rdx, %rsi\n"                  // user data table
+    "\tmov %rax, %rdx\n"                  // counter block
+    "\tcall srh_particle_draw_start\n"
+    "\tvmovdqu 0(%rsp), %ymm0\n\tvmovdqu 32(%rsp), %ymm1\n\tvmovdqu 64(%rsp), %ymm2\n\tvmovdqu 96(%rsp), %ymm3\n"
+    "\tvmovdqu 128(%rsp), %ymm4\n\tvmovdqu 160(%rsp), %ymm5\n\tvmovdqu 192(%rsp), %ymm6\n\tvmovdqu 224(%rsp), %ymm7\n"
+    "\tvmovdqu 256(%rsp), %ymm8\n\tvmovdqu 288(%rsp), %ymm9\n\tvmovdqu 320(%rsp), %ymm10\n\tvmovdqu 352(%rsp), %ymm11\n"
+    "\tvmovdqu 384(%rsp), %ymm12\n\tvmovdqu 416(%rsp), %ymm13\n\tvmovdqu 448(%rsp), %ymm14\n\tvmovdqu 480(%rsp), %ymm15\n"
+    "\tlea -64(%rbp), %rsp\n"
+    "\tpop %r11\n\tpop %r10\n\tpop %r9\n\tpop %r8\n\tpop %rdi\n\tpop %rsi\n\tpop %rdx\n\tpop %rcx\n"
+    "\tpop %rbp\n"
+    "\tret\n"
+    "\t.size srh_particle_draw_start_stub, . - srh_particle_draw_start_stub\n"
+);
+
 static void *query_reporter(void *argument)
 {
     (void)argument;
@@ -322,6 +455,11 @@ static void *query_reporter(void *argument)
         if (native_particles)
             fprintf(stderr, "[srhooks] native particles: calls %llu native %llu fallback %llu emitters %llu\n", (unsigned long long)np_calls,
                     (unsigned long long)np_native, (unsigned long long)np_fallback, (unsigned long long)np_emitters);
+        if (native_pdraw)
+            fprintf(stderr, "[srhooks] native particle draw start: calls %llu native %llu\n", (unsigned long long)pd_calls, (unsigned long long)pd_native);
+        if (native_cloth)
+            fprintf(stderr, "[srhooks] native cloth: calls %llu native %llu fallback %llu items %llu\n", (unsigned long long)nc_calls,
+                    (unsigned long long)nc_native, (unsigned long long)nc_fallback, (unsigned long long)nc_items);
         if (!query_enabled) continue;
         fprintf(stderr, "[srhooks] query frames %llu installed %llu (new entry %llu moved %llu too many %llu none %llu) "
                 "cache refresh waited %llu (%.2f ms avg) done early %llu\n",
@@ -344,7 +482,15 @@ __attribute__((constructor)) static void srhooks_init(void)
     agc_dcb_push_marker = (void *(*)(void *, const char *, uint32_t))dlsym(RTLD_DEFAULT, "+kSrjIVxKFE");   // sceAgcDcbPushMarker
     agc_dcb_pop_marker = (void *(*)(void *))dlsym(RTLD_DEFAULT, "H7uZqCoNuWk");                          // sceAgcDcbPopMarker
     if (native_particles) fprintf(stderr, "[srhooks] native particles on (marker functions %s)\n", (agc_dcb_push_marker && agc_dcb_pop_marker) ? "found" : "MISSING");
-    if (query_enabled || native_particles)
+    native_cloth = (env != NULL && strstr(env, "cloth") != NULL);
+    native_pdraw = (env != NULL && strstr(env, "pdraw") != NULL);
+    agc_dcb_dma_data = (void *(*)(void *, uint8_t, uint8_t, uint8_t, uint64_t, uint8_t, uint8_t, uint64_t, uint32_t, uint8_t, uint8_t, uint8_t))
+        dlsym(RTLD_DEFAULT, "WmAc2MEj6Io");                                                                 // sceAgcDcbDmaData
+    if (native_pdraw) fprintf(stderr, "[srhooks] particle draw start by GPU copy on (DmaData %s)\n", agc_dcb_dma_data ? "found" : "MISSING");
+    agc_acb_push_marker = (void *(*)(void *, const char *, uint32_t))dlsym(RTLD_DEFAULT, "cpCILPya5Zk");   // sceAgcAcbPushMarker
+    agc_acb_pop_marker = (void *(*)(void *))dlsym(RTLD_DEFAULT, "6mFxkVqdmbQ");                          // sceAgcAcbPopMarker
+    if (native_cloth) fprintf(stderr, "[srhooks] native cloth on (marker functions %s)\n", (agc_acb_push_marker && agc_acb_pop_marker) ? "found" : "MISSING");
+    if (query_enabled || native_particles || native_cloth || native_pdraw)
     {
         pthread_t thread;
         if (pthread_create(&thread, NULL, query_reporter, NULL) == 0) pthread_detach(thread);

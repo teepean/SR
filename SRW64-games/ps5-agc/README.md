@@ -47,6 +47,8 @@ The hooks in `srhooks.c` (all off unless their environment variable is set):
 | `SRH_CLOTH_RATE=N` | run a cloth simulation job only every Nth call (experiment) |
 | `SRH_QUERY=1` | a GPU query that the main thread waits for (wave heights from an async compute queue) returns the previous frame's results from a per-entry cache, without waiting. Measured: no gain, because the emulated async queue runs more than a frame behind. Kept as an example of a data-level hook. |
 | `SRH_NATIVE=particles` | the particle binning/finalize recorder (4 phases × N emitters of tiny RDNA2 dispatches) records one native call instead (see below) |
+| `SRH_NATIVE=cloth` | the cloth job's dispatch loop (one single-workgroup dispatch per cloth instance, a full drain between dependency phases) records one native call instead. Values can be combined: `SRH_NATIVE=particles,cloth`. |
+| `SRH_NATIVE=pdraw` | the particle draw code no longer reads a GPU-written value (an emitter's first particle index) on the CPU: a GPU copy into the draw's user data table is recorded instead (`sceAgcDcbDmaData`). Needed with `particles`: without the CPU read in the finalize recorder, this read would wait for the GPU. A small assembler stub replaces one load in the middle of the function and keeps all registers. |
 
 ## Native passes
 
@@ -81,6 +83,30 @@ Each 48-byte entry:
 | +40 | u64 emitter (debug) |
 
 Thread counts are the views (phases 1 and 3) and the live count at counter block +0x30 (phases 2 and 4).
+
+The `cloth` payload, version 1, little endian:
+
+| Offset | Field |
+|---|---|
+| +0 | u32 `'YNP1'` |
+| +4 | u32 version |
+| +8 | u32 entry count |
+| +12 | u32 bytes per entry (24) |
+| +16 | u64 shader code address per pipeline slot (4 slots) |
+| +48 | u32 thread group size per slot (4 slots) |
+| +64 | entries, in the game's order (sorted by dependency phase) |
+
+Each 24-byte entry:
+
+| Offset | Field |
+|---|---|
+| +0 | u64 address of the instance's 304-byte user data table |
+| +8 | u32 phase (an attached piece runs in a later phase than its parent) |
+| +12 | u32 pipeline slot (0: ≤ 64 vertices, 1: ≤ 512, 2: ≤ 1152, 3: more) |
+| +16 | u32 vertex count |
+| +20 | u32 reserved (0) |
+
+The native side inserts its own barriers between phases. For an unknown pipeline (e.g. the PS5 Pro variants) the hook lets the original loop run.
 
 ## Tools
 
