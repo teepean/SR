@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 
 static unsigned int cloth_rate = 1;
 static uint64_t cloth_calls, cloth_runs;
@@ -333,9 +334,47 @@ int64_t srh_particle_finalize(uint8_t *psys, uint8_t *cb, uint64_t *view_context
 static const uint64_t cloth_pipelines[4] = { 0x462C670 + AKY, 0x462C690 + AKY, 0x462C650 + AKY, 0x462C750 + AKY };
 
 static int native_cloth;
+static const char *cloth_dump_dir;
+static int cloth_dumped;
 static void *(*agc_acb_push_marker)(void *cb, const char *name, uint32_t color);
 static void *(*agc_acb_pop_marker)(void *cb);
 static uint64_t nc_calls, nc_native, nc_fallback, nc_items;
+
+// SRH_CLOTH_DUMP=<dir>: the shader header (0x100 bytes) and code (up to 64 KB, ends early at the end of the mapping)
+// of the 4 cloth pipelines, once, as <dir>/cloth-slot<N>-header.bin and -code.bin (for reverse engineering the
+// solver; tools/disgcn.py disassembles the code)
+static void dump_guest_bytes(const char *path, const void *data, size_t size)
+{
+    size_t done = 0;
+    int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) return;
+    while (done < size)
+    {
+        size_t chunk = 4096 - (((uintptr_t)data + done) & 4095);
+        ssize_t written;
+        if (chunk > size - done) chunk = size - done;
+        written = write(fd, (const uint8_t *)data + done, chunk);   // EFAULT at the end of the mapping
+        if (written <= 0) break;
+        done += (size_t)written;
+    }
+    close(fd);
+}
+
+static void cloth_dump_shaders(void)
+{
+    char path[512];
+    int slot;
+    for (slot = 0; slot < 4; slot++)
+    {
+        const uint8_t *header = *(uint8_t *const *)(cloth_pipelines[slot] + 0x10);
+        if (header == NULL) continue;
+        snprintf(path, sizeof(path), "%s/cloth-slot%d-header.bin", cloth_dump_dir, slot);
+        dump_guest_bytes(path, header, 0x100);
+        snprintf(path, sizeof(path), "%s/cloth-slot%d-code.bin", cloth_dump_dir, slot);
+        dump_guest_bytes(path, (const void *)(uintptr_t)*(const uint64_t *)(header + 0x38), 0x10000);
+    }
+    fprintf(stderr, "[srhooks] cloth shaders dumped to %s\n", cloth_dump_dir);
+}
 
 int srh_cloth_dispatch(int32_t count)
 {
@@ -347,6 +386,7 @@ int srh_cloth_dispatch(int32_t count)
     int slot;
 
     __atomic_add_fetch(&nc_calls, 1, __ATOMIC_RELAXED);
+    if (cloth_dump_dir != NULL && count > 0 && !__atomic_exchange_n(&cloth_dumped, 1, __ATOMIC_RELAXED)) cloth_dump_shaders();
     if (!native_cloth || count <= 0 || items == NULL || records == NULL || agc_acb_push_marker == NULL || agc_acb_pop_marker == NULL) return 0;
     payload = frame_alloc(64 + 24 * (uint64_t)count);
     if (payload == NULL) { __atomic_add_fetch(&nc_fallback, 1, __ATOMIC_RELAXED); return 0; }
@@ -492,6 +532,7 @@ __attribute__((constructor)) static void srhooks_init(void)
     agc_dcb_pop_marker = (void *(*)(void *))dlsym(RTLD_DEFAULT, "H7uZqCoNuWk");                          // sceAgcDcbPopMarker
     if (native_particles) fprintf(stderr, "[srhooks] native particles on (marker functions %s)\n", (agc_dcb_push_marker && agc_dcb_pop_marker) ? "found" : "MISSING");
     native_cloth = (env != NULL && strstr(env, "cloth") != NULL);
+    cloth_dump_dir = getenv("SRH_CLOTH_DUMP");
     native_pdraw = (env != NULL && strstr(env, "pdraw") != NULL);
     agc_dcb_dma_data = (void *(*)(void *, uint8_t, uint8_t, uint8_t, uint64_t, uint8_t, uint8_t, uint64_t, uint32_t, uint8_t, uint8_t, uint8_t))
         dlsym(RTLD_DEFAULT, "WmAc2MEj6Io");                                                                 // sceAgcDcbDmaData
