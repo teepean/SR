@@ -2,7 +2,11 @@
 
 The information about the original 64-bit Windows executables (and 64-bit Linux executables).
 
-No games are supported yet. The *template* subdirectory contains files for a new game:
+No games are supported yet.
+
+The *ps5-agc* subdirectory contains tools for SRW64 builds of PS5 executables converted to Linux executables: an interposer for the GPU API, game-side hooks with the SCI files which redirect game functions to them, a protocol for native GPU passes and analysis scripts (see [ps5-agc/README.md](ps5-agc/README.md)).
+
+The *template* subdirectory contains files for a new game:
 
 * *build-x64.sh* -- generates the assembler version of the original executable and assembles it (`build-x64.sh elf64` or `build-x64.sh win64`)
 * *compact_source.py* -- shortens the generated files (repeated `db` and `resb` lines)

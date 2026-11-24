@@ -1,0 +1,5 @@
+loc_EF18E0,srh_cloth_update_orig
+loc_FAA760,srh_query_record_orig
+loc_1657030,srh_particle_finalize_orig
+loc_1B2E0B0,srh_g_barrier
+loc_EC3250,srh_g_compute_reset

@@ -1,0 +1,3 @@
+extern srh_cloth_update
+extern srh_query_record
+extern srh_particle_finalize

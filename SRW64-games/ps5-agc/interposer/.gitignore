@@ -1,0 +1,4 @@
+ysr_names.h
+ysr_tramp.S
+*.o
+*.so

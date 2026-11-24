@@ -32,6 +32,7 @@ The projects consists of following subprojects (read the readme files in subproj
 * **SRW64**
   * The static recompiler (for 64-bit Windows executables and 64-bit Linux executables) itself.
   * It takes the original 64-bit executable as an input together with information about the original executable and produces x64 assembler version of the executable, which can be compiled into Windows (x64) or Linux (x64) version.
+  * Functions of the recompiled program can be replaced or wrapped by native code (instruction replacements, exported original functions, extra objects or libraries at link time).
   * The generated x64 assembler version of the executable is not part of the project.
 * **llasm**
   * Program which converts *.llasm* file to [LLVM](https://llvm.org/ "LLVM") language-independent intermediate representation, which can be compiled to native code.
@@ -41,6 +42,7 @@ The projects consists of following subprojects (read the readme files in subproj
   * The information about the original Windows executables.
 * **SRW64-games**
   * The information about the original 64-bit Windows executables (template for new games).
+  * *ps5-agc*: tools for SRW64 builds of PS5 executables converted to Linux executables (running on a Kyty-based Agc emulation): an interposer for the GPU API (`sceAgc*`), game-side hooks linked into the recompiled program, and native GPU passes which replace the RDNA2-specific work of engine functions.
 * **games**
   * Game specific source code.
   * Together with the generated assembler versions of the executables, these files can be used to build Windows (x86/x64) or Linux (x86/x64/arm/arm64/riscv64) or MacOS (x64/arm64) versions of the games.
