@@ -1,5 +1,6 @@
 // spvstats <shader.spv> [push constant bytes] - builds a compute pipeline from SPIR-V and prints the driver's
-// statistics (VK_KHR_pipeline_executable_properties: registers, spills / local memory, binary size, shared memory)
+// statistics (VK_KHR_pipeline_executable_properties: registers, spills / local memory, binary size, shared memory);
+// with SPVSTATS_IR=<prefix> also writes the driver's internal representations to <prefix>.<i>.<name>.txt
 // build: g++ -O2 -o spvstats spvstats.cpp -lvulkan
 #include <vulkan/vulkan.h>
 
@@ -103,7 +104,9 @@ int main(int argc, char** argv) {
 	VkPipelineLayout layout;
 	CHECK(vkCreatePipelineLayout(device, &plci, nullptr, &layout));
 	VkComputePipelineCreateInfo cpci {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
-	cpci.flags        = VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+	const char* ir_prefix = std::getenv("SPVSTATS_IR");
+	cpci.flags        = VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
+	             (ir_prefix ? VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR : 0u);
 	cpci.stage.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	cpci.stage.stage  = VK_SHADER_STAGE_COMPUTE_BIT;
 	cpci.stage.module = module;
@@ -147,6 +150,33 @@ int main(int argc, char** argv) {
 			}
 		}
 		std::printf("\n");
+		if (ir_prefix) {
+			auto get_irs = reinterpret_cast<PFN_vkGetPipelineExecutableInternalRepresentationsKHR>(
+			    vkGetDeviceProcAddr(device, "vkGetPipelineExecutableInternalRepresentationsKHR"));
+			uint32_t rc = 0;
+			get_irs(device, &ei, &rc, nullptr);
+			std::vector<VkPipelineExecutableInternalRepresentationKHR> irs(
+			    rc, {VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INTERNAL_REPRESENTATION_KHR});
+			get_irs(device, &ei, &rc, irs.data());
+			std::vector<std::vector<char>> data(rc);
+			for (uint32_t k = 0; k < rc; k++) {
+				data[k].resize(irs[k].dataSize);
+				irs[k].pData = data[k].data();
+			}
+			get_irs(device, &ei, &rc, irs.data());
+			std::printf("  %u internal representation(s)\n", rc);
+			for (uint32_t k = 0; k < rc; k++) {
+				char path[512];
+				std::snprintf(path, sizeof(path), "%s.%u.%s.txt", ir_prefix, i, irs[k].name);
+				for (char* c = path + std::strlen(ir_prefix); *c; c++) if (*c == ' ' || *c == '/') *c = '_';
+				std::FILE* f = std::fopen(path, "wb");
+				if (f) {
+					std::fwrite(data[k].data(), 1, data[k].size(), f);
+					std::fclose(f);
+				}
+				std::printf("    %s (%s, text %d): %zu bytes -> %s\n", irs[k].name, irs[k].description, irs[k].isText, data[k].size(), path);
+			}
+		}
 	}
 	vkDestroyPipeline(device, pipeline, nullptr);
 	vkDestroyPipelineLayout(device, layout, nullptr);

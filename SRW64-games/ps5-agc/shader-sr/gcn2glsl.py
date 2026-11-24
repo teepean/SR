@@ -724,10 +724,15 @@ class Translator:
         else:
             offset = '(uint64_t(%s) + %dul)' % (self.reg(off), imm)
         addr = 'packUint2x32(uvec2(%s, %s & 0xffffu))' % (self.reg(base, 0), self.reg(base, 1))
-        # one translation per load (at its first dword: a load does not cross a 16 KB page)
+        # one translation per load (at its first dword: a load does not cross a 16 KB page): through the snapshot
+        # entry of the load's reach node (scalar_reach); a pointer the chains do not reach (loaded at a run-time
+        # offset, computed) is read through the page table, as the emulator's own translation reads it
+        node = getattr(self, 'sload_node', {}).get(inst.off)
+        xl = ('sxlate_k(%du, %s + %s, %du)' % (node, addr, offset, 4 * n) if node is not None else
+              'xlate(%s + %s)' % (addr, offset))
         loads = ' '.join('%s = sld32(d_ == 0ul ? 0ul : d_ + %dul);' % (self.reg(d, k), 4 * k) for k in range(n))
-        self.emit('{ uint64_t d_ = sxlate(%s + %s, %du); %s probe_sload(%s + %s, %s); }' % (
-            addr, offset, 4 * n, loads, addr, offset, self.reg(d, 0)))
+        self.emit('{ uint64_t d_ = %s; %s probe_sload(%s + %s, %s); }' % (
+            xl, loads, addr, offset, self.reg(d, 0)))
         self.set_kind(d, 'value')
 
     def op_sbufload(self, inst):
@@ -744,9 +749,11 @@ class Translator:
         # stride counts elements)
         loads = ' '.join('%s = (o_ + %du < l_) ? sld32(d_ == 0ul ? 0ul : d_ + %dul) : 0u;' % (
             self.reg(d, k), 4 * k, 4 * k) for k in range(d.count))
+        # one translation per V# (sbuf_xlate: the V#'s snapshot entry or the page table), shared by its loads
+        node = getattr(self, 'sload_node', {}).get(inst.off)
         self.emit('{ uint o_ = %s + %du; uint st_ = (%s >> 16) & 0x3fffu; uint l_ = st_ != 0u ? %s * st_ : %s; '
-                  'uint64_t d_ = o_ < l_ ? sxlate(packUint2x32(uvec2(%s, %s & 0xffffu)) + uint64_t(o_), %du) : 0ul; '
-                  '%s }' % (soff, imm, w[1], w[2], w[2], w[0], w[1], 4 * d.count, loads))
+                  'uint64_t b_ = sbuf_xlate(%d, %s, %s); uint64_t d_ = (o_ < l_ && b_ != 0ul) ? b_ + uint64_t(o_) : 0ul; '
+                  '%s }' % (soff, imm, w[1], w[2], w[2], node if node is not None else -1, w[0], w[1], loads))
         self.set_kind(d, 'value')
 
     # --- vector memory
@@ -994,13 +1001,15 @@ def uses_of(inst):
     return regs
 
 
-def scalar_reach(insts, user_sgprs):
+def scalar_reach(insts, user_sgprs, hints=None):
     """The guest memory the scalar loads read, as pointer chains from the user data, for the emulator to bring
     CPU-written tables up to date before a dispatch: nodes are 64-bit pointers, a user SGPR pair or a pair loaded by an
     s_load from (node + offset); each node gets the extent read through it. Program order: a pair stops being a
     node once anything else writes it. Returns [(kind, a, b, extent)]: ('user', sgpr, 0, extent) or
     ('load', parent node, offset, extent); unbounded extents (offset in an SGPR) are left to the emulator's own
-    tracking. ('vsharp', parent node, offset, 0): a V# that s_buffer_loads read through (its whole range)."""
+    tracking. ('vsharp', parent node, offset, 0): a V# that s_buffer_loads read through (its whole range).
+    hints (a dict): instruction offset -> the node an s_load reads through, or the V# node of an s_buffer_load (the
+    emulator's ScalarTable has one entry per node, so a load finds its snapshot without a search)."""
     nodes = []
     holder = {}        # SGPR -> (node, byte offset) of the dword loaded into it
     redefined = set()
@@ -1039,7 +1048,9 @@ def scalar_reach(insts, user_sgprs):
 
     for i in insts:
         if i.base.startswith('s_buffer_load_dword'):
-            vsharp_of(i.ops[1])         # the emulator reads the V# and snapshots its range
+            v = vsharp_of(i.ops[1])     # the emulator reads the V# and snapshots its range
+            if hints is not None and v is not None:
+                hints[i.off] = v
             for r in i.ops[0].regs():
                 holder.pop(int(r[1:]), None)
                 redefined.add(int(r[1:]))
@@ -1047,6 +1058,8 @@ def scalar_reach(insts, user_sgprs):
         if i.base.startswith('s_load_dword'):
             d, base, off = i.ops
             n = node_of(base)
+            if hints is not None and n is not None:
+                hints[i.off] = n
             imm = int(i.mods.get('offset', '0'), 0)
             offset = imm if off.kind == 'null' else (off.value + imm if off.kind == 'const' else None)
             for r in d.regs():
@@ -1238,6 +1251,8 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     tr.ballot_index = set()
     tr.uniform_branch = {}
     st = Structure(insts)
+    tr.sload_node = {}
+    tr.reach = scalar_reach(insts, user_sgprs, tr.sload_node)
     # pass 1: translate every instruction (statements per instruction, kinds of lane masks in program order)
     per_inst = []
     for k, i in enumerate(insts):
@@ -1249,7 +1264,6 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
         per_inst.append(tr.cur)
         if i.off in tr.ballot_uses:
             tr.ballot_index.add(k)
-    tr.reach = scalar_reach(insts, user_sgprs)
     # classify and emit; LDS reads that follow LDS writes inside lane-level regions (cross-lane data through LDS,
     # which the guest wave orders by executing in lockstep) become wave points, then again until none is left
     per_inst_orig = [list(x) for x in per_inst]

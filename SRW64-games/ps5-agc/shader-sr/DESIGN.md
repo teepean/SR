@@ -31,33 +31,21 @@ NVIDIA thread is not a wave lane, and most RDNA code does not need it to be.
 
 ## Execution model of the translation
 
-One guest lane = one NVIDIA thread. A guest wave64 = 64 consecutive threads (two warps). Guest workgroup = host
-workgroup with the same number of threads.
+Lane pairs: one NVIDIA thread runs guest lanes j and j + 32 of its wave, so one guest wave64 is one warp and a guest
+workgroup of N lanes is a host workgroup of N / 2 threads. Every per-lane instruction is translated twice (VGPR
+`v<n>_0` / `v<n>_1`, exec bit `EXB0` / `EXB1`); scalar instructions run once per thread (wave-uniform values computed
+redundantly by the 32 threads, as the guest's scalar unit computes them once per wave).
 
-The PS5 shader compiler produces structured control flow, and most of it is lane-local. Measured on the 64-thread
-variant of the cloth solver (`tools/rdnaflow.py`):
-- 252 of 282 forward branches on exec/vcc are pure skips: the skipped code writes no scalar value that is read later;
-- the cross-lane operations are one wave reduction (24 DPP, 6 permlanex16, 12 readlane), readfirstlane/s_ff1 on
-  uniform values, and a few lane masks stored as data (ballots);
-- shared memory carries data between lanes only across iterations of scalar (wave-uniform) loops that run with all
-  lanes active at the iteration boundary, so the data needs a sync only there.
+- exec is the thread's two bits (`EXM`); a lane mask in SGPRs keeps the thread's two bits in place;
+- every branch on exec or a lane mask takes the wave's decision with a subgroup vote (`subgroupAny`), so control
+  flow is the guest's own, wave-wide; VALU instructions are guarded by the lane's exec bit;
+- cross-lane operations are subgroup operations of the one warp (ballot per half, readlane / readfirstlane by
+  shuffle, DPP and permlane by shuffles); LDS written by other lanes of the wave is ordered by a subgroup barrier,
+  `s_barrier` is the workgroup barrier.
 
-So the code is split into two kinds of regions:
-
-**Lane-local regions** (most of the code): exec-mask manipulation becomes per-thread control flow. `v_cmpx` /
-`s_and_saveexec` / `s_andn2_b64 exec` / `s_cbranch_execz` become `if`/`else`; exec-controlled loops become per-thread
-loops. VALU instructions inside run unpredicated. SGPR lane masks are per-thread booleans (the thread's own bit).
-SALU instructions run in every thread (wave-uniform values computed redundantly).
-
-**Wave-coupled regions** (only where needed): regions that contain cross-lane operations, lane masks used as data,
-scalar values that depend on which lanes are active, or shared-memory reads of data other lanes write without a
-barrier in between. Here all 64 threads of the wave follow the same control flow, VALU instructions are predicated by
-the thread's exec bit, and a branch on exec/vcc takes the wave-wide decision (subgroup ballot of each warp combined
-through shared memory). The two warps of a wave are synchronised where data crosses between them (workgroup barrier
-when the workgroup is one wave; a two-warp barrier in shared memory otherwise).
-
-Wave idioms are recognised and replaced: the DPP/permlanex16/readlane reduction becomes a subgroup reduction plus a
-shared-memory combine of the two warps; `readfirstlane` of a uniform value is the thread's own value.
+The first model (one lane per thread, a wave in two warps) needed a handshake between the two warps at every wave
+decision; inside the cloth solver's loops that cost more than the solver itself (2x slower than the emulator's own
+program); lane pairs have no cross-warp synchronisation at all.
 
 ## Memory
 
@@ -65,8 +53,17 @@ Guest memory is reached by guest address: `s_load`, `s_buffer_load`, `buffer_*` 
 time, including `buffer_load_format_*` with the V#'s data/number format), `global_*`. The translation uses the
 emulator's own guest memory map: Kyty's BDA page table (one device address per 16 KB guest page, 0 = not cached on
 the GPU), the table Kyty's own device address loads use.
-- `s_load`: one translation per load; V# accesses: one translation of the descriptor's base per instruction (Kyty
-  keeps a V# range in one cached buffer); `global_*`: each lane translates its own address and marks the page as used.
+- Scalar loads: the emulator's own translation reads the tables behind `s_load` chains flattened on the CPU, so the
+  GPU copies of CPU-written tables may be stale. The translator follows the chains from the user data
+  (`scalar_reach`: nodes are pointers in user SGPRs or loaded by `s_load`, plus the V#s `s_buffer_load` reads
+  through) and writes them to `<name>.reach`; before each dispatch Kyty resolves the chains on the CPU and uploads a
+  snapshot of every small (<= 4 KB) clean range, one ScalarTable entry per node in node order. Each `s_load` knows
+  its node at translation time and checks only that entry (`sxlate_k`; the hot loops issue dozens of scalar loads
+  per iteration, so no search); `s_buffer_load` translates its V# once (`sbuf_xlate`, shared by all loads through
+  it); a node without a snapshot (GPU-written, large) and a pointer the chains do not reach (loaded at a run-time
+  offset) are read through the page table, as the emulator's own program reads them.
+- V# accesses: one translation of the descriptor's base per instruction (Kyty keeps a V# range in one cached
+  buffer); `global_*`: each lane translates its own address and marks the page as used.
 - A miss reads 0 / skips the store and records the page in Kyty's fault bitmap (one page per thread, at the end of
   the program), which Kyty turns into a cached buffer after the submit, as for its own programs.
 - Kyty prepares the memory: the translated pipeline is built with the pipeline layout of Kyty's program for the same

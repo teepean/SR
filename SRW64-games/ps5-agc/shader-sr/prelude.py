@@ -69,7 +69,8 @@ layout(buffer_reference, std430, buffer_reference_align = 4) coherent buffer Bit
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly restrict buffer UserTable { uint v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly restrict buffer WgMap { uint v[]; };
 // CPU snapshot of the tables the scalar loads read (the emulator resolves the s_load chains of the dispatch on the
-// CPU, as its own shader translation does): guest range [lo, lo + size) at device address dev
+// CPU, as its own shader translation does): guest range [lo, lo + size) at device address dev; entry k is reach node k
+// (gcn2glsl.scalar_reach), size 0 when the node's memory is read through the page table (GPU-written or large)
 struct ScalarRange { uint64_t lo; uint64_t dev; uint size; uint pad0; uint64_t pad1; };
 layout(buffer_reference, std430, buffer_reference_align = 8) readonly restrict buffer ScalarTable {
     uint count; uint pad0; uint64_t pad1; ScalarRange e[];
@@ -158,13 +159,38 @@ uint sld32(uint64_t d) { return d == 0ul ? 0u : RO32(d).v; }
 uint64_t sxlate(uint64_t a, uint bytes) {
     if (SCALARS != 0ul) {
         ScalarTable t = ScalarTable(SCALARS);
-        uint n = min(t.count, 16u);
+        uint n = min(t.count, 32u);
         for (uint i = 0u; i < n; i++) {
             uint64_t lo = t.e[i].lo;
             if (a >= lo && a - lo + uint64_t(bytes) <= uint64_t(t.e[i].size)) return t.e[i].dev + (a - lo);
         }
     }
     return xlate(a);
+}
+// an s_load through reach node k: the node's snapshot entry when it holds [a, a + bytes) (no search: the hot loops
+// issue dozens of scalar loads per iteration), the page table for a node without a snapshot; an address outside the
+// node's range (a chain the analysis followed in program order, changed in a loop) searches every snapshot
+uint64_t sxlate_k(uint k, uint64_t a, uint bytes) {
+    if (SCALARS != 0ul) {
+        ScalarTable t = ScalarTable(SCALARS);
+        if (k < t.count) {
+            uint size = t.e[k].size;
+            if (size == 0u) return xlate(a);
+            uint64_t lo = t.e[k].lo;
+            if (a >= lo && a - lo + uint64_t(bytes) <= uint64_t(size)) return t.e[k].dev + (a - lo);
+        }
+    }
+    return sxlate(a, bytes);
+}
+// the device address of an s_buffer_load V#'s range, one translation per V# shared by its loads: the snapshot of the
+// V#'s reach node k (k < 0: none) when it is this V#'s range, else the page table (one device buffer holds the range)
+uint64_t sbuf_xlate(int k, uint w0, uint w1) {
+    uint64_t base = packUint2x32(uvec2(w0, w1 & 0xffffu));
+    if (k >= 0 && SCALARS != 0ul) {
+        ScalarTable t = ScalarTable(SCALARS);
+        if (uint(k) < t.count && t.e[k].size != 0u && t.e[k].lo == base) return t.e[k].dev;
+    }
+    return xlate(base);
 }
 uint ldd32(uint64_t d) { return d == 0ul ? 0u : W32(d).v; }
 uint ldd16(uint64_t d) { return d == 0ul ? 0u : uint(W16(d).v); }
