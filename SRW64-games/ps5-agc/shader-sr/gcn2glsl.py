@@ -46,6 +46,10 @@ class Translator:
         self.wave_branches = set()   # offsets of branches that need the wave's decision
         self.used_s, self.used_v = set(range(16)), {0}
         self.ballot_uses = set()     # offsets of instructions reading a lane mask as data
+        # lane pairs: a host thread runs guest lanes j (half 0) and j + 32 (half 1); per-lane instructions are
+        # translated once per half (h = 0/1: VGPR v<n>_<h>, exec bit EX -> EXB<h>, lane bit B = 1 << h), scalar ones
+        # once (h = None: a lane mask is the thread's two bits, exec is EXM)
+        self.h = None
 
     # ------------------------------------------------------------------------------------------------ operands
     def note_reg(self, o):
@@ -58,8 +62,19 @@ class Translator:
         if o.file == 's':
             self.used_s.add(n)
             return 's%d' % n
+        if self.h is None:
+            raise ValueError('VGPR in a scalar instruction: %r' % o)
         self.used_v.add(n)
-        return 'v%d' % n
+        return 'v%d_%d' % (n, self.h)
+
+    def vname(self, o, i, h):
+        """a VGPR of either half (for the scalar instructions that read lanes: readlane, readfirstlane)"""
+        self.note_reg(o)
+        self.used_v.add(o.first + i)
+        return 'v%d_%d' % (o.first + i, h)
+
+    def lane_bit_const(self):
+        return '%du' % (1 << self.h)
 
     def src_u32(self, o, i=0):
         """32-bit source bits as uint (no modifiers)"""
@@ -67,6 +82,8 @@ class Translator:
             return '0x%08xu' % o.value
         if o.kind == 'reg':
             if o.file == 's' and o.first + i in (126, 127):
+                if self.h is None:
+                    return 'EXM' if o.first + i == 126 else '0u'
                 return '(EX ? 1u : 0u)' if o.first + i == 126 else '0u'
             return self.reg(o, i)
         if o.kind in ('null', 'off'):
@@ -140,7 +157,7 @@ class Translator:
         self.emit('%s = %s;' % (target, expr), valu=True)
 
     def emit(self, text, valu=False):
-        self.cur.append((text, valu))
+        self.cur.append((text, valu, None))
 
     # ------------------------------------------------------------------------------------------------ f16 helpers
     def f16_operand(self, o, half, inst):
@@ -162,7 +179,27 @@ class Translator:
         return e
 
     # ------------------------------------------------------------------------------------------------ instructions
+    LANE_PREFIXES = ('v_', 'buffer_', 'tbuffer_', 'global_', 'flat_', 'scratch_', 'ds_', 'image_')
+    CROSS_SCALAR = ('v_readlane_b32', 'v_readfirstlane_b32', 'v_writelane_b32')
+
     def translate(self, inst):
+        if inst.op.startswith(self.LANE_PREFIXES) and inst.base not in self.CROSS_SCALAR:
+            halves = []
+            for h in (0, 1):
+                self.h = h
+                saved, self.cur = self.cur, []
+                self.translate_one(inst)
+                halves.append(self.cur)
+                self.cur = saved
+            self.h = None
+            for h in (0, 1):
+                for item in halves[h]:
+                    self.cur.append((item[0], item[1], h))
+            return
+        self.h = None
+        self.translate_one(inst)
+
+    def translate_one(self, inst):
         op, b, ops = inst.op, inst.base, inst.ops
         for o in ops:
             self.note_reg(o)
@@ -269,7 +306,7 @@ class Translator:
         if a.kind == 'reg' and a.file == 's' and a.first in (106, 107) and self.mask_kind.get(106) == 'mask':
             self.ballot_uses.add(inst.off)
             # the wave's ballot of the lane mask: all threads of the wave take part (outside the exec guard)
-            self.emit('{ uvec2 bal_ = wave_ballot(s106 != 0u); if (EX) %s = bal_.%s; }' % (
+            self.emit('{ uvec2 bal_ = wave_ballot2((s106 & 1u) != 0u, (s106 & 2u) != 0u); if (EX) %s = bal_.%s; }' % (
                 self.reg(d), 'x' if a.first == 106 else 'y'))
             return
         self.write_v_u32(inst, d, self.src_int(a, inst, 0))
@@ -306,12 +343,16 @@ class Translator:
         # the value of the first active lane: the thread's own value where the whole wave is known to be active (the
         # compiler reads wave-uniform values here), else through the wave (translate_shader resolves "readfirst(")
         self.readfirst_offs.add(inst.off)
-        self.emit('%s = readfirst(%s);' % (self.reg(d), self.src_u32(a)))
+        if a.kind == 'reg' and a.file == 'v':
+            self.emit('%s = readfirst(%s, %s);' % (self.reg(d), self.vname(a, 0, 0), self.vname(a, 0, 1)))
+        else:
+            self.emit('%s = %s;' % (self.reg(d), self.src_u32(a)))
         self.set_kind(d, 'value')
 
     def op_v_readlane_b32(self, inst):
         d, a, lane = inst.ops
-        self.emit('%s = wave_readlane(%s, %s);' % (self.reg(d), self.src_u32(a), self.src_u32(lane)))
+        self.emit('%s = wave_readlane2(%s, %s, %s);' % (self.reg(d), self.vname(a, 0, 0), self.vname(a, 0, 1),
+                                                       self.src_u32(lane)))
         self.wave_points.add(inst.off)
         self.set_kind(d, 'value')
 
@@ -356,21 +397,46 @@ class Translator:
         self.emit('%s' % self.mask_store(d, 'EX && (%s)' % cond))
 
     def mask_store(self, d, cond):
+        """per-lane write of a lane mask: this half's bit of the thread's two bits"""
         if d.kind == 'null':
             return ''
         self.set_kind(d, 'mask')
-        return '%s = (%s) ? 1u : 0u; %s = 0u;' % (self.reg(d, 0), cond, self.reg(d, 1))
+        b = self.lane_bit_const()
+        return '%s = (%s & ~%s) | ((%s) ? %s : 0u); %s = 0u;' % (self.reg(d, 0), self.reg(d, 0), b, cond, b,
+                                                                 self.reg(d, 1))
 
     def mask_bit(self, o):
-        """thread's bit of a lane mask operand"""
+        """a lane mask operand: this half's bit (per-lane instruction), or any of the thread's two (scalar)"""
         if o.kind == 'reg' and o.file == 's' and o.first == 126:
-            return 'EX'
+            return 'EX' if self.h is not None else '(EXM != 0u)'
         if o.kind == 'reg' and o.file == 's':
             if self.mask_kind.get(o.first) == 'value':
-                return 'lane_bit(%s, %s)' % (self.reg(o, 0), self.reg(o, 1))
-            return '(%s != 0u)' % self.reg(o, 0)
+                if self.h is None:
+                    return '(lane_bits2(%s, %s) != 0u)' % (self.reg(o, 0), self.reg(o, 1))
+                return 'lane_bit(%s, %s, LANE)' % (self.reg(o, 0), self.reg(o, 1))
+            if self.h is None:
+                return '(%s != 0u)' % self.reg(o, 0)
+            return '((%s & %s) != 0u)' % (self.reg(o, 0), self.lane_bit_const())
         if o.kind == 'const':
             return 'true' if o.value else 'false'
+        raise ValueError(o)
+
+    def mask_val(self, o):
+        """a lane mask operand of a scalar instruction as the thread's two bits"""
+        if o.kind == 'reg' and o.file == 's' and o.first == 126:
+            return 'EXM'
+        if o.kind == 'reg' and o.file == 's':
+            if self.mask_kind.get(o.first) == 'value':
+                return 'lane_bits2(%s, %s)' % (self.reg(o, 0), self.reg(o, 1))
+            return '(%s & 3u)' % self.reg(o, 0)
+        if o.kind == 'const':
+            lo = o.value & 0xffffffff
+            hi = 0xffffffff if o.text.startswith('-') else 0
+            if lo == 0xffffffff and hi == 0xffffffff:
+                return '3u'
+            if lo == 0 and hi == 0:
+                return '0u'
+            return 'lane_bits2(0x%08xu, 0x%08xu)' % (lo, hi)
         raise ValueError(o)
 
     def set_kind(self, o, kind):
@@ -433,7 +499,7 @@ class Translator:
             cond = 'cmp_class(%s, %s)' % (self.src_f32(a, inst, 0), self.src_int(m, inst, 1))
         else:
             cond = self.cmp_expr(inst, inst.base.replace('v_cmpx_', 'v_cmp_'))
-        self.emit('EX = EX && (%s);' % cond)
+        self.emit('if (!(EX && (%s))) EXM &= ~%s;' % (cond, self.lane_bit_const()))
 
     # --- SALU
     def sval(self, o, i=0):
@@ -454,11 +520,10 @@ class Translator:
     def op_s_mov_b64(self, inst):
         d, a = inst.ops
         if d.first == 126:        # exec = mask
-            self.emit('EX = %s;' % self.mask_bit(a) if a.kind != 'const' else 'EX = %s;' % (
-                'true' if a.value else 'false'))
+            self.emit('EXM = %s;' % self.mask_val(a))
             return
         if a.kind == 'reg' and a.first == 126:
-            self.emit('%s = EX ? 1u : 0u; %s = 0u;' % (self.reg(d, 0), self.reg(d, 1)))
+            self.emit('%s = EXM; %s = 0u;' % (self.reg(d, 0), self.reg(d, 1)))
             self.set_kind(d, 'mask')
             return
         if a.kind == 'const':
@@ -481,13 +546,13 @@ class Translator:
         if ka == 'mask' or kc == 'mask':
             if ka != kc:
                 self.notes.append('%05x %s mixes a lane mask and a value' % (inst.off, inst.text))
-            r = fn_mask(self.mask_bit(a), self.mask_bit(c))
+            r = fn_mask(self.mask_val(a), self.mask_val(c))
             if d.first == 126:
-                self.emit('EX = %s;' % r)
+                self.emit('{ uint r_ = (%s) & 3u; EXM = r_; SCC = r_ != 0u; }' % r)
             else:
-                self.emit('%s = (%s) ? 1u : 0u; %s = 0u;' % (self.reg(d, 0), r, self.reg(d, 1)))
+                self.emit('{ uint r_ = (%s) & 3u; %s = r_; %s = 0u; SCC = r_ != 0u; }' % (r, self.reg(d, 0),
+                                                                                       self.reg(d, 1)))
                 self.set_kind(d, 'mask')
-            self.emit('SCC = (%s);' % r if d.first != 126 else 'SCC = EX;')
             self.scc_note(inst)
             return
         lo = fn_bits(self.sval(a, 0), self.sval(c, 0))
@@ -501,25 +566,25 @@ class Translator:
         pass
 
     def op_s_and_b64(self, inst):
-        self.logic64(inst, lambda x, y: '(%s & %s)' % (x, y), lambda x, y: '(%s && %s)' % (x, y))
+        self.logic64(inst, lambda x, y: '(%s & %s)' % (x, y), lambda x, y: '(%s & %s)' % (x, y))
 
     def op_s_or_b64(self, inst):
-        self.logic64(inst, lambda x, y: '(%s | %s)' % (x, y), lambda x, y: '(%s || %s)' % (x, y))
+        self.logic64(inst, lambda x, y: '(%s | %s)' % (x, y), lambda x, y: '(%s | %s)' % (x, y))
 
     def op_s_andn2_b64(self, inst):
-        self.logic64(inst, lambda x, y: '(%s & ~%s)' % (x, y), lambda x, y: '(%s && !%s)' % (x, y))
+        self.logic64(inst, lambda x, y: '(%s & ~%s)' % (x, y), lambda x, y: '(%s & ~%s)' % (x, y))
 
     def op_s_orn2_b64(self, inst):
-        self.logic64(inst, lambda x, y: '(%s | ~%s)' % (x, y), lambda x, y: '(%s || !%s)' % (x, y))
+        self.logic64(inst, lambda x, y: '(%s | ~%s)' % (x, y), lambda x, y: '(%s | ~%s)' % (x, y))
 
     def op_s_nor_b64(self, inst):
-        self.logic64(inst, lambda x, y: '~(%s | %s)' % (x, y), lambda x, y: '!(%s || %s)' % (x, y))
+        self.logic64(inst, lambda x, y: '~(%s | %s)' % (x, y), lambda x, y: '~(%s | %s)' % (x, y))
 
     def op_s_not_b64(self, inst):
         d, a = inst.ops
         if a.kind == 'reg' and (a.first == 126 or self.mask_kind.get(a.first) == 'mask'):
-            self.emit('%s = %s ? 0u : 1u; %s = 0u; SCC = %s != 0u;' % (self.reg(d, 0), self.mask_bit(a),
-                                                                      self.reg(d, 1), self.reg(d, 0)))
+            self.emit('%s = ~%s & 3u; %s = 0u; SCC = %s != 0u;' % (self.reg(d, 0), self.mask_val(a),
+                                                                  self.reg(d, 1), self.reg(d, 0)))
             self.set_kind(d, 'mask')
             return
         self.emit('%s = ~%s; %s = ~%s; SCC = (%s | %s) != 0u;' % (self.reg(d, 0), self.reg(a, 0), self.reg(d, 1),
@@ -528,18 +593,24 @@ class Translator:
 
     def saveexec(self, inst, fn):
         d, a = inst.ops
-        self.emit('{ bool old_ = EX; %s = old_ ? 1u : 0u; %s = 0u; EX = %s; SCC = EX; }' % (
-            self.reg(d, 0), self.reg(d, 1), fn('old_', self.mask_bit(a))))
+        self.emit('{ uint old_ = EXM; %s = old_; %s = 0u; EXM = (%s) & 3u; SCC = EXM != 0u; }' % (
+            self.reg(d, 0), self.reg(d, 1), fn('old_', self.mask_val(a))))
         self.set_kind(d, 'mask')
 
     def op_s_and_saveexec_b64(self, inst):
-        self.saveexec(inst, lambda e, s: '(%s && %s)' % (s, e))
+        self.saveexec(inst, lambda e, s: '(%s & %s)' % (s, e))
 
-    def op_s_andn1_saveexec_b64(self, inst):
-        self.saveexec(inst, lambda e, s: '(%s && !%s)' % (s, e))
+    def op_s_andn1_saveexec_b64(self, inst):       # EXEC = ~S0 & EXEC
+        self.saveexec(inst, lambda e, s: '(~%s & %s)' % (s, e))
 
-    def op_s_orn2_saveexec_b64(self, inst):
-        self.saveexec(inst, lambda e, s: '(%s || !%s)' % (s, e))
+    def op_s_andn2_saveexec_b64(self, inst):       # EXEC = S0 & ~EXEC
+        self.saveexec(inst, lambda e, s: '(%s & ~%s)' % (s, e))
+
+    def op_s_or_saveexec_b64(self, inst):
+        self.saveexec(inst, lambda e, s: '(%s | %s)' % (s, e))
+
+    def op_s_orn2_saveexec_b64(self, inst):        # EXEC = S0 | ~EXEC
+        self.saveexec(inst, lambda e, s: '(%s | ~%s)' % (s, e))
 
     def op_s_cselect_b32(self, inst):
         d, a, c = inst.ops
@@ -551,8 +622,8 @@ class Translator:
         ka = a.kind == 'reg' and (a.first == 126 or self.mask_kind.get(a.first) == 'mask')
         kc = c.kind == 'reg' and (c.first == 126 or self.mask_kind.get(c.first) == 'mask')
         if ka or kc:
-            self.emit('%s = (SCC ? %s : %s) ? 1u : 0u; %s = 0u;' % (self.reg(d, 0), self.mask_bit(a),
-                                                                    self.mask_bit(c), self.reg(d, 1)))
+            self.emit('%s = SCC ? %s : %s; %s = 0u;' % (self.reg(d, 0), self.mask_val(a), self.mask_val(c),
+                                                        self.reg(d, 1)))
             self.set_kind(d, 'mask')
             return
         self.emit('%s = SCC ? %s : %s; %s = SCC ? %s : %s;' % (
@@ -614,8 +685,15 @@ class Translator:
 
     def op_s_ff1_i32_b64(self, inst):
         d, a = inst.ops
-        if a.kind == 'reg' and self.mask_kind.get(a.first) == 'mask':
-            self.notes.append('%05x s_ff1 of a lane mask (needs the wave ballot)' % inst.off)
+        if a.kind == 'reg' and (a.first == 126 or self.mask_kind.get(a.first) == 'mask'):
+            # a lane mask read as data: the wave's 64 bits
+            self.ballot_uses.add(inst.off)
+            m = self.mask_val(a)
+            self.emit('{ uvec2 b_ = wave_ballot2((%s & 1u) != 0u, (%s & 2u) != 0u); %s = b_.x != 0u ? '
+                      'uint(findLSB(b_.x)) : (b_.y != 0u ? 32u + uint(findLSB(b_.y)) : 0xffffffffu); }' % (
+                          m, m, self.reg(d)))
+            self.set_kind(d, 'value')
+            return
         self.emit('{ uint lo_ = %s, hi_ = %s; %s = lo_ != 0u ? uint(findLSB(lo_)) : (hi_ != 0u ? 32u + uint(findLSB(hi_)) '
                   ': 0xffffffffu); }' % (self.sval(a, 0), self.sval(a, 1), self.reg(d)))
         self.set_kind(d, 'value')
@@ -986,6 +1064,14 @@ def scalar_reach(insts, user_sgprs):
     return [tuple(n) for n in nodes]
 
 
+def classify_lp(tr, st):
+    """lane pairs: one guest wave is one warp, so every exec / lane mask branch is decided for the wave with a
+    subgroup vote (the guest's own semantics); no branch or loop runs per lane"""
+    insts = st.insts
+    lane_branch = set(k for k, i in enumerate(insts) if i.op in LANE_BRANCHES and not tr.uniform_branch.get(k))
+    return set(lane_branch), lane_branch, set()
+
+
 def classify(tr, st):
     """branches that need the wave's decision; loops whose threads run per lane"""
     insts = st.insts
@@ -1171,7 +1257,7 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     for attempt in range(8):
         per_inst = [list(x) for x in per_inst_orig]
         tr.notes[notes_before:] = []
-        wave, lane_branch, per_lane_loops = classify(tr, st)
+        wave, lane_branch, per_lane_loops = classify_lp(tr, st)
         ekt = exec_known_true(insts, st, lane_branch, wave)
         # readfirstlane where the wave may be partly inactive goes through the wave (a wave point); repeat until stable
         readfirst = [k for k, i in enumerate(insts) if i.off in tr.readfirst_offs]
@@ -1180,10 +1266,11 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
             if not through_wave:
                 break
             tr.ballot_index.update(through_wave)
-            wave, lane_branch, per_lane_loops = classify(tr, st)
+            wave, lane_branch, per_lane_loops = classify_lp(tr, st)
             ekt = exec_known_true(insts, st, lane_branch, wave)
         for k in readfirst:
-            per_inst[k] = [(t.replace('readfirst(', '(' if ekt[k] else 'wave_readfirst('), v) for t, v in per_inst[k]]
+            per_inst[k] = [(t.replace('readfirst(', 'own_first(' if ekt[k] else 'wave_readfirst2('), v, hh)
+                           for t, v, hh in per_inst[k]]
         tr.notes.append('readfirstlane: %d with the whole wave active, %d through the wave' % (
             sum(1 for k in readfirst if ekt[k]), sum(1 for k in readfirst if not ekt[k])))
         tr.notes.append('exec known to be set before %d of %d instructions' % (sum(ekt), len(ekt)))
@@ -1212,13 +1299,13 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
                 # skipped regions hold loops and scalar loads, and running them costs far more than the vote (game)
                 return 'false'
             if i.op in ('s_cbranch_execz', 's_cbranch_execnz'):
-                e = 'wave_any(EX)' if w else 'EX'
+                e = 'wave_any(EXM != 0u)' if w else '(EXM != 0u)'
                 return ('!' + e) if i.op == 's_cbranch_execz' else e
             if i.op in ('s_cbranch_vccz', 's_cbranch_vccnz'):
                 if not lane:
                     e = '((s106 | s107) != 0u)'
                 else:
-                    e = 'wave_any(s106 != 0u)' if w else '(s106 != 0u)'
+                    e = 'wave_any((s106 & 3u) != 0u)' if w else '((s106 & 3u) != 0u)'
                 return ('!' + e) if i.op == 's_cbranch_vccz' else e
             raise ValueError(i)
 
@@ -1302,16 +1389,21 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
                 unsynced_reads.append(i.off)
             if i.off in tr.lds_writes:
                 dirty = True
-            for text, valu in per_inst[k]:
+            for text, valu, half in per_inst[k]:
                 if ekt[k]:
-                    put(text.replace('if (EX) ', '').replace('EX && ', ''))
-                    continue
-                if valu and not text.startswith(('if (EX', '{')):
-                    prefix = '    ' * (1 + len(stack)) + 'if (EX) { '
+                    text = text.replace('if (EX) ', '').replace('EX && ', '')
+                    guard = None
+                else:
+                    guard = 'EXB%d' % half if half is not None else None
+                if half is not None:
+                    text = re.sub(r'\bEX\b', 'EXB%d' % half, text)
+                    text = re.sub(r'\bLANE\b', 'LANE%d' % half, text)
+                if guard and valu and not text.startswith(('if (EXB', '{')):
+                    prefix = '    ' * (1 + len(stack)) + 'if (%s) { ' % guard
                     if out and out[-1].startswith(prefix) and out[-1].endswith(' }'):
                         out[-1] = out[-1][:-2] + ' ' + text + ' }'
                     else:
-                        put('if (EX) { %s }' % text)
+                        put('if (%s) { %s }' % (guard, text))
                 else:
                     put(text)
             if i.op == 's_barrier':
@@ -1399,12 +1491,14 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     return 0u;
 }''')
     lines.append('void body() {')
-    lines.append('    LANE = gl_LocalInvocationIndex & 63u;')
+    lines.append('    LANE0 = gl_SubgroupInvocationID; LANE1 = LANE0 + 32u;')
     for n in sorted(tr.used_s):
         lines.append('    uint s%d = %s;' % (n, 'initial_sgpr(%du)' % n if n < 32 else '0u'))
     for n in sorted(tr.used_v):
-        lines.append('    uint v%d = %s;' % (n, 'gl_LocalInvocationIndex' if n == 0 else '0u'))
-    lines.append('    EX = true; SCC = false;')
+        # v0: the guest's local thread id (wave * 64 + lane)
+        for h in (0, 1):
+            lines.append('    uint v%d_%d = %s;' % (n, h, ('gl_SubgroupID * 64u + LANE%d' % h) if n == 0 else '0u'))
+    lines.append('    EXM = 3u; SCC = false;')
     lines.append(flags_decl)
     lines.append(body)
     lines.append('}')
@@ -1418,7 +1512,6 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     lines.append('        SCALARS = packUint2x32(uvec2(UserTable(pc.user_table).v[base_ + 20u], '
                  'UserTable(pc.user_table).v[base_ + 21u]));')
     lines.append('    }')
-    lines.append('    wave_sync_init();')
     lines.append('    body();')
     lines.append('    record_faults();')
     lines.append('}')
