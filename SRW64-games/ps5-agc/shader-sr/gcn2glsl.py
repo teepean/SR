@@ -1141,6 +1141,252 @@ def classify(tr, st):
     return wave, lane_branch, per_lane_loops
 
 
+# ---------------------------------------------------------------------------------------------- exec guards
+GUARD_STORE = ('buffer_store', 'ds_write', 'global_store', 'flat_store', 'scratch_store', 'v_cmp_', 'v_cmpx', 'ds_min',
+               'ds_max', 'ds_add', 'ds_sub', 'ds_and', 'ds_or', 'ds_xor', 'ds_inc', 'ds_dec', 'buffer_atomic',
+               'global_atomic', 'flat_atomic')
+
+
+def guard_vregs(o):
+    return [o.first + q for q in range(o.count)] if o is not None and o.kind == 'reg' and o.file == 'v' else []
+
+
+def guard_vdefs(i):
+    """VGPRs an instruction writes per lane"""
+    b = i.base
+    if not i.ops or b.startswith(GUARD_STORE + ('s_',)) or b.startswith(('v_readlane', 'v_readfirstlane')):
+        return []
+    return guard_vregs(i.ops[0])
+
+
+def guard_vuses(i):
+    """VGPRs an instruction reads (its destination too when it keeps part of the old value)"""
+    b, ops = i.base, i.ops
+    if not ops:
+        return []
+    out = []
+    for o in (ops if b.startswith(GUARD_STORE) else ops[1:]):
+        out += guard_vregs(o)
+    # the destination is read too: multiply-accumulate, 16-bit writes that keep the other half (d16 loads, 16-bit
+    # ALU with op_sel), SDWA with UNUSED_PRESERVE, DPP (lanes without a valid source keep the old value)
+    if (b in ('v_mac_f32', 'v_fmac_f32', 'v_mac_legacy_f32', 'v_fmac_legacy_f32', 'v_mac_f16', 'v_fmac_f16') or
+            'd16' in b or b.startswith('v_writelane') or 'UNUSED_PRESERVE' in i.text or 'dpp' in i.op or
+            (b.endswith(('_f16', '_u16', '_i16', '_b16')) and 'op_sel' in i.text)):
+        out += guard_vregs(ops[0])
+    return out
+
+
+def guard_pure_alu(i):
+    """a VALU instruction whose write may run for inactive lanes (no memory access, no cross-lane write)"""
+    return (i.base.startswith('v_') and not i.base.startswith(('v_readlane', 'v_readfirstlane', 'v_writelane',
+                                                                 'v_cmp', 'v_interp')))
+
+
+def exec_guards_needed(insts):
+    """The VGPR writes that must keep the exec guard: a lane that is inactive at the write keeps its old value, which
+    matters only if that lane reads the register later before writing it itself.
+
+    Exec values are symbols in a tree (a child's lanes are a subset of its parent's; 0 = the lanes the wave started
+    with): a narrowing (v_cmpx, s_and_saveexec, s_and/andn2 into exec) creates a child, a restore from a saved copy
+    reuses the saved symbol, control-flow merges of different symbols and unknown exec writes create fresh symbols.
+    A symbol created inside a loop stands for different lanes in each iteration, so the backward pass lifts pending
+    readers to the parent symbol where it crosses the point that creates their symbol. A write with symbol X covers
+    the readers whose symbol lies in X's subtree; it needs the guard when a reader outside remains (cross-lane reads
+    read every lane: symbol 0). Returns the set of instruction indices whose VGPR writes need the guard."""
+    n = len(insts)
+    by_off = {i.off: k for k, i in enumerate(insts)}
+    succ = []
+    for k, i in enumerate(insts):
+        s = []
+        if i.op != 's_endpgm':
+            if i.op != 's_branch' and k + 1 < n:
+                s.append(k + 1)
+            if i.target is not None and i.target in by_off:
+                s.append(by_off[i.target])
+        succ.append(s)
+    pred = [[] for _ in range(n)]
+    for k, s in enumerate(succ):
+        for t in s:
+            pred[t].append(k)
+    parent = [None]
+    created = [None]
+    memo = {}
+
+    def new_sym(key, par, at):
+        if key not in memo:
+            memo[key] = len(parent)
+            parent.append(par)
+            created.append(at)
+        else:
+            parent[memo[key]] = par
+        return memo[key]
+
+    def anc(x):
+        out = []
+        while x is not None:
+            out.append(x)
+            x = parent[x]
+            if len(out) > 100000:
+                raise RuntimeError('exec symbol cycle')
+        return out
+
+    def within(y, x):
+        return x in anc(y)
+
+    def lca(syms):
+        common = set(anc(syms[0]))
+        for x in syms[1:]:
+            common &= set(anc(x))
+        for a in anc(syms[0]):
+            if a in common:
+                return a
+        return 0
+
+    def pair_of(o):
+        return o.first if o.kind == 'reg' and o.file == 's' and o.count == 2 else None
+
+    EXEC = 126
+    ex_in, ex_out, pairs_in, pairs_out = [None] * n, [None] * n, [None] * n, [None] * n
+    ex_in[0], pairs_in[0] = 0, {}
+    work, inq = collections.deque([0]), {0}
+    visits = 0
+    while work:
+        k = work.popleft()
+        inq.discard(k)
+        visits += 1
+        if visits > 50 * n + 100000:
+            raise RuntimeError('exec symbols: no fixpoint')
+        if k != 0:
+            ins = [q for q in pred[k] if ex_out[q] is not None]
+            if not ins:
+                continue
+            syms = [ex_out[q] for q in ins]
+            if all(x == syms[0] for x in syms):
+                ex_in[k] = syms[0]
+            else:
+                m = memo.get(('merge', k))
+                par = lca(syms)
+                if m is not None and within(par, m):
+                    par = 0
+                ex_in[k] = new_sym(('merge', k), par, ('merge', k))
+            pm = dict(pairs_out[ins[0]])
+            for q in ins[1:]:
+                pm = {r: x for r, x in pm.items() if pairs_out[q].get(r) == x}
+            pairs_in[k] = pm
+        ex, pairs = ex_in[k], dict(pairs_in[k])
+        i = insts[k]
+        b, ops = i.base, i.ops
+        dst = ops[0] if ops else None
+
+        def sym_of(o):
+            if o is None:
+                return None
+            if o.kind == 'const' and o.value == 0xffffffff:
+                return 0
+            if o.kind == 'reg' and o.file == 's' and o.first == EXEC and o.count == 2:
+                return ex
+            p = pair_of(o)
+            return pairs.get(p) if p is not None else None
+
+        nex = ex
+        kept = None
+        if b.startswith('v_cmpx'):
+            nex = new_sym(('n', k, ex), ex, k)
+        elif 'saveexec' in b:
+            s0 = sym_of(ops[1]) if len(ops) > 1 else None
+            if b in ('s_and_saveexec_b64', 's_andn1_saveexec_b64'):
+                nex = new_sym(('n', k, ex), ex, k)
+            elif b == 's_orn2_saveexec_b64' and s0 is not None and within(ex, s0):
+                nex = 0                 # S0 | ~EXEC with EXEC within S0: every lane (the whole-wave idiom)
+            elif b == 's_or_saveexec_b64' and s0 is not None:
+                nex = s0 if within(ex, s0) else new_sym(('u', k), lca([s0, ex]), k)
+            else:
+                nex = new_sym(('u', k), 0, k)
+            if dst is not None and pair_of(dst) is not None:
+                pairs[pair_of(dst)] = ex
+                kept = pair_of(dst)
+        elif dst is not None and dst.kind == 'reg' and dst.file == 's' and dst.first == EXEC:
+            s0 = sym_of(ops[1]) if len(ops) > 1 else None
+            s1 = sym_of(ops[2]) if len(ops) > 2 else None
+            if b == 's_mov_b64':
+                nex = s0 if s0 is not None else new_sym(('u', k), 0, k)
+            elif b in ('s_and_b64', 's_andn2_b64'):
+                base = s0 if s0 is not None else (s1 if b == 's_and_b64' else None)
+                nex = new_sym(('n', k, base), base, k) if base is not None else new_sym(('u', k), 0, k)
+            elif b == 's_or_b64' and s0 is not None and s1 is not None:
+                nex = s1 if within(s0, s1) else (s0 if within(s1, s0) else new_sym(('u', k), lca([s0, s1]), k))
+            else:
+                nex = new_sym(('u', k), 0, k)
+        elif dst is not None and pair_of(dst) is not None and b in ('s_mov_b64', 's_and_b64', 's_andn2_b64'):
+            s0 = sym_of(ops[1]) if len(ops) > 1 else None
+            s1 = sym_of(ops[2]) if b == 's_and_b64' and len(ops) > 2 else None
+            if b == 's_mov_b64':
+                v = s0
+            else:
+                base = s0 if s0 is not None else s1
+                v = new_sym(('m', k, base), base, k) if base is not None else None
+            if v is not None:
+                pairs[pair_of(dst)] = v
+                kept = pair_of(dst)
+        for r in all_sgpr_defs(i):
+            ri = int(r[1:])
+            if ri in (EXEC, EXEC + 1) or (kept is not None and ri in (kept, kept + 1)):
+                continue
+            for p in (ri, ri - 1):
+                pairs.pop(p, None)
+        changed = ex_out[k] != nex or pairs_out[k] != pairs
+        ex_out[k], pairs_out[k] = nex, pairs
+        if changed:
+            for t in succ[k]:
+                if t not in inq:
+                    work.append(t)
+                    inq.add(t)
+
+    def lift(pend, sym, to):
+        return {r: frozenset(to if within(y, sym) else y for y in ys) for r, ys in pend.items()}
+
+    defs = [guard_vdefs(i) for i in insts]
+    uses = [guard_vuses(i) for i in insts]
+    xlane = [i.base.startswith(('v_readlane', 'v_readfirstlane', 'v_permlane')) or 'dpp' in i.op for i in insts]
+    pend_in = [dict() for _ in range(n)]
+    need = set()
+    changed, rounds = True, 0
+    while changed:
+        changed = False
+        rounds += 1
+        if rounds > 200:
+            raise RuntimeError('exec guards: no fixpoint')
+        for k in range(n - 1, -1, -1):
+            if ex_in[k] is None:
+                continue
+            acc = collections.defaultdict(set)
+            for t in succ[k]:
+                p = pend_in[t]
+                if ex_in[t] is not None and ex_in[t] != ex_out[k] and created[ex_in[t]] == ('merge', t):
+                    p = lift(p, ex_in[t], ex_out[k])
+                for r, ys in p.items():
+                    acc[r] |= ys
+            cur = {r: frozenset(ys) for r, ys in acc.items()}
+            if ex_out[k] != ex_in[k] and created[ex_out[k]] == k:
+                cur = lift(cur, ex_out[k], parent[ex_out[k]])
+            x = ex_in[k]
+            for r in defs[k]:
+                ys = cur.get(r, frozenset())
+                if any(not within(y, x) for y in ys):
+                    need.add(k)
+                cur[r] = frozenset(y for y in ys if not within(y, x))
+            y = 0 if xlane[k] else x
+            for r in uses[k]:
+                cur[r] = cur.get(r, frozenset()) | {y}
+            cur = {r: ys for r, ys in cur.items() if ys}
+            if cur != pend_in[k]:
+                pend_in[k] = cur
+                changed = True
+    # unreached instructions keep their guards
+    need.update(k for k in range(n) if ex_in[k] is None)
+    return need
+
+
 def exec_known_true(insts, st, lane_branch, wave):
     """per instruction: is the thread's exec bit known to be 1 before it (forward must-analysis over the
     instruction-level control flow; lane masks in SGPR pairs that are known 1 are tracked too)"""
@@ -1267,6 +1513,12 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     # classify and emit; LDS reads that follow LDS writes inside lane-level regions (cross-lane data through LDS,
     # which the guest wave orders by executing in lockstep) become wave points, then again until none is left
     per_inst_orig = [list(x) for x in per_inst]
+    # VGPR writes that keep the exec guard (SHADER_SR_ALL_GUARDS=1: every write keeps it)
+    import os
+    guard_need = set(range(len(insts))) if os.environ.get('SHADER_SR_ALL_GUARDS') else exec_guards_needed(insts)
+    pure_writes = [k for k, i in enumerate(insts) if guard_vdefs(i) and guard_pure_alu(i)]
+    tr.notes.append('exec guards: %d of %d VALU writes need none' % (
+        sum(1 for k in pure_writes if k not in guard_need), len(pure_writes)))
     notes_before = len(tr.notes)
     for attempt in range(8):
         per_inst = [list(x) for x in per_inst_orig]
@@ -1412,6 +1664,8 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
                 if half is not None:
                     text = re.sub(r'\bEX\b', 'EXB%d' % half, text)
                     text = re.sub(r'\bLANE\b', 'LANE%d' % half, text)
+                if guard and valu and k not in guard_need and guard_pure_alu(i) and not text.startswith(('if (EXB', '{')):
+                    guard = None            # no lane that is inactive here reads the old value (exec_guards_needed)
                 if guard and valu and not text.startswith(('if (EXB', '{')):
                     prefix = '    ' * (1 + len(stack)) + 'if (%s) { ' % guard
                     if out and out[-1].startswith(prefix) and out[-1].endswith(' }'):
