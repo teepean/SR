@@ -27,7 +27,7 @@ Load it only into the game: `LD_PRELOAD=.../libysr.so ./game_srw64`.
 | `YSR_HELPER=<start>-<end>` | for calls made from inside this function (e.g. the game's dispatch helper), record the helper's caller |
 | `YSR_WATCH=<start>-<end>` | record call sites of calls that have an argument register inside the range |
 | `YSR_DUMP=<caller>:<rbp offset>`, `YSR_DUMP_DIR`, `YSR_DUMP_DELAY` | samples of dispatches made through the helper for one caller, plus the shader header and the memory it points to |
-| `YSR_CLOTHDUMP=<file>` | one frame of a job's dispatch records (example of a game-specific dump) |
+| `YSR_CLOTHDUMP=<file>`, `YSR_CLOTHSITE=<return address>` | one frame of a job's dispatch records (example of a game-specific dump; `tools/clothdump.py` prints it). In a recompiled program the call sites have new addresses: give the return address of the dispatch call in the SRW64 build. |
 | `YSR_POKE=<addr>:<byte>[,...]`, `YSR_POKE_DELAY`, `YSR_POKE_US` | keep bytes of the game's data at a value, e.g. to switch off a feature |
 
 ## Hooks (libsrhooks) and the SRW64 build
@@ -86,9 +86,11 @@ Thread counts are the views (phases 1 and 3) and the live count at counter block
 
 The scripts read paths from the environment: `PS5_EBOOT` (converted executable), `IDA_FUNCS` (IDA function list, `<address> <name> - <start>-<end>` per line), `IDA_DECOMP` (optional Hex-Rays output).
 
-* `pushmap.py <pushmap file> [min per frame]`: marker tree with the game functions that push each marker and their callers
+* `pushmap.py <pushmap file> [min per frame]`: marker tree with the game functions that push each marker and their callers (`SR_EXE=<SRW64 build>` when the log comes from the recompiled program)
+* `srmap.py <SRW64 build> <address>...`: maps addresses of the recompiled program back to the original program, using the `loc_<original address>` symbols (also a module for the other scripts)
+* `clothdump.py <file>`: prints a `YSR_CLOTHDUMP` snapshot (work items per phase, pipelines with thread group sizes, per-record tables with the fields that are shared and those that differ)
 * `map_sites.py <log> [pattern]`: maps addresses from logs (e.g. readback sites) to functions and disassembly
 * `strxref.py <string>...`: code and data references to strings
 * `dumptab.py <address> <before> <after>`: data qwords with relocations, strings and floats
 
-Profiling the recompiled program: `perf record --call-graph fp` works for the game code, because PS5 code keeps rbp frame pointers.
+Profiling the recompiled program: `perf record --call-graph fp` works for the game code, because PS5 code keeps rbp frame pointers (the recompiled code keeps them too). Code addresses in logs and profiles of the recompiled program are addresses of the SRW64 build: map them with `srmap.py`.

@@ -1,14 +1,25 @@
 #! /usr/bin/env python3
 # pushmap.py <pushmap.tsv> [min pushes per frame] - libysr YSR_PUSHMAP output -> marker tree with the game functions
 # (PS5 addresses; site = function containing the PushMarker call, callers from the rbp chain)
+# SR_EXE=<recompiled executable>: the log comes from an SRW64 build - addresses are mapped back with srmap.py
 import bisect, collections, sys, os
 FUNCS = os.environ['IDA_FUNCS']                  # IDA function list (address name - start-end)
 starts, names = [], []
 for line in open(FUNCS):
     p = line.split(); starts.append(int(p[0], 16)); names.append(p[1])
+srmap = None
+if os.environ.get('SR_EXE'):
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from srmap import SRMap
+    srmap = SRMap(os.environ['SR_EXE'])
 def fn(text):
     if text in ('-', '') or text.startswith('!'): return text
-    a = int(text, 16); i = bisect.bisect_right(starts, a) - 1
+    a = int(text, 16)
+    if srmap is not None:
+        r = srmap.original(a + 0x400000)       # libysr printed address - 0x400000
+        if r is None: return text
+        a = r[0] - 0x400000
+    i = bisect.bisect_right(starts, a) - 1
     return '%s+%x' % (names[i], a - starts[i]) if i >= 0 else text
 minimum = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
 rows = []

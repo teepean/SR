@@ -373,6 +373,7 @@ __attribute__((constructor)) static void ysr_init(void)
         }
         if (ysr_selfwait_end != 0) fprintf(stderr, "[ysr] self-wait range 0x%llx-0x%llx: WaitRegMem compare function -> always\n", (unsigned long long)ysr_selfwait_start, (unsigned long long)ysr_selfwait_end);
     }
+    if (getenv("YSR_CLOTHSITE") != NULL) ysr_cloth_site = strtoull(getenv("YSR_CLOTHSITE"), NULL, 0);
     fprintf(stderr, "[ysr] libysr loaded: %u functions interposed, %u not found\n", YSR_NUM_FUNCS - missing, missing);
     {
         const char *poke = getenv("YSR_POKE");

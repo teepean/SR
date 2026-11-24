@@ -21,6 +21,7 @@ site_info sites[SITE_SLOTS];
 push_info pushes[PUSH_SLOTS];
 cloth_dump ysr_cloth;
 volatile int ysr_cloth_state;
+uint64_t ysr_cloth_site = 0xAF5C19 + 0x400000;
 
 static void copy_bytes(uint8_t *to, uint64_t from, unsigned int size)
 {
@@ -264,7 +265,7 @@ __attribute__((used)) void ysr_hook(int function, uint64_t arg0, uint64_t arg1, 
         }
     }
 
-    if (ysr_cloth_state == 1 && function == ysr_cb_dispatch && return_address == 0xAF5C19 + 0x400000 &&
+    if (ysr_cloth_state == 1 && function == ysr_cb_dispatch && return_address == ysr_cloth_site &&
         __atomic_compare_exchange_n(&ysr_cloth_state, &(int){1}, 2, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
     {
         dump_cloth();

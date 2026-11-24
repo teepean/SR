@@ -78,6 +78,7 @@ typedef struct {
 } cloth_dump;
 extern cloth_dump ysr_cloth;
 extern volatile int ysr_cloth_state;   // 0 off, 1 armed, 2 copying, 3 done
+extern uint64_t ysr_cloth_site;        // return address of the dispatch call (YSR_CLOTHSITE; recompiled programs differ)
 
 extern marker_info markers[MAX_MARKERS];
 extern volatile int num_markers;
