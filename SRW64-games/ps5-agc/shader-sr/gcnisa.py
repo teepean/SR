@@ -53,6 +53,13 @@ class Operand:
         if t == 'off':
             self.kind = 'off'
             return
+        m = re.match(r'^\[(v\d+(?:\s*,\s*v\d+)*)\]$', t)
+        if m:
+            # NSA address list: registers in any order (kind 'vlist'; first/count describe the list, not a range)
+            self.kind, self.file = 'vlist', 'v'
+            self.list = [int(x.strip()[1:]) for x in m.group(1).split(',')]
+            self.first, self.count = self.list[0], len(self.list)
+            return
         if t in SPECIAL_REGS:
             f, n, c = SPECIAL_REGS[t]
             if f == 'null':
@@ -84,6 +91,8 @@ class Operand:
         raise ValueError('operand %r' % text)
 
     def regs(self):
+        if self.kind == 'vlist':
+            return ['v%d' % r for r in self.list]
         if self.kind != 'reg':
             return []
         return ['%s%d' % (self.file, self.first + i) for i in range(self.count)]
@@ -106,7 +115,12 @@ class Inst:
                 pass
         positional = []
         for a in args:
-            words = a.split()
+            if a.startswith('[') and ']' in a:
+                # an NSA address list "[v74, v77]" (MIMG with non-sequential addresses) is one operand
+                close = a.index(']') + 1
+                words = [a[:close]] + a[close:].split()
+            else:
+                words = a.split()
             if not words:
                 continue
             first, extra = words[0], words[1:]
@@ -191,19 +205,71 @@ def split_args(s):
     return args
 
 
+def llvm_mc(raw):
+    """llvm-mc on bytes: (stdout lines with an encoding, byte offsets of the words it could not decode)"""
+    text = ' '.join('0x%02x' % b for b in raw)
+    r = subprocess.run(LLVM_MC, input=text, capture_output=True, text=True)
+    lines = []
+    for line in r.stdout.split('\n'):
+        m = re.search(r'encoding: \[(.*?)\]', line)
+        if m:
+            lines.append((line.split(';')[0].strip(), len(m.group(1).split(','))))
+    skipped = sorted((int(m.group(1)) - 1) // 5
+                     for m in re.finditer(r'<stdin>:\d+:(\d+): warning: invalid instruction encoding', r.stderr))
+    return lines, skipped
+
+
+def fallback(raw, off):
+    """an instruction llvm-mc (gfx1013) does not decode: (text, size). The hint s_inst_prefetch; MUBUF with dlc on an
+    atomic (decoded without dlc); SDWA with neg/abs on an integer move (decoded without, the modifiers put back);
+    anything else is a visible unknown of its format's size"""
+    w = struct.unpack_from('<I', raw, off)[0]
+    if (w >> 16) == 0xbfa0:
+        return 's_inst_prefetch', 4
+    size = min(base_size(raw, off), 8)
+    if off + size > len(raw):
+        return '.unknown_word 0x%08x' % w, 4
+    words = list(struct.unpack_from('<%dI' % (size // 4), raw, off))
+    if (w >> 26) == 0b111000 and size == 8 and (w >> 15) & 1:           # MUBUF: drop dlc
+        words[0] &= ~(1 << 15)
+        lines, bad = llvm_mc(struct.pack('<2I', *words))
+        if lines and not bad:
+            return lines[0][0], 8
+    if (w >> 31) == 0 and (w & 0x1ff) == 0xf9 and size == 8:            # VOP1/2/C SDWA: modifiers put back
+        sd = words[1]
+        neg0, abs0 = (sd >> 20) & 1, (sd >> 21) & 1
+        words[1] &= ~((1 << 20) | (1 << 21) | (1 << 28) | (1 << 29))
+        lines, bad = llvm_mc(struct.pack('<2I', *words))
+        if lines and not bad and not ((sd >> 28) & 3):
+            t = lines[0][0]
+            head, _, rest = t.partition(' ')
+            parts = rest.split(', ', 2)
+            if len(parts) >= 2:
+                src = parts[1].split(' ')[0]
+                mod = ('|%s|' % src) if abs0 else src
+                mod = ('-' + mod) if neg0 else mod
+                parts[1] = mod + parts[1][len(src):]
+                return head + ' ' + ', '.join(parts), 8
+    return '.unknown_word 0x%08x' % w, size
+
+
 def decode(path):
     raw = open(path, 'rb').read()
-    text = ' '.join('0x%02x' % b for b in raw)
-    out = subprocess.run(LLVM_MC, input=text, capture_output=True, text=True).stdout
     insts, off = [], 0
-    for line in out.split('\n'):
-        m = re.search(r'encoding: \[(.*?)\]', line)
-        if not m:
-            continue
-        size = len(m.group(1).split(','))
-        t = line.split(';')[0].strip()
-        insts.append(Inst(off, t, size, raw))
-        off += size
-        if t.startswith('s_endpgm'):
+    while off < len(raw):
+        lines, skipped = llvm_mc(raw[off:])
+        stop = off + skipped[0] if skipped else None
+        pos = off
+        for t, size in lines:
+            if stop is not None and pos >= stop:
+                break
+            insts.append(Inst(pos, t, size, raw))
+            pos += size
+            if t.startswith('s_endpgm'):
+                return insts
+        if stop is None or pos != stop:
             break
+        t, size = fallback(raw, pos)
+        insts.append(Inst(pos, t, size, raw))
+        off = pos + size
     return insts

@@ -183,6 +183,8 @@ class Translator:
     CROSS_SCALAR = ('v_readlane_b32', 'v_readfirstlane_b32', 'v_writelane_b32')
 
     def translate(self, inst):
+        if inst.base in ('v_mbcnt_lo_u32_b32', 'v_mbcnt_hi_u32_b32'):
+            self.mbcnt_ballot(inst)
         if inst.op.startswith(self.LANE_PREFIXES) and inst.base not in self.CROSS_SCALAR:
             halves = []
             for h in (0, 1):
@@ -210,6 +212,7 @@ class Translator:
         for prefix, h in (('v_cmpx_', self.op_vcmpx), ('v_cmp_', self.op_vcmp), ('s_cmp_', self.op_scmp),
                           ('s_load_', self.op_sload), ('s_buffer_load_', self.op_sbufload),
                           ('buffer_load_', self.op_bufload), ('buffer_store_', self.op_bufstore),
+                          ('buffer_atomic_', self.op_bufatomic),
                           ('global_load_', self.op_globalload), ('ds_', self.op_ds)):
             if b.startswith(prefix):
                 h(inst)
@@ -308,6 +311,16 @@ class Translator:
             # the wave's ballot of the lane mask: all threads of the wave take part (outside the exec guard)
             self.emit('{ uvec2 bal_ = wave_ballot2((s106 & 1u) != 0u, (s106 & 2u) != 0u); if (EX) %s = bal_.%s; }' % (
                 self.reg(d), 'x' if a.first == 106 else 'y'))
+            return
+        if a.neg or a.abs:
+            # neg / abs on a move (SDWA): float modifiers, the sign bit
+            plain = gcnisa.Operand(a.text.replace('-', '', 1).strip('|') if not a.text.startswith('0x') else a.text)
+            bits = self.src_int(plain, inst, 0)
+            if a.abs:
+                bits = '(%s & 0x7fffffffu)' % bits
+            if a.neg:
+                bits = '(%s ^ 0x80000000u)' % bits
+            self.write_v_u32(inst, d, bits)
             return
         self.write_v_u32(inst, d, self.src_int(a, inst, 0))
 
@@ -683,6 +696,88 @@ class Translator:
                   'uint64_t(x_); }' % (self.sval(a), self.sval(c), self.reg(d)))
         self.set_kind(d, 'value')
 
+    def lane_mask_operand(self, o):
+        """an SGPR (or exec) operand that holds a lane mask: (expression of the thread's two bits, word 0/1)"""
+        if o.kind != 'reg' or o.file != 's':
+            return None
+        even = o.first & ~1
+        if even == 126:
+            return 'EXM', o.first & 1
+        if self.mask_kind.get(even) == 'mask':
+            return '(%s & 3u)' % ('s%d' % even), o.first & 1
+        return None
+
+    def mbcnt_ballot(self, inst):
+        """v_mbcnt with a lane mask operand counts the wave's bits: the ballot runs for every thread (scalar
+        statement before the per-half ones)"""
+        m = self.lane_mask_operand(inst.ops[1])
+        if m is None:
+            return
+        self.h = None
+        self.ballot_uses.add(inst.off)
+        self.emit('uvec2 mbm_%x_ = wave_ballot2((%s & 1u) != 0u, (%s & 2u) != 0u);' % (inst.off, m[0], m[0]))
+
+    def mbcnt_word(self, inst, o, word):
+        m = self.lane_mask_operand(o)
+        if m is not None:
+            return 'mbm_%x_.%s' % (inst.off, 'xy'[m[1]])
+        if o.kind == 'const':
+            v = o.value & 0xffffffff
+            if word == 1 and o.text.startswith('-'):
+                v = 0xffffffff
+            return '0x%08xu' % v
+        return self.src_int(o, inst, 0)
+
+    def op_v_mbcnt_lo_u32_b32(self, inst):
+        d, m, c = inst.ops
+        self.write_v_u32(inst, d, '(uint(bitCount(%s & (LANE < 32u ? ((1u << LANE) - 1u) : 0xffffffffu))) + %s)' % (
+            self.mbcnt_word(inst, m, 0), self.src_int(c, inst, 1)))
+
+    def op_v_mbcnt_hi_u32_b32(self, inst):
+        d, m, c = inst.ops
+        self.write_v_u32(inst, d, '(uint(bitCount(%s & (LANE < 32u ? 0u : ((1u << (LANE - 32u)) - 1u)))) + %s)' % (
+            self.mbcnt_word(inst, m, 1), self.src_int(c, inst, 1)))
+
+    def op_s_bcnt1_i32_b64(self, inst):
+        d, a = inst.ops
+        m = self.lane_mask_operand(a)
+        if m is not None:
+            self.ballot_uses.add(inst.off)
+            self.emit('{ uvec2 b_ = wave_ballot2((%s & 1u) != 0u, (%s & 2u) != 0u); %s = uint(bitCount(b_.x) + '
+                      'bitCount(b_.y)); SCC = %s != 0u; }' % (m[0], m[0], self.reg(d), self.reg(d)))
+        else:
+            hi = self.sval(a, 1) if a.kind == 'reg' else ('0xffffffffu' if a.text.startswith('-') else '0u')
+            self.emit('%s = uint(bitCount(%s) + bitCount(%s)); SCC = %s != 0u;' % (
+                self.reg(d), self.sval(a, 0), hi, self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_bcnt1_i32_b32(self, inst):
+        d, a = inst.ops
+        self.emit('%s = uint(bitCount(%s)); SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_brev_b32(self, inst):
+        d, a = inst.ops
+        self.emit('%s = bitfieldReverse(%s);' % (self.reg(d), self.sval(a)))
+        self.set_kind(d, 'value')
+
+    def op_s_bitcmp0_b32(self, inst):
+        a, c = inst.ops
+        self.emit('SCC = ((%s >> (%s & 31u)) & 1u) == 0u;' % (self.sval(a), self.sval(c)))
+
+    def op_s_add_u32(self, inst):
+        d, a, c = inst.ops
+        self.emit('{ uint x_ = %s, y_ = %s; %s = x_ + y_; SCC = uint64_t(x_) + uint64_t(y_) > 0xfffffffful; }' % (
+            self.sval(a), self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_addc_u32(self, inst):
+        d, a, c = inst.ops
+        self.emit('{ uint x_ = %s, y_ = %s, c_ = SCC ? 1u : 0u; %s = x_ + y_ + c_; '
+                  'SCC = uint64_t(x_) + uint64_t(y_) + uint64_t(c_) > 0xfffffffful; }' % (
+                      self.sval(a), self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
     def op_s_ff1_i32_b64(self, inst):
         d, a = inst.ops
         if a.kind == 'reg' and (a.first == 126 or self.mask_kind.get(a.first) == 'mask'):
@@ -801,6 +896,23 @@ class Translator:
         else:
             self.unknown[inst.op] += 1
 
+    def op_bufatomic(self, inst):
+        """buffer_atomic_<op> vdata, vaddr, V#, soffset [glc]: per lane, on the buffer's device memory; glc returns the
+        old value in vdata"""
+        data, vaddr, vs, soff = inst.ops
+        b = inst.base
+        fn = {'buffer_atomic_add': 'atomicAdd', 'buffer_atomic_sub': None, 'buffer_atomic_umin': 'atomicMin',
+              'buffer_atomic_umax': 'atomicMax', 'buffer_atomic_and': 'atomicAnd', 'buffer_atomic_or': 'atomicOr',
+              'buffer_atomic_xor': 'atomicXor', 'buffer_atomic_swap': 'atomicExchange'}.get(b)
+        if fn is None or data.count != 1:
+            self.unknown[inst.op] += 1
+            self.emit('/* UNHANDLED %s */' % inst.text)
+            return
+        a = self.mubuf_addr(inst, vaddr, vs, soff)
+        old = '%s = ' % self.reg(data) if inst.mods.get('glc') else ''
+        self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) %s%s(W32(ba_.dev).v, %s); }' % (
+            a, old, fn, self.reg(data)))
+
     def op_globalload(self, inst):
         d, vaddr, saddr = inst.ops
         imm = int(inst.mods.get('offset', '0'), 0)
@@ -876,10 +988,12 @@ INT2 = {
     'v_add_nc_u32': '(%s + %s)', 'v_sub_nc_u32': '(%s - %s)', 'v_and_b32': '(%s & %s)',
     'v_mul_lo_u32': '(%s * %s)',
     'v_mul_u32_u24': '((%s & 0xffffffu) * (%s & 0xffffffu))', 'v_max_i32': 'uint(max(int(%s), int(%s)))',
+    'v_mul_i32_i24': 'uint(bitfieldExtract(int(%s), 0, 24) * bitfieldExtract(int(%s), 0, 24))',
 }
 INT3 = {
     'v_add3_u32': '(%s + %s + %s)', 'v_lshl_add_u32': '((%s << (%s & 31u)) + %s)',
     'v_mad_u32_u24': '((%s & 0xffffffu) * (%s & 0xffffffu) + %s)',
+    'v_lshl_or_b32': '((%s << (%s & 31u)) | %s)',
 }
 
 
