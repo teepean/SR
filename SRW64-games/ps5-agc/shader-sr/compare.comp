@@ -1,0 +1,64 @@
+// compare.comp - output comparison of a translated compute program against Kyty's own program (Kyty clone:
+// translatedShaders.cpp, check mode). a = translated outputs, b = Kyty's outputs (dwords); result (8 dwords):
+// [0] dwords that differ, [1] of them beyond 1e-3 relative (both normal floats) or differing as other values,
+// [2] first beyond, [3] first difference, [4]/[5] a/b at [2], [6]/[7] a/b at [3]. mode 1: fetch [4]..[7].
+// build: glslc --target-env=vulkan1.3 -O -o compare.spv compare.comp
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 256) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer Words { uint v[]; };
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Result { uint v[]; };
+
+layout(push_constant) uniform Push {
+    uint64_t a;
+    uint64_t b;
+    uint64_t result;
+    uint     count;
+    uint     mode;
+} pc;
+
+bool normal_float(uint bits) {
+    uint e = (bits >> 23) & 0xffu;
+    return e != 0u && e != 0xffu;
+}
+
+void main() {
+    Words a = Words(pc.a), b = Words(pc.b);
+    Result r = Result(pc.result);
+    if (pc.mode == 1u) {
+        if (gl_GlobalInvocationID.x == 0u) {
+            uint big = r.v[2], first = r.v[3];
+            if (big < pc.count) { r.v[4] = a.v[big]; r.v[5] = b.v[big]; }
+            if (first < pc.count) { r.v[6] = a.v[first]; r.v[7] = b.v[first]; }
+        }
+        return;
+    }
+    uint stride = gl_NumWorkGroups.x * 256u;
+    uint differ = 0u, beyond = 0u, first = 0xffffffffu, first_beyond = 0xffffffffu;
+    for (uint i = gl_GlobalInvocationID.x; i < pc.count; i += stride) {
+        uint x = a.v[i], y = b.v[i];
+        if (x == y) continue;
+        differ++;
+        first = min(first, i);
+        bool far = true;
+        if (normal_float(x) && normal_float(y)) {
+            float fx = uintBitsToFloat(x), fy = uintBitsToFloat(y);
+            far = abs(fx - fy) > 1e-3 * max(abs(fx), abs(fy));
+        }
+        if (far) {
+            beyond++;
+            first_beyond = min(first_beyond, i);
+        }
+    }
+    if (differ != 0u) {
+        atomicAdd(r.v[0], differ);
+        atomicMin(r.v[3], first);
+    }
+    if (beyond != 0u) {
+        atomicAdd(r.v[1], beyond);
+        atomicMin(r.v[2], first_beyond);
+    }
+}
