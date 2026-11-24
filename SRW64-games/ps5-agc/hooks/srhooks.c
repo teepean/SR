@@ -13,6 +13,7 @@
 #include <time.h>
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <sys/mman.h>
 
 static unsigned int cloth_rate = 1;
 static uint64_t cloth_calls, cloth_runs;
@@ -84,6 +85,59 @@ static uint64_t now_ns(void)
 }
 
 
+// SRH_QUERY_TRACE=1: per recorded query, CLOCK_MONOTONIC ns of the record and of the moment its label is visible to
+// the CPU ("[srhooks-qtrace]" lines, joined with the emulator's label trace by label address and value). A tracer
+// thread polls the labels of the pending records.
+#define QT_RING 64
+static int query_trace;
+static struct { uint64_t addr, value, record_ns, record_end_ns, frame; int count, done; } qt_ring[QT_RING];
+static uint64_t qt_head;
+
+static void *query_tracer(void *argument)
+{
+    uint64_t tail = 0;
+    (void)argument;
+    for (;;)
+    {
+        uint64_t head = __atomic_load_n(&qt_head, __ATOMIC_ACQUIRE), k;
+        if (head - tail > QT_RING - 2) tail = head - (QT_RING - 2);
+        for (k = tail; k < head; k++)
+        {
+            typeof(&qt_ring[0]) r = &qt_ring[k % QT_RING];
+            uint64_t t;
+            if (r->done) continue;
+            t = now_ns();
+            if (*(volatile uint64_t *)r->addr == r->value || t - r->record_ns > 2000000000ULL)
+            {
+                fprintf(stderr, "[srhooks-qtrace] frame %llu record %llu-%llu %s %llu (+%.3f ms) label %#llx value %#llx entries %d\n",
+                        (unsigned long long)r->frame, (unsigned long long)r->record_ns, (unsigned long long)r->record_end_ns,
+                        *(volatile uint64_t *)r->addr == r->value ? "written" : "NOT-WRITTEN", (unsigned long long)t,
+                        (double)(t - r->record_ns) / 1e6, (unsigned long long)r->addr, (unsigned long long)r->value, r->count);
+                r->done = 1;
+            }
+        }
+        while (tail < head && qt_ring[tail % QT_RING].done) tail++;
+        for (k = 0; k < 64; k++) __builtin_ia32_pause();
+    }
+    return NULL;
+}
+
+static void query_trace_record(uint8_t *object, uint64_t start)
+{
+    uint64_t head = qt_head;
+    typeof(&qt_ring[0]) r = &qt_ring[head % QT_RING];
+    int32_t slot = *(int32_t *)(object + 436);
+    if (slot < 0 || QUERY_TABLE == NULL) return;
+    r->addr = (uint64_t)((uint8_t *)QUERY_TABLE + 32 * (int64_t)slot);
+    r->value = *(uint32_t *)(object + 440);
+    r->record_ns = start;
+    r->record_end_ns = now_ns();
+    r->frame = head;
+    r->count = *(int32_t *)(object + 456);
+    r->done = 0;
+    __atomic_store_n(&qt_head, head + 1, __ATOMIC_RELEASE);
+}
+
 void srh_query_record(uint8_t *object)
 {
     int32_t *slot_field = (int32_t *)(object + 436);
@@ -95,7 +149,9 @@ void srh_query_record(uint8_t *object)
 
     if (!query_enabled)
     {
+        uint64_t start = query_trace ? now_ns() : 0;
         srh_query_record_orig(object);
+        if (query_trace) query_trace_record(object, start);
         return;
     }
 
@@ -376,6 +432,221 @@ static void cloth_dump_shaders(void)
     fprintf(stderr, "[srhooks] cloth shaders dumped to %s\n", cloth_dump_dir);
 }
 
+// SRH_CLOTH_CAPTURE=<dir>: when <dir>/capture-now appears (checked every 8th call; or at call SRH_CLOTH_CAPTURE_AT)
+// of the cloth dispatch hook, the inputs of every cloth instance of the frame as <dir>/cloth-capture.bin, for an offline test of the
+// solver programs (shader-sr/clothbench). The memory is read on the CPU (the emulator downloads GPU-written pages on
+// the fault), following the instance table: T (304 B) and every V# in it, the global table *(T+0), the piece data
+// *(T+8) and its V#s, the object block *(T+0x10), and through the T.V#(0x18) buffer the collider sets (struct, V#s,
+// 168-byte records). File: 'CCAP' u32 version 1, u32 items, u32 ranges, u64 code[4], u32 tg[4],
+// items {u64 table, u32 phase, u32 slot, u32 verts, u32 0}, ranges {u64 address, u64 size, bytes}.
+#define CAP_MAX_RANGES 65536
+static const char *cloth_capture_dir;
+static uint64_t cloth_capture_at = ~0ULL, cloth_capture_calls;
+static struct { uint64_t lo, hi; } cap_ranges[CAP_MAX_RANGES];
+static int cap_count;
+
+// the protection of guest memory from /proc/self/maps: readable, or protected (PROT_NONE: the emulator's GPU-written
+// pages, which fault in on a CPU read, or a reservation, which crashes)
+static struct { uint64_t lo, hi; int readable; } cap_maps[16384];
+static int cap_map_count;
+
+static void cap_read_maps(void)
+{
+    FILE *f = fopen("/proc/self/maps", "r");
+    char line[512];
+    cap_map_count = 0;
+    if (f == NULL) return;
+    while (fgets(line, sizeof(line), f) != NULL && cap_map_count < 16384)
+    {
+        unsigned long long lo, hi;
+        char perms[8];
+        if (sscanf(line, "%llx-%llx %7s", &lo, &hi, perms) != 3) continue;
+        cap_maps[cap_map_count].lo = lo;
+        cap_maps[cap_map_count].hi = hi;
+        cap_maps[cap_map_count].readable = perms[0] == 'r';
+        cap_map_count++;
+    }
+    fclose(f);
+}
+
+// 1: [address, address + size) is mapped and readable, 2: mapped, partly protected, 0: not entirely mapped
+static int cap_access(uint64_t address, uint64_t size)
+{
+    uint64_t a = address, end = address + size;
+    int result = 1, k;
+    while (a < end)
+    {
+        for (k = 0; k < cap_map_count && !(cap_maps[k].lo <= a && a < cap_maps[k].hi); k++);
+        if (k == cap_map_count) return 0;
+        if (!cap_maps[k].readable) result = 2;
+        a = cap_maps[k].hi;
+    }
+    return result;
+}
+
+// ranges: gpu = 1 for buffers the GPU writes (current / previous positions, the global scratch tables): read even
+// when protected (the emulator downloads them on the fault); other protected ranges are skipped
+static void cap_add(uint64_t address, uint64_t size, int gpu)
+{
+    int access;
+    if (address < 0x10000 || address >= (1ULL << 44) || size == 0 || size > (16ULL << 20)) return;
+    access = cap_access(address, size);
+    if (access == 0 || (access == 2 && !gpu)) return;
+    if (cap_count < CAP_MAX_RANGES)
+    {
+        cap_ranges[cap_count].lo = address;
+        cap_ranges[cap_count].hi = address + size;
+        cap_count++;
+    }
+}
+
+// a buffer descriptor at block + off: base 48 bits, stride 14 bits (word 1 bits 16..29), num_records (word 2):
+// records of stride bytes, or bytes when the stride is 0
+static void cap_vsharp(const uint8_t *block, uint64_t off, int gpu)
+{
+    const uint8_t *v = block + off;
+    uint32_t w0, w1, w2, w3;
+    uint64_t base, stride;
+    if (cap_access((uint64_t)(uintptr_t)v, 16) != 1) return;
+    w0 = *(const uint32_t *)v; w1 = *(const uint32_t *)(v + 4); w2 = *(const uint32_t *)(v + 8); w3 = *(const uint32_t *)(v + 12);
+    base = (uint64_t)w0 | ((uint64_t)(w1 & 0xffff) << 32);
+    stride = (w1 >> 16) & 0x3fff;
+    if (w3 == 0 || (w3 >> 30) != 0 || (w1 >> 30) != 0) return;     // not a plain buffer descriptor
+    cap_add(base, stride ? stride * (uint64_t)w2 : w2, gpu);
+}
+
+static int cap_compare(const void *a, const void *b)
+{
+    uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+static void cloth_capture(const uint64_t *items, const uint8_t *records, int32_t count)
+{
+    char path[512];
+    FILE *f, *list;
+    int32_t index;
+    int k, merged, slot;
+    uint32_t header[4] = { 0x50414343, 1, (uint32_t)count, 0 };
+    cap_count = 0;
+    cap_read_maps();
+    for (index = 0; index < count; index++)
+    {
+        const uint8_t *record = records + 16 * (items[index] & 0xfffff);
+        const uint8_t *t = *(uint8_t *const *)(record + 8), *g, *pd, *buffer;
+        uint32_t sets, b, off;
+        if (t == NULL || cap_access((uint64_t)(uintptr_t)t, 304) != 1) continue;
+        cap_add((uint64_t)(uintptr_t)t, 304, 0);
+        cap_vsharp(t, 0x18, 1);
+        cap_vsharp(t, 0x28, 1);                                     // current positions
+        cap_vsharp(t, 0x38, 1);                                     // previous positions
+        g = *(uint8_t *const *)t;                                   // global scratch tables G0, G1, ...
+        if (g != NULL && cap_access((uint64_t)(uintptr_t)g, 64) == 1)
+        {
+            cap_add((uint64_t)(uintptr_t)g, 64, 0);
+            for (off = 0; off < 64; off += 16) cap_vsharp(g, off, 1);
+        }
+        pd = *(uint8_t *const *)(t + 8);                            // piece data: header and its V#s
+        if (pd != NULL && cap_access((uint64_t)(uintptr_t)pd, 0x120) == 1)
+        {
+            cap_add((uint64_t)(uintptr_t)pd, 0x120, 0);
+            for (off = 0x18; off <= 0x108; off += 16) cap_vsharp(pd, off, 1);
+        }
+        cap_add(*(const uint64_t *)(t + 0x10), 256, 0);              // object block
+        // T.V#(0x18): qwords = the collider set structs (set 0 also holds the bone palette V# at +0x38)
+        buffer = (const uint8_t *)(uintptr_t)((uint64_t)*(const uint32_t *)(t + 0x18) |
+                                              ((uint64_t)(*(const uint32_t *)(t + 0x1c) & 0xffff) << 32));
+        sets = t[0xa4] ? t[0xa4] : 1;
+        for (b = 0; b < sets && b < 64; b++)
+        {
+            const uint8_t *set;
+            if (cap_access((uint64_t)(uintptr_t)(buffer + 8 * b), 8) != 1) break;
+            set = *(uint8_t *const *)(buffer + 8 * b);
+            if (set == NULL || cap_access((uint64_t)(uintptr_t)set, 256) != 1) continue;
+            cap_add((uint64_t)(uintptr_t)set, 256, 0);
+            cap_vsharp(set, 0x38, 1);                               // bone palette (the cloth writes its bones there)
+            cap_vsharp(set, 0x78, 1);                               // second palette (cloth bones, pass 2)
+            cap_vsharp(set, 0x88, 1);                               // collider records
+            cap_add(*(const uint64_t *)(set + 136) & 0xffffffffffffULL, 168ULL * *(const uint32_t *)(set + 152), 0);
+        }
+    }
+    // merge (sorted by start)
+    qsort(cap_ranges, (size_t)cap_count, sizeof(cap_ranges[0]), cap_compare);
+    merged = 0;
+    for (k = 0; k < cap_count; k++)
+    {
+        if (merged > 0 && cap_ranges[k].lo <= cap_ranges[merged - 1].hi)
+        {
+            if (cap_ranges[k].hi > cap_ranges[merged - 1].hi) cap_ranges[merged - 1].hi = cap_ranges[k].hi;
+        }
+        else cap_ranges[merged++] = cap_ranges[k];
+    }
+    header[3] = (uint32_t)merged;
+    {
+        uint64_t total = 0;
+        for (k = 0; k < merged; k++) total += cap_ranges[k].hi - cap_ranges[k].lo;
+        fprintf(stderr, "[srhooks] cloth capture: %llu bytes in %d ranges\n", (unsigned long long)total, merged);
+        if (total > (512ULL << 20)) return;
+    }
+    // the range list first (a crash while reading leaves it), then the data, flushed per range
+    snprintf(path, sizeof(path), "%s/cloth-capture-ranges.txt", cloth_capture_dir);
+    list = fopen(path, "w");
+    if (list != NULL)
+    {
+        for (k = 0; k < merged; k++)
+            fprintf(list, "%#llx %#llx %d\n", (unsigned long long)cap_ranges[k].lo,
+                    (unsigned long long)(cap_ranges[k].hi - cap_ranges[k].lo), cap_access(cap_ranges[k].lo, cap_ranges[k].hi - cap_ranges[k].lo));
+        fclose(list);
+    }
+    snprintf(path, sizeof(path), "%s/cloth-capture.bin", cloth_capture_dir);
+    f = fopen(path, "wb");
+    if (f == NULL) return;
+    fwrite(header, 4, 4, f);
+    for (slot = 0; slot < 4; slot++)
+    {
+        const uint8_t *h = *(uint8_t *const *)(cloth_pipelines[slot] + 0x10);
+        uint64_t code = h ? *(const uint64_t *)(h + 0x38) : 0;
+        fwrite(&code, 8, 1, f);
+    }
+    for (slot = 0; slot < 4; slot++)
+    {
+        const uint8_t *h = *(uint8_t *const *)(cloth_pipelines[slot] + 0x10);
+        uint32_t tg = h ? *(const uint32_t *)(h + 0x40) : 0;
+        fwrite(&tg, 4, 1, f);
+    }
+    for (index = 0; index < count; index++)
+    {
+        uint64_t item = items[index];
+        const uint8_t *record = records + 16 * (item & 0xfffff);
+        uint64_t pipeline = *(const uint64_t *)record, table = *(const uint64_t *)(record + 8);
+        uint32_t e[4] = { (uint32_t)(item >> 61), 4, 0, 0 };
+        for (slot = 0; slot < 4 && cloth_pipelines[slot] != pipeline; slot++);
+        e[1] = (uint32_t)slot;
+        e[2] = table ? *(const uint32_t *)(uintptr_t)(table + 0x30) : 0;
+        fwrite(&table, 8, 1, f);
+        fwrite(e, 4, 4, f);
+    }
+    fflush(f);
+    for (k = 0; k < merged; k++)
+    {
+        uint64_t size = cap_ranges[k].hi - cap_ranges[k].lo;
+        // copied by a CPU read first: GPU-written pages fault in (the emulator downloads them); write() of the guest
+        // pointer itself would get EFAULT from the kernel for a protected page and leave a short range in the file
+        uint8_t *copy = (uint8_t *)malloc(size);
+        if (copy == NULL) { fprintf(stderr, "[srhooks] cloth capture: out of memory\n"); break; }
+        memcpy(copy, (const void *)(uintptr_t)cap_ranges[k].lo, size);
+        if (fwrite(&cap_ranges[k].lo, 8, 1, f) != 1 || fwrite(&size, 8, 1, f) != 1 || fwrite(copy, 1, size, f) != size)
+        {
+            fprintf(stderr, "[srhooks] cloth capture: write failed at range %d\n", k);
+            free(copy);
+            break;
+        }
+        free(copy);
+    }
+    fclose(f);
+    fprintf(stderr, "[srhooks] cloth capture: %d instances, %d ranges -> %s\n", count, merged, path);
+}
+
 int srh_cloth_dispatch(int32_t count)
 {
     const uint64_t *items = CLOTH_ITEMS;
@@ -386,6 +657,16 @@ int srh_cloth_dispatch(int32_t count)
     int slot;
 
     __atomic_add_fetch(&nc_calls, 1, __ATOMIC_RELAXED);
+    if (cloth_capture_dir != NULL && count > 0 && items != NULL && records != NULL)
+    {
+        // at call SRH_CLOTH_CAPTURE_AT, or when <dir>/capture-now exists (renamed to capture-done)
+        char trigger[512], done[512];
+        uint64_t call = __atomic_add_fetch(&cloth_capture_calls, 1, __ATOMIC_RELAXED);
+        snprintf(trigger, sizeof(trigger), "%s/capture-now", cloth_capture_dir);
+        snprintf(done, sizeof(done), "%s/capture-done", cloth_capture_dir);
+        if (call == cloth_capture_at || (call % 8 == 0 && access(trigger, F_OK) == 0 && rename(trigger, done) == 0))
+            cloth_capture(items, records, count);
+    }
     if (cloth_dump_dir != NULL && count > 0 && !__atomic_exchange_n(&cloth_dumped, 1, __ATOMIC_RELAXED)) cloth_dump_shaders();
     if (!native_cloth || count <= 0 || items == NULL || records == NULL || agc_acb_push_marker == NULL || agc_acb_pop_marker == NULL) return 0;
     payload = frame_alloc(64 + 24 * (uint64_t)count);
@@ -524,6 +805,14 @@ __attribute__((constructor)) static void srhooks_init(void)
     srh_spin_pause = (env != NULL && atoi(env) != 0);
     env = getenv("SRH_QUERY");
     query_enabled = (env != NULL && atoi(env) != 0);
+    env = getenv("SRH_QUERY_TRACE");
+    query_trace = (env != NULL && atoi(env) != 0 && !query_enabled);
+    if (query_trace)
+    {
+        pthread_t thread;
+        if (pthread_create(&thread, NULL, query_tracer, NULL) == 0) pthread_detach(thread);
+        fprintf(stderr, "[srhooks] query trace on (label table pointer at %#llx)\n", (unsigned long long)(0x464AFE8 + AKY));
+    }
     fprintf(stderr, "[srhooks] loaded: cloth update rate 1/%u, GPU query copy-forward %s, pause in wait loops %s\n", cloth_rate,
             query_enabled ? "on" : "off", srh_spin_pause ? "on" : "off");
     env = getenv("SRH_NATIVE");
@@ -533,6 +822,10 @@ __attribute__((constructor)) static void srhooks_init(void)
     if (native_particles) fprintf(stderr, "[srhooks] native particles on (marker functions %s)\n", (agc_dcb_push_marker && agc_dcb_pop_marker) ? "found" : "MISSING");
     native_cloth = (env != NULL && strstr(env, "cloth") != NULL);
     cloth_dump_dir = getenv("SRH_CLOTH_DUMP");
+    cloth_capture_dir = getenv("SRH_CLOTH_CAPTURE");
+    env = getenv("SRH_CLOTH_CAPTURE_AT");
+    if (env != NULL && atoi(env) > 0) cloth_capture_at = (uint64_t)atoi(env);
+    if (cloth_capture_dir != NULL) fprintf(stderr, "[srhooks] cloth capture at call %llu to %s\n", (unsigned long long)cloth_capture_at, cloth_capture_dir);
     native_pdraw = (env != NULL && strstr(env, "pdraw") != NULL);
     agc_dcb_dma_data = (void *(*)(void *, uint8_t, uint8_t, uint8_t, uint64_t, uint8_t, uint8_t, uint64_t, uint32_t, uint8_t, uint8_t, uint8_t))
         dlsym(RTLD_DEFAULT, "WmAc2MEj6Io");                                                                 // sceAgcDcbDmaData

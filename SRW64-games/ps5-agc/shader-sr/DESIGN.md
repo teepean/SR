@@ -99,3 +99,20 @@ whose guest code matches its `.code` file byte for byte (`build.py` writes `<nam
 2. Its 512/1024-thread variants (several waves, `s_barrier`, global scratch memory).
 3. The other large compute shaders of the frame (global illumination, particles, lighting), then all compute shaders.
 4. Vertex and pixel shaders.
+
+## Native programs
+
+`native.py` builds a hand-written GLSL replacement of a guest program on the same runtime (prelude: guest memory
+through the page table, V# decoding, batched user data). It drops in where the translation would (`<name>.spv`
+next to `<name>.code`). `native/cloth.glsl` is the first one: the 1024-thread cloth solver, rewritten operation for
+operation (every multiply and add rounded alone, `fma` where the guest fuses), with NVIDIA-native threads (one cloth
+instance per workgroup, subgroups of 32, no guest-wave emulation). Its binary is ~470 KB instead of ~1.8 MB, and the
+largest instance of a frame runs in 0.68 ms instead of 3.1 ms.
+
+`clothbench.cpp` replays one captured frame (`hooks` `SRH_CLOTH_CAPTURE`) through any set of programs and compares
+the memory afterwards. Two things limit an exact comparison and have switches:
+- instances of one phase share memory and constraint groups share vertices, so the guest itself is order dependent:
+  `CLOTHBENCH_SERIAL=1` runs one instance at a time, and a capture can be made race free (no shared vertices);
+- the driver compiles `sin` differently per shader: `SHADER_SR_SOFT_SIN=1` builds both with the same software sin.
+With both, the native solver is bit-identical to the translation on a whole frame. `SHADER_SR_STOP_AT=<pc>` ends a
+translation at a barrier, to compare intermediate states.

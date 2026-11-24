@@ -16,6 +16,7 @@
 # - Memory: guest addresses are translated through a range table (push constant) to buffer device addresses.
 
 import argparse
+import os
 import collections
 import re
 import struct
@@ -128,8 +129,12 @@ class Translator:
             bits = self.sdwa_sel(bits, sel, o.sext)
         elif o.sext:
             bits = 'uint(int(%s))' % bits
+        # input modifiers on a 32-bit operand of a bit-moving instruction (v_cndmask_b32 VOP3 / SDWA: LLVM's select of
+        # -x / |x|) act on the sign bit, as the float modifiers they are; not integer negation
+        if o.abs:
+            bits = '(%s & 0x7fffffffu)' % bits
         if o.neg:
-            bits = '(-%s)' % bits
+            bits = '(%s ^ 0x80000000u)' % bits
         return bits
 
     def write_v_f32(self, inst, dst, expr):
@@ -2230,6 +2235,9 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
                     put(text)
             if i.op == 's_barrier':
                 put('barrier();')
+                # SHADER_SR_STOP_AT=<hex pc>: end the program at this barrier (debugging: the memory state there)
+                if os.environ.get('SHADER_SR_STOP_AT') and int(os.environ['SHADER_SR_STOP_AT'], 16) == i.off:
+                    put('memoryBarrierBuffer(); return;')
             if k in st.fwd:
                 t = st.fwd[k]
                 c = cond(k)
