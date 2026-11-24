@@ -637,13 +637,18 @@ class Translator:
     def op_sload(self, inst):
         d, base, off = inst.ops
         n = d.count
-        offset = 0 if off.kind == 'null' else (off.value if off.kind == 'const' else None)
-        if offset is None:
-            raise ValueError(inst)
+        # gfx10 SMEM: the offset operand is an immediate or an SGPR (soffset), plus an immediate offset:N modifier
+        imm = int(inst.mods.get('offset', '0'), 0)
+        if off.kind == 'null':
+            offset = '%dul' % imm
+        elif off.kind == 'const':
+            offset = '%dul' % (off.value + imm)
+        else:
+            offset = '(uint64_t(%s) + %dul)' % (self.reg(off), imm)
         addr = 'packUint2x32(uvec2(%s, %s & 0xffffu))' % (self.reg(base, 0), self.reg(base, 1))
         # one translation per load (at its first dword: a load does not cross a 16 KB page)
         loads = ' '.join('%s = sld32(d_ == 0ul ? 0ul : d_ + %dul);' % (self.reg(d, k), 4 * k) for k in range(n))
-        self.emit('{ uint64_t d_ = sxlate(%s + %dul, %du); %s probe_sload(%s + %dul, %s); }' % (
+        self.emit('{ uint64_t d_ = sxlate(%s + %s, %du); %s probe_sload(%s + %s, %s); }' % (
             addr, offset, 4 * n, loads, addr, offset, self.reg(d, 0)))
         self.set_kind(d, 'value')
 
@@ -824,6 +829,8 @@ def install_reversed(tr):
 
 # ---------------------------------------------------------------------------------------------------------- structure
 LANE_BRANCHES = ('s_cbranch_execz', 's_cbranch_execnz', 's_cbranch_vccz', 's_cbranch_vccnz')
+NEVER_SKIP = False
+
 CROSS_LANE = ('v_readlane_b32', 'v_permlanex16_b32', 'v_writelane_b32', 'ds_swizzle_b32', 'ds_bpermute_b32',
               'ds_permute_b32', 's_barrier')
 
@@ -962,7 +969,8 @@ def scalar_reach(insts, user_sgprs):
         if i.base.startswith('s_load_dword'):
             d, base, off = i.ops
             n = node_of(base)
-            offset = 0 if off.kind == 'null' else (off.value if off.kind == 'const' else None)
+            imm = int(i.mods.get('offset', '0'), 0)
+            offset = imm if off.kind == 'null' else (off.value + imm if off.kind == 'const' else None)
             for r in d.regs():
                 holder.pop(int(r[1:]), None)
                 redefined.add(int(r[1:]))
@@ -1183,6 +1191,11 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
                         '%d per-lane loops' % (len(st.fwd), len(st.loops), len(lane_branch), len(wave),
                                                len(per_lane_loops)))
 
+        def leaves_loop(k):
+            """the forward branch at k jumps out of a loop that contains it"""
+            t = st.fwd[k]
+            return any(h <= k <= j and t > j for h, j in st.loops.items())
+
         def cond(k):
             i = insts[k]
             lane = k in lane_branch
@@ -1193,6 +1206,11 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
                 return '!SCC'
             if i.op == 's_cbranch_scc1':
                 return 'SCC'
+            if i.op == 's_cbranch_execz' and w and k in st.fwd and not leaves_loop(k) and NEVER_SKIP:
+                # skipping a region when no lane is active is an optimization: compiler code is valid with exec = 0
+                # (the compiler leaves short regions unskipped), so the whole wave could run it with no vote. Off: the
+                # skipped regions hold loops and scalar loads, and running them costs far more than the vote (game)
+                return 'false'
             if i.op in ('s_cbranch_execz', 's_cbranch_execnz'):
                 e = 'wave_any(EX)' if w else 'EX'
                 return ('!' + e) if i.op == 's_cbranch_execz' else e
