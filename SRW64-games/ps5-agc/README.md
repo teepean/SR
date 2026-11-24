@@ -29,6 +29,7 @@ Load it only into the game: `LD_PRELOAD=.../libysr.so ./game_srw64`.
 | `YSR_WATCH=<start>-<end>` | record call sites of calls that have an argument register inside the range |
 | `YSR_DUMP=<caller>:<rbp offset>`, `YSR_DUMP_DIR`, `YSR_DUMP_DELAY` | samples of dispatches made through the helper for one caller, plus the shader header and the memory it points to |
 | `YSR_CLOTHDUMP=<file>`, `YSR_CLOTHSITE=<return address>` | one frame of a job's dispatch records (example of a game-specific dump; `tools/clothdump.py` prints it). In a recompiled program the call sites have new addresses: give the return address of the dispatch call in the SRW64 build. |
+| `YSR_TABLEDUMP=<return address>:<rbp offset>:<bytes>:<header pointer address>` | one dispatch's user data table (the pointer is read at `rbp - offset` of the function calling the dispatch) and its shader header; the reporter thread writes the table, the header, the shader code (64 KB from header + 0x38) and the memory behind every buffer descriptor in the table to `YSR_DUMP_DIR` (after `YSR_DUMP_DELAY` seconds). `tools/disgcn.py` disassembles the code. |
 | `YSR_POKE=<addr>:<byte>[,...]`, `YSR_POKE_DELAY`, `YSR_POKE_US` | keep bytes of the game's data at a value, e.g. to switch off a feature |
 
 ## Hooks (libsrhooks) and the SRW64 build
@@ -49,6 +50,7 @@ The hooks in `srhooks.c` (all off unless their environment variable is set):
 | `SRH_QUERY=1` | a GPU query that the main thread waits for (wave heights from an async compute queue) returns the previous frame's results from a per-entry cache, without waiting. Measured: no gain, because the emulated async queue runs more than a frame behind. Kept as an example of a data-level hook. |
 | `SRH_NATIVE=particles` | the particle binning/finalize recorder (4 phases × N emitters of tiny RDNA2 dispatches) records one native call instead (see below) |
 | `SRH_NATIVE=cloth` | the cloth job's dispatch loop (one single-workgroup dispatch per cloth instance, a full drain between dependency phases) records one native call instead. Values can be combined: `SRH_NATIVE=particles,cloth`. |
+| `SRH_SPIN_PAUSE=1` | the game's wait loops (65 loops spinning on `rdtsc` until a GPU label, a job or a query result is ready) execute `pause` in each iteration. Every loop tests a byte of the hook library, so the same build runs with and without it. |
 | `SRH_NATIVE=pdraw` | the particle draw code no longer reads a GPU-written value (an emitter's first particle index) on the CPU: a GPU copy into the draw's user data table is recorded instead (`sceAgcDcbDmaData`). Needed with `particles`: without the CPU read in the finalize recorder, this read would wait for the GPU. A small assembler stub replaces one load in the middle of the function and keeps all registers. |
 
 ## Native passes
@@ -115,6 +117,7 @@ The scripts read paths from the environment: `PS5_EBOOT` (converted executable),
 
 * `pushmap.py <pushmap file> [min per frame]`: marker tree with the game functions that push each marker and their callers (`SR_EXE=<SRW64 build>` when the log comes from the recompiled program)
 * `srmap.py <SRW64 build> <address>...`: maps addresses of the recompiled program back to the original program, using the `loc_<original address>` symbols (also a module for the other scripts)
+* `disgcn.py <code file> [bytes]`: RDNA2 (gfx1030) disassembly of a dumped shader up to the first `s_endpgm` (needs `llvm-mc`)
 * `clothdump.py <file>`: prints a `YSR_CLOTHDUMP` snapshot (work items per phase, pipelines with thread group sizes, per-record tables with the fields that are shared and those that differ)
 * `map_sites.py <log> [pattern]`: maps addresses from logs (e.g. readback sites) to functions and disassembly
 * `strxref.py <string>...`: code and data references to strings

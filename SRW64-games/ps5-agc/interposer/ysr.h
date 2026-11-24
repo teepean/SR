@@ -80,6 +80,13 @@ extern cloth_dump ysr_cloth;
 extern volatile int ysr_cloth_state;   // 0 off, 1 armed, 2 copying, 3 done
 extern uint64_t ysr_cloth_site;        // return address of the dispatch call (YSR_CLOTHSITE; recompiled programs differ)
 
+// YSR_TABLEDUMP=<dispatch return address>:<rbp offset of the user data table pointer>:<table bytes>:<address of the
+// shader header pointer> - one dispatch's user data table and shader header (copied in the hook, the memory behind
+// their pointers is written by the reporter thread through /proc/self/mem)
+typedef struct { uint64_t site, rbp_offset, bytes, header_pointer, table, header; uint8_t table_bytes[256]; } table_dump;
+extern table_dump ysr_table_dump;
+extern volatile int ysr_table_dump_state;   // 0 off, 1 armed, 2 copying, 3 done
+
 extern marker_info markers[MAX_MARKERS];
 extern volatile int num_markers;
 extern site_info sites[SITE_SLOTS];

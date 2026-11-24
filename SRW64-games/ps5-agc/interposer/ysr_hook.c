@@ -20,6 +20,8 @@ static struct { uint64_t pointer; int marker; } pointers[POINTER_SLOTS];
 site_info sites[SITE_SLOTS];
 push_info pushes[PUSH_SLOTS];
 cloth_dump ysr_cloth;
+table_dump ysr_table_dump;
+volatile int ysr_table_dump_state;
 volatile int ysr_cloth_state;
 uint64_t ysr_cloth_site = 0xAF5C19 + 0x400000;
 
@@ -270,6 +272,16 @@ __attribute__((used)) void ysr_hook(int function, uint64_t arg0, uint64_t arg1, 
     {
         dump_cloth();
         __atomic_store_n(&ysr_cloth_state, 3, __ATOMIC_RELEASE);
+    }
+
+    if (ysr_table_dump_state == 1 && function == ysr_cb_dispatch && return_address == ysr_table_dump.site &&
+        frame > (uint64_t)saved && frame - (uint64_t)saved < 0x100000 &&
+        __atomic_compare_exchange_n(&ysr_table_dump_state, &(int){1}, 2, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+    {
+        ysr_table_dump.table = *(const uint64_t *)(frame - ysr_table_dump.rbp_offset);
+        ysr_table_dump.header = (ysr_table_dump.header_pointer > 0x10000) ? *(const uint64_t *)ysr_table_dump.header_pointer : 0;
+        copy_bytes(ysr_table_dump.table_bytes, ysr_table_dump.table, (unsigned int)ysr_table_dump.bytes);
+        __atomic_store_n(&ysr_table_dump_state, 3, __ATOMIC_RELEASE);
     }
 
     if (ysr_watch_end != 0)

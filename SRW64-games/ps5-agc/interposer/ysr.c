@@ -214,6 +214,60 @@ static void *reporter(void *argument)
             }
         }
 
+        // YSR_TABLEDUMP: armed after YSR_DUMP_DELAY; files in YSR_DUMP_DIR: table, shader header, shader code (64 KB from
+        // header + 0x38) and 64 KB behind every buffer descriptor (V#) base found at a 16-byte boundary of the table
+        {
+            static unsigned int table_elapsed;
+            static int table_written;
+            const char *delay = getenv("YSR_DUMP_DELAY"), *directory = getenv("YSR_DUMP_DIR");
+            table_elapsed += interval;
+            if (ysr_table_dump.site != 0 && ysr_table_dump_state == 0 && table_elapsed >= (unsigned int)((delay != NULL) ? atoi(delay) : 60))
+            {
+                ysr_table_dump_state = 1;
+                fprintf(stderr, "[ysr] table dump armed (site 0x%llx)\n", (unsigned long long)ysr_table_dump.site);
+            }
+            if (!table_written && __atomic_load_n(&ysr_table_dump_state, __ATOMIC_ACQUIRE) == 3 && directory != NULL)
+            {
+                static uint8_t buffer[0x10000];
+                char name[512];
+                FILE *file;
+                unsigned int k;
+                int mem = open("/proc/self/mem", O_RDONLY);
+                table_written = 1;
+                snprintf(name, sizeof(name), "%s/table_%llx.bin", directory, (unsigned long long)ysr_table_dump.table);
+                if ((file = fopen(name, "wb")) != NULL) { fwrite(ysr_table_dump.table_bytes, 1, (size_t)ysr_table_dump.bytes, file); fclose(file); }
+                if (mem >= 0 && ysr_table_dump.header > 0x10000)
+                {
+                    uint64_t header[32], code;
+                    if (pread(mem, header, sizeof(header), (off_t)ysr_table_dump.header) == (ssize_t)sizeof(header))
+                    {
+                        snprintf(name, sizeof(name), "%s/header_%llx.bin", directory, (unsigned long long)ysr_table_dump.header);
+                        if ((file = fopen(name, "wb")) != NULL) { fwrite(header, 1, sizeof(header), file); fclose(file); }
+                        code = header[7];
+                        ssize_t got = (code > 0x10000 && code < 0x7fffffffffffULL) ? pread(mem, buffer, sizeof(buffer), (off_t)code) : -1;
+                        if (got > 0)
+                        {
+                            snprintf(name, sizeof(name), "%s/code_%llx.bin", directory, (unsigned long long)code);
+                            if ((file = fopen(name, "wb")) != NULL) { fwrite(buffer, 1, (size_t)got, file); fclose(file); }
+                        }
+                    }
+                }
+                for (k = 0; mem >= 0 && k + 16 <= ysr_table_dump.bytes; k += 8)
+                {
+                    uint64_t q0 = *(const uint64_t *)(ysr_table_dump.table_bytes + k), base = q0 & 0xffffffffffffULL;
+                    ssize_t got;
+                    if (base < 0x100000 || base > 0x7fffffffffffULL) continue;
+                    got = pread(mem, buffer, sizeof(buffer), (off_t)base);
+                    if (got <= 0) continue;
+                    snprintf(name, sizeof(name), "%s/vsharp%02x_%llx.bin", directory, k, (unsigned long long)base);
+                    if ((file = fopen(name, "wb")) != NULL) { fwrite(buffer, 1, (size_t)got, file); fclose(file); }
+                }
+                if (mem >= 0) close(mem);
+                fprintf(stderr, "[ysr] table dump: table 0x%llx header 0x%llx -> %s\n", (unsigned long long)ysr_table_dump.table,
+                        (unsigned long long)ysr_table_dump.header, directory);
+            }
+        }
+
         // YSR_DUMP_DELAY=<seconds> (default 60): sampling starts after this time
         {
             static unsigned int elapsed;
@@ -396,6 +450,21 @@ __attribute__((constructor)) static void ysr_init(void)
         if (ysr_selfwait_end != 0) fprintf(stderr, "[ysr] self-wait range 0x%llx-0x%llx: WaitRegMem compare function -> always\n", (unsigned long long)ysr_selfwait_start, (unsigned long long)ysr_selfwait_end);
     }
     if (getenv("YSR_CLOTHSITE") != NULL) ysr_cloth_site = strtoull(getenv("YSR_CLOTHSITE"), NULL, 0);
+    {
+        const char *t = getenv("YSR_TABLEDUMP");
+        char *end;
+        if (t != NULL)
+        {
+            ysr_table_dump.site = strtoull(t, &end, 0);
+            if (*end == ':') ysr_table_dump.rbp_offset = strtoull(end + 1, &end, 0);
+            if (*end == ':') ysr_table_dump.bytes = strtoull(end + 1, &end, 0);
+            if (*end == ':') ysr_table_dump.header_pointer = strtoull(end + 1, &end, 0);
+            if (ysr_table_dump.bytes > sizeof(ysr_table_dump.table_bytes)) ysr_table_dump.bytes = sizeof(ysr_table_dump.table_bytes);
+            fprintf(stderr, "[ysr] table dump at site 0x%llx: table at rbp-0x%llx (%llu bytes), header pointer at 0x%llx\n",
+                    (unsigned long long)ysr_table_dump.site, (unsigned long long)ysr_table_dump.rbp_offset,
+                    (unsigned long long)ysr_table_dump.bytes, (unsigned long long)ysr_table_dump.header_pointer);
+        }
+    }
     fprintf(stderr, "[ysr] libysr loaded: %u functions interposed, %u not found\n", YSR_NUM_FUNCS - missing, missing);
     {
         const char *poke = getenv("YSR_POKE");

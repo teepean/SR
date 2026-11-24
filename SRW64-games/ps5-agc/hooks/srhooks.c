@@ -446,6 +446,12 @@ __asm__(
     "\t.size srh_particle_draw_start_stub, . - srh_particle_draw_start_stub\n"
 );
 
+// ---------------------------------------------------------------------------------------------------------------
+// srh_spin_pause: the game's rdtsc wait loops (65 loops in 40 functions: job waits, GPU label waits, the ocean query
+// readers) spin without a pause instruction. The SR build tests this byte in each loop and executes `pause` when it
+// is set (SRH_SPIN_PAUSE=1): less pressure on the other hardware thread of the core and less power while waiting.
+uint8_t srh_spin_pause;
+
 static void *query_reporter(void *argument)
 {
     (void)argument;
@@ -474,9 +480,12 @@ __attribute__((constructor)) static void srhooks_init(void)
 {
     const char *env = getenv("SRH_CLOTH_RATE");
     if (env != NULL && atoi(env) > 0) cloth_rate = (unsigned int)atoi(env);
+    env = getenv("SRH_SPIN_PAUSE");
+    srh_spin_pause = (env != NULL && atoi(env) != 0);
     env = getenv("SRH_QUERY");
     query_enabled = (env != NULL && atoi(env) != 0);
-    fprintf(stderr, "[srhooks] loaded: cloth update rate 1/%u, GPU query copy-forward %s\n", cloth_rate, query_enabled ? "on" : "off");
+    fprintf(stderr, "[srhooks] loaded: cloth update rate 1/%u, GPU query copy-forward %s, pause in wait loops %s\n", cloth_rate,
+            query_enabled ? "on" : "off", srh_spin_pause ? "on" : "off");
     env = getenv("SRH_NATIVE");
     native_particles = (env != NULL && strstr(env, "particles") != NULL);
     agc_dcb_push_marker = (void *(*)(void *, const char *, uint32_t))dlsym(RTLD_DEFAULT, "+kSrjIVxKFE");   // sceAgcDcbPushMarker

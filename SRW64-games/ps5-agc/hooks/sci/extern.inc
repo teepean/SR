@@ -3,3 +3,4 @@ extern srh_query_record
 extern srh_particle_finalize
 extern srh_cloth_dispatch
 extern srh_particle_draw_start_stub
+extern srh_spin_pause
