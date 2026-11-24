@@ -233,9 +233,10 @@ vec4 buf_load_format(BufAddr ba) {
     float one = (type == 5u || type == 6u) ? uintBitsToFloat(1u) : 1.0;
     vec4 r;
     for (uint k = 0u; k < 4u; k++) {
+        // dst_sel: 0 -> 0, 1 -> 1, 4..7 -> x..w; a component the format lacks reads 0 (w: 1)
         uint sel = (ba.w3 >> (3u * k)) & 7u;
         float v = sel == 1u ? one : 0.0;
-        if (sel >= 4u && n != 0u) v = c[(sel - 4u) % n];
+        if (sel >= 4u) v = sel - 4u < n ? c[sel - 4u] : (sel == 7u ? one : 0.0);
         r[k] = v;
     }
     return r;

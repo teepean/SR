@@ -657,10 +657,13 @@ class Translator:
         else:
             soff = self.reg(off)
         w = [self.reg(vs, k) for k in range(4)]
-        loads = ' '.join('%s = (o_ + %du < %s) ? sld32(d_ == 0ul ? 0ul : d_ + %dul) : 0u;' % (
-            self.reg(d, k), 4 * k, w[2], 4 * k) for k in range(d.count))
-        self.emit('{ uint o_ = %s + %du; uint64_t d_ = o_ < %s ? sxlate(packUint2x32(uvec2(%s, %s & 0xffffu)) + '
-                  'uint64_t(o_), %du) : 0ul; %s }' % (soff, imm, w[2], w[0], w[1], 4 * d.count, loads))
+        # the buffer's size in bytes: num_records, times the stride when there is one (a constant buffer V# with a
+        # stride counts elements)
+        loads = ' '.join('%s = (o_ + %du < l_) ? sld32(d_ == 0ul ? 0ul : d_ + %dul) : 0u;' % (
+            self.reg(d, k), 4 * k, 4 * k) for k in range(d.count))
+        self.emit('{ uint o_ = %s + %du; uint st_ = (%s >> 16) & 0x3fffu; uint l_ = st_ != 0u ? %s * st_ : %s; '
+                  'uint64_t d_ = o_ < l_ ? sxlate(packUint2x32(uvec2(%s, %s & 0xffffu)) + uint64_t(o_), %du) : 0ul; '
+                  '%s }' % (soff, imm, w[1], w[2], w[2], w[0], w[1], 4 * d.count, loads))
         self.set_kind(d, 'value')
 
     # --- vector memory
