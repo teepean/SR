@@ -190,6 +190,10 @@ void record_faults() {
     if (FAULT_PAGE < NUM_PAGES) atomicOr(Bitmap(pc.faults).w[FAULT_PAGE >> 5], 1u << (FAULT_PAGE & 31u));
 }
 uint sld32(uint64_t d) { return d == 0ul ? 0u : RO32(d).v; }
+// a 64-bit value the same in every invocation of the subgroup, as the compiler should see it
+uint64_t uniform64(uint64_t x) {
+    return packUint2x32(uvec2(subgroupBroadcastFirst(uint(x)), subgroupBroadcastFirst(uint(x >> 32))));
+}
 // scalar load address: the CPU snapshot when it holds [a, a + bytes), else the page table
 uint64_t sxlate(uint64_t a, uint bytes) {
     if (SCALARS != 0ul) {
@@ -311,13 +315,47 @@ void buf_store_format(BufAddr ba, uvec4 data, uint ncomp) {
         else W8(a).v = uint8_t(raw);
     }
 }
+// unsigned small floats of the packed float formats: 5-bit exponent, 6 (11-bit) or 5 (10-bit) mantissa bits
+float small_float(uint x, uint mbits) {
+    uint e = x >> mbits, m = x & ((1u << mbits) - 1u);
+    if (e == 31u) return m == 0u ? uintBitsToFloat(0x7f800000u) : uintBitsToFloat(0x7fc00000u);
+    if (e == 0u) return float(m) * exp2(-14.0 - float(mbits));
+    return exp2(float(e) - 15.0) * (1.0 + float(m) / float(1u << mbits));
+}
 vec4 buf_load_format(BufAddr ba) {
     uint fmt = (ba.w3 >> 12) & 0x7fu;
     uint info = fmt < 78u ? FORMATS[fmt] : 0u;
     uint n = info & 7u, bits = (info >> 3) & 63u, type = info >> 9;
-    if (n == 0u && pc.counters != 0ul) atomicAdd(Counters(pc.counters).v[1], 1u);
     float c[4] = float[4](0.0, 0.0, 0.0, 0.0);
-    for (uint k = 0u; k < n && ba.ok; k++) {
+    if (fmt >= 30u && fmt <= 55u) {
+        // packed formats, one dword (Kyty's BufferFormat.h layouts): 11_11_10 x11 y11 z10, 10_11_11 x10 y11 z11,
+        // 2_10_10_10 x2 y10 z10 w10, 10_10_10_2 x10 y10 z10 w2 (from bit 0); variants UNorm, SNorm, UScaled, SScaled,
+        // UInt, SInt (, Float)
+        uint fam = fmt <= 36u ? 0u : (fmt <= 43u ? 1u : (fmt <= 49u ? 2u : 3u));
+        uint v = fmt - (fam == 0u ? 30u : (fam == 1u ? 37u : (fam == 2u ? 44u : 50u)));
+        type = v == 6u ? 0u : v + 1u;
+        uvec4 bw = fam == 0u ? uvec4(11u, 11u, 10u, 0u) : (fam == 1u ? uvec4(10u, 11u, 11u, 0u) :
+                   (fam == 2u ? uvec4(2u, 10u, 10u, 10u) : uvec4(10u, 10u, 10u, 2u)));
+        uvec4 bo = fam == 0u ? uvec4(0u, 11u, 22u, 0u) : (fam == 1u ? uvec4(0u, 10u, 21u, 0u) :
+                   (fam == 2u ? uvec4(0u, 2u, 12u, 22u) : uvec4(0u, 10u, 20u, 30u)));
+        n = fam < 2u ? 3u : 4u;
+        uint raw = ba.ok ? W32(ba.dev).v : 0u;
+        for (uint k = 0u; k < n; k++) {
+            uint b = bw[k];
+            uint x = bitfieldExtract(raw, int(bo[k]), int(b));
+            int sx = bitfieldExtract(int(raw), int(bo[k]), int(b));
+            float val;
+            if (type == 0u) val = small_float(x, b - 5u);
+            else if (type == 1u) val = unorm_exact(x, b);
+            else if (type == 2u) val = max(snorm_exact(sx, b), -1.0);
+            else if (type == 3u) val = float(x);
+            else if (type == 4u) val = float(sx);
+            else if (type == 5u) val = uintBitsToFloat(x);
+            else val = uintBitsToFloat(uint(sx));
+            c[k] = val;
+        }
+    } else if (n == 0u && pc.counters != 0ul) atomicAdd(Counters(pc.counters).v[1], 1u);
+    for (uint k = 0u; k < n && ba.ok && (fmt < 30u || fmt > 55u); k++) {
         uint64_t a = ba.dev + uint64_t(k * (bits >> 3));
         uint raw = bits == 32u ? W32(a).v : (bits == 16u ? uint(W16(a).v) : uint(W8(a).v));
         int sraw = bits == 32u ? int(raw) : bitfieldExtract(int(raw), 0, int(bits));
@@ -423,6 +461,11 @@ uint f2h_rtz(float f) {
     if (ue <= 0) return ue < -10 ? sign : sign | ((m | 0x800000u) >> uint(14 - ue));
     return sign | (uint(ue) << 10) | (m >> 13);
 }
+// Kyty's sRGB decode of a texel (spirvEmitterImage.cpp DecodeSrgb)
+vec4 srgb_decode(vec4 v) {
+    vec4 curve = pow((v + vec4(0.055)) * vec4(1.0 / 1.055), vec4(2.4));
+    return mix(curve, v * vec4(1.0 / 12.92), lessThanEqual(v, vec4(0.04045)));
+}
 bool cmp_class(float x, uint mask) {
     uint bits = floatBitsToUint(x);
     uint neg = bits >> 31, e = (bits >> 23) & 0xffu, m = bits & 0x7fffffu;
@@ -488,8 +531,10 @@ uint permlanex16_ff(uint x) { return subgroupShuffle(x, gl_SubgroupInvocationID 
     graphics = stage != 'cs'
     text = text.replace('PUSH_BLOCK', GRAPHICS_PUSH if graphics else COMPUTE_PUSH)
     text = text.replace('LOCAL_SIZE_DECL', '' if graphics else 'layout(local_size_x = HOST_THREADS) in;')
-    text = text.replace('QUAD_EXTENSION', '#extension GL_KHR_shader_subgroup_quad : require\n'
-                        '#extension GL_EXT_fragment_shader_barycentric : enable' if stage == 'ps' else '')
+    gfx_ext = ('#extension GL_EXT_nonuniform_qualifier : enable\n#extension GL_EXT_scalar_block_layout : enable\n'
+               '#extension GL_EXT_texture_offset_non_const : enable\n' if graphics else '')
+    text = text.replace('QUAD_EXTENSION', gfx_ext + ('#extension GL_KHR_shader_subgroup_quad : require\n'
+                        '#extension GL_EXT_fragment_shader_barycentric : enable' if stage == 'ps' else ''))
     text = text.replace('GRAPHICS_ON', '1' if graphics else '0').replace('LMASK_BITS', '1u' if graphics else '3u')
     if graphics:
         # no debug counters or probes in the graphics push block

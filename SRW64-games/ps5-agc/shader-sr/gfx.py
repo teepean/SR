@@ -208,7 +208,13 @@ def load(gres_path, spv_path=None):
         elif w[0] == 'binding':
             g.bindings.append(_kv(w[1:]))
     g.interface = {}
+    g.srgb_decode = False
     if spv_path:
         g.builtins_in, g.builtins_out = spirv_builtins(spv_path)
         g.interface = spirv_interface(spv_path)
+        # Kyty decodes sRGB in the shader when the device has no R8 / R8G8 sRGB views (spirvEmitterImage.cpp
+        # DecodeSrgb: pow((v + 0.055) / 1.055, 2.4)): its module then holds the constant 2.4
+        data = open(spv_path, 'rb').read()
+        words = struct.unpack('<%dI' % (len(data) // 4), data)
+        g.srgb_decode = 0x4019999a in words
     return g

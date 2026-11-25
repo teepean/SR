@@ -62,7 +62,8 @@ def load_resources_gres(path):
     """a graphics module record (.gres, Kyty's graphics plug-in): the same image / sampler / pair lines as a .res, with
     the stage's Vulkan binding of each image (vk_binding; graphics stages offset Kyty's descriptor kinds) and the
     stage's sampler binding (the 'binding ... kind Samplers' line)"""
-    res = {'images': [], 'samplers': [], 'pairs': [], 'key': None, 'sampler_binding': None}
+    res = {'images': [], 'samplers': [], 'pairs': [], 'key': None, 'sampler_binding': None, 'srt_binding': None,
+           'srt_uniform': False}
     for line in open(path):
         words = line.split()
         if not words:
@@ -71,6 +72,10 @@ def load_resources_gres(path):
             d = dict(zip(words[1::2], words[2::2]))
             if d.get('kind') == 'Samplers':
                 res['sampler_binding'] = int(d['binding'])
+            elif d.get('kind') == 'FlattenedSrt':
+                res['srt_binding'] = int(d['binding'])
+        elif words[0] == 'push_data' and 'flattened_srt_uniform' in words:
+            res['srt_uniform'] = words[words.index('flattened_srt_uniform') + 1] == '1'
         elif words[0] in ('image', 'sampler'):
             d = {'index': int(words[1])}
             for k in range(2, len(words) - 1, 2):
@@ -86,7 +91,7 @@ def load_resources_gres(path):
 
 
 def family(base):
-    if base.startswith('image_sample') or base.startswith('image_gather'):
+    if base.startswith('image_sample') or base.startswith('image_gather') or base == 'image_get_lod':
         return 'sample'
     if base.startswith('image_store'):
         return 'store'
@@ -108,16 +113,26 @@ def operands(inst):
 class ImageMap:
     """instruction offset -> (Kyty image dict, Kyty sampler dict or None)"""
 
-    def __init__(self, insts, res, all_sgpr_defs, user_sgprs=16):
+    def __init__(self, insts, res, all_sgpr_defs, user_sgprs=16, heap_ok=False):
+        """heap_ok: images from Kyty's image heap are supported (the translation gets the heap table bases): the
+        instruction's T# address (captured at its s_load, heap_loads) - the table base indexes the view's slots"""
         self.res = res
+        self.heap = {}           # instruction offset -> heap lookup (root, mapping offset, kind images, load pc)
+        self.heap_loads = set()  # s_load offsets whose address the heap lookups need
         # value numbers of the scalar registers (program order): user data, loads (pointer value numbers + offset),
         # copies; any other write is a value of its own. Kyty merges image uses by the source of the descriptor dwords,
         # which these numbers follow: a descriptor loaded again from the same place has the same numbers
         vn = {r: ('user', r) for r in range(user_sgprs)}
         tkey, skey = {}, {}
+        loadpc, tload = {}, {}       # SGPR -> the s_load that wrote it; image instruction -> the T#'s one s_load
         for i in insts:
             if i.base.startswith('image_'):
                 _, _, t, s = operands(i)
+                # the T# from one scalar load: (its offset, the T#'s first dword in it)
+                parts = [loadpc.get(t.first + k) for k in range(t.count)]
+                ok = all(p_ is not None and p_[0] == parts[0][0] and p_[1] == parts[0][1] + k
+                         for k, p_ in enumerate(parts)) if parts and parts[0] is not None else False
+                tload[i.off] = parts[0] if ok else None
                 tkey[i.off] = tuple(vn.get(t.first + k, ('undef', t.first + k)) for k in range(t.count))
                 skey[i.off] = (tuple(vn.get(s.first + k, ('undef', s.first + k)) for k in range(s.count))
                                if s is not None else None)
@@ -140,13 +155,24 @@ class ImageMap:
                     new[i.ops[0].first + k] = vn.get(i.ops[1].first + k, ('undef', i.ops[1].first + k))
             for r in defs:
                 vn[r] = new.get(r, ('def', i.off, r))
+                if i.base.startswith(('s_load_dword', 's_buffer_load_dword')) and i.ops and i.ops[0].kind == 'reg':
+                    loadpc[r] = (i.off, r - i.ops[0].first)
+                else:
+                    loadpc.pop(r, None)
         self.insts = {i.off: i for i in insts}
         by_pc = {i.off: i for i in insts if i.base.startswith('image_')}
         # anchors: the first use of each Kyty image / sampler is one of our instructions
         anchors = collections.defaultdict(list)       # (tkey, dim, depth) -> [image]
         family_class = {}
+        # the typed heap arrays of a heap root (its indirect_resources after the root itself) are not uses of their own
+        kind_images = set()
         for img in res['images']:
-            if img.get('heap') or img.get('table_capacity'):
+            ids = [x for x in str(img.get('indirect_resources', '')).split(',') if x.strip()]
+            kind_images.update(int(x) for x in ids[1:])
+        for img in res['images']:
+            if img['index'] in kind_images:
+                continue
+            if img.get('table_capacity') or (img.get('heap') and not heap_ok):
                 raise Unsupported('image %d comes from a descriptor table / the image heap' % img['index'])
             a = by_pc.get(img['pc'])
             if a is None:
@@ -173,10 +199,49 @@ class ImageMap:
             smp = None
             if fam == 'sample':
                 sc = sampler_anchors.get(skey[off], [])
+                if len(sc) > 1:
+                    # several samplers from the same S# (Kyty's variants for the kinds of a heap table): the one the
+                    # record pairs with the instruction's image
+                    paired = set(sm for im, sm in res['pairs'] if im == cands[0]['index'])
+                    sc = [x for x in sc if x['index'] in paired] or sc
                 if len(sc) != 1:
                     raise Unsupported('%s: %d matching samplers' % (i, len(sc)))
                 smp = sc[0]
             self.map[off] = (cands[0], smp)
+            if cands[0].get('heap'):
+                self.heap[off] = self.heap_lookup(i, cands[0], tload.get(off))
+
+    def heap_lookup(self, inst, img, load_pc):
+        """a heap image: Kyty's view of the root's table (spirvEmitterMemoryHelpers.cpp EmitImageHeapEntry): the
+        flattened SRT holds {slot count, slots BDA} at mapping_offset; the root's indirect_resources list the typed
+        heap arrays, kind k -> indirect_resources[k + 1]"""
+        if load_pc is None:
+            raise Unsupported('%s: heap image whose T# is not one s_load' % inst)
+        root_index = img.get('indirect_root', -1)
+        root = next((x for x in self.res['images'] if x['index'] == root_index), None)
+        # the table base's place in the plug-in's user slot: the root's rank among the module's heap roots
+        roots = sorted(x['index'] for x in self.res['images'] if x.get('heap') and x.get('indirect_root') == x['index'])
+        rank = roots.index(root_index) if root_index in roots else -1
+        if root is None or rank < 0 or rank >= 16:
+            raise Unsupported('%s: heap root %s (rank %d)' % (inst, root_index, rank))
+        kinds_text = str(root.get('indirect_resources', ''))
+        ids = [int(x) for x in kinds_text.split(',') if x.strip()] if kinds_text else []
+        kinds = []
+        for rid in ids[1:]:
+            k = next((x for x in self.res['images'] if x['index'] == rid), None)
+            if k is None:
+                raise Unsupported('%s: heap kind image %d missing' % (inst, rid))
+            if k['dim'] != img['dim'] or k['class'] != CLASS_SAMPLED:
+                raise Unsupported('%s: heap kind %d of another dimension' % (inst, rid))
+            # a kind of another numeric class (an integer texture in a table the instruction samples as float): not
+            # read (zeros)
+            kinds.append(k if k['numeric'] == img['numeric'] else None)
+        if self.res.get('srt_binding') is None:
+            raise Unsupported('%s: no flattened SRT binding' % inst)
+        self.heap_loads.add(load_pc[0])
+        return {'root': root_index, 'rank': rank, 'mapping': img.get('mapping_offset', 0), 'kinds': kinds,
+                'load_pc': load_pc[0],
+                'dword': load_pc[1]}
 
     @staticmethod
     def image_key(inst, tkey):
@@ -187,7 +252,13 @@ class ImageMap:
     def declarations(self):
         """GLSL declarations of the bindings the program's images use (Kyty's layout: set 0)"""
         by_binding = {}
-        for img, _ in self.map.values():
+        heap_kinds = {}
+        for off, (img, _) in self.map.items():
+            if off in self.heap:
+                for k in self.heap[off]['kinds']:
+                    if k is not None:
+                        heap_kinds[k['index']] = k
+                continue
             b = img['binding']
             if b < 0:
                 raise Unsupported('image %d has no binding' % img['index'])
@@ -200,6 +271,15 @@ class ImageMap:
         lines = []
         for b, (t, n) in sorted(by_binding.items()):
             lines.append('layout(set = 0, binding = %d) uniform %s IMG%d[%d];' % (b, t, b, n))
+        for idx, k in sorted(heap_kinds.items()):
+            # Kyty's image heap: set 1, binding 0, one array per image type aliasing the binding
+            lines.append('layout(set = 1, binding = 0) uniform %s HEAP_%d[65536];' % (glsl_type(k), idx))
+        if self.heap:
+            b = self.res['srt_binding']
+            if self.res.get('srt_uniform'):
+                lines.append('layout(set = 0, binding = %d, scalar) uniform FlattenedSrt { uint w[16384]; } fsrt;' % b)
+            else:
+                lines.append('layout(set = 0, binding = %d, std430) readonly buffer FlattenedSrt { uint w[]; } fsrt;' % b)
         nsmp = max((s['index'] + 1 for _, s in self.map.values() if s is not None), default=0)
         if nsmp:
             sb = self.res.get('sampler_binding')

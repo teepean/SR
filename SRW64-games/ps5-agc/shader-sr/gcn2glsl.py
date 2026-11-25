@@ -61,6 +61,9 @@ class Translator:
         self.ps_inputs = {}      # pixel stage: spirv location -> Kyty's input (interface info) the program reads
         self.ps_outputs = {}     # pixel stage: MRT -> Kyty's output (interface info) the program writes
         self.ps_depth = False
+        self.heap_addrs = set()  # s_load offsets whose T# address a heap image lookup reads (TADDR_<off>)
+        self.vgpr_limit = 1      # one past the highest VGPR the program names (relative accesses stay below it)
+        self.images = None
 
     # ------------------------------------------------------------------------------------------------ operands
     def note_reg(self, o):
@@ -694,6 +697,12 @@ class Translator:
         self.emit('%s = uint(int(%s) * %d);' % (self.reg(d), self.reg(d), v))
         self.set_kind(d, 'value')
 
+    def op_s_bfe_i32(self, inst):
+        d, a, c = inst.ops
+        self.emit('{ uint b_ = %s; %s = bfe_i32(%s, b_ & 31u, (b_ >> 16) & 0x7fu); SCC = %s != 0u; }' % (
+            self.sval(c), self.reg(d), self.sval(a), self.reg(d)))
+        self.set_kind(d, 'value')
+
     def op_s_bfe_u32(self, inst):
         d, a, c = inst.ops
         self.emit('{ uint b_ = %s; %s = bfe_u32(%s, b_ & 31u, (b_ >> 16) & 0x7fu); SCC = %s != 0u; }' % (
@@ -1074,6 +1083,12 @@ class Translator:
     def op_s_orn2_b64(self, inst):
         self.logic64(inst, lambda x, y: '(%s | ~%s)' % (x, y), lambda x, y: '(%s | ~%s)' % (x, y))
 
+    def op_s_nand_b64(self, inst):
+        self.logic64(inst, lambda x, y: '~(%s & %s)' % (x, y), lambda x, y: '~(%s & %s)' % (x, y))
+
+    def op_s_xnor_b64(self, inst):
+        self.logic64(inst, lambda x, y: '~(%s ^ %s)' % (x, y), lambda x, y: '~(%s ^ %s)' % (x, y))
+
     def op_s_nor_b64(self, inst):
         self.logic64(inst, lambda x, y: '~(%s | %s)' % (x, y), lambda x, y: '~(%s | %s)' % (x, y))
 
@@ -1168,6 +1183,38 @@ class Translator:
     def op_s_max_u32(self, inst):
         self.salu2(inst, '(%s > %s ? %s : %s)' % ('%s', '%s', self.sval(inst.ops[1]), self.sval(inst.ops[2])),
                    '%s > %s' % (self.sval(inst.ops[1]), self.sval(inst.ops[2])))
+
+    def movrel_regs(self, first):
+        """the VGPRs a relative (M0-indexed) access from `first` may reach: up to the program's highest VGPR"""
+        regs = list(range(first, max(self.vgpr_limit, first + 1)))
+        for n in regs:
+            self.used_v.add(n)
+        return regs
+
+    def op_v_movrels_b32(self, inst):
+        # D = VGPR[S + M0]
+        d, a = inst.ops[:2]
+        cases = ' '.join('case %du: r_ = v%d_%d; break;' % (n, n, self.h) for n in self.movrel_regs(a.first))
+        self.emit('if (EX) { uint r_ = 0u; switch (%du + s124) { %s default: break; } %s = r_; }' % (
+            a.first, cases, self.reg(d)))
+        self.used_s.add(124)
+
+    def op_v_movreld_b32(self, inst):
+        # VGPR[D + M0] = S
+        d, a = inst.ops[:2]
+        x = self.src_u32(a)
+        cases = ' '.join('case %du: v%d_%d = x_; break;' % (n, n, self.h) for n in self.movrel_regs(d.first))
+        self.emit('if (EX) { uint x_ = %s; switch (%du + s124) { %s default: break; } }' % (x, d.first, cases))
+        self.used_s.add(124)
+
+    def op_v_movrelsd_b32(self, inst):
+        # VGPR[D + M0] = VGPR[S + M0]
+        d, a = inst.ops[:2]
+        reads = ' '.join('case %du: r_ = v%d_%d; break;' % (n, n, self.h) for n in self.movrel_regs(a.first))
+        writes = ' '.join('case %du: v%d_%d = r_; break;' % (n, n, self.h) for n in self.movrel_regs(d.first))
+        self.emit('if (EX) { uint r_ = 0u; switch (%du + s124) { %s default: break; } switch (%du + s124) { %s '
+                  'default: break; } }' % (a.first, reads, d.first, writes))
+        self.used_s.add(124)
 
     def op_v_bfrev_b32(self, inst):
         d, a = inst.ops[:2]
@@ -1445,9 +1492,15 @@ class Translator:
         # entry of the load's reach node (scalar_reach); a pointer the chains do not reach (loaded at a run-time
         # offset, computed) is read through the page table, as the emulator's own translation reads it
         node = getattr(self, 'sload_node', {}).get(inst.off)
-        xl = ('sxlate_k(%du, %s + %s, %du)' % (node, addr, offset, 4 * n) if node is not None else
-              'xlate(%s + %s)' % (addr, offset))
+        ga = '%s + %s' % (addr, offset)
+        if self.stage != 'cs':
+            # graphics: one guest lane per invocation, so the scalar address is the same in every invocation of the
+            # subgroup (one draw's user data); saying so lets the compiler use uniform loads
+            ga = 'uniform64(%s)' % ga
+        xl = ('sxlate_k(%du, %s, %du)' % (node, ga, 4 * n) if node is not None else 'xlate(%s)' % ga)
         loads = ' '.join('%s = sld32(d_ == 0ul ? 0ul : d_ + %dul);' % (self.reg(d, k), 4 * k) for k in range(n))
+        if self.images is not None and inst.off in self.images.heap_loads:
+            loads += ' TADDR_%x = %s + %s;' % (inst.off, addr, offset)
         self.emit('{ uint64_t d_ = %s; %s probe_sload(%s + %s, %s); }' % (
             xl, loads, addr, offset, self.reg(d, 0)))
         self.set_kind(d, 'value')
@@ -1468,6 +1521,12 @@ class Translator:
             self.reg(d, k), 4 * k, 4 * k) for k in range(d.count))
         # one translation per V# (sbuf_xlate: the V#'s snapshot entry or the page table), shared by its loads
         node = getattr(self, 'sload_node', {}).get(inst.off)
+        if self.images is not None and inst.off in self.images.heap_loads:
+            loads += ' TADDR_%x = packUint2x32(uvec2(%s, %s & 0xffffu)) + uint64_t(o_);' % (inst.off, w[0], w[1])
+        if self.stage != 'cs':
+            # graphics: the V# and the offset are the same in every invocation of the subgroup (see op_sload)
+            w = ['subgroupBroadcastFirst(%s)' % x for x in w]
+            soff = 'subgroupBroadcastFirst(%s)' % soff
         self.emit('{ uint o_ = %s + %du; uint st_ = (%s >> 16) & 0x3fffu; uint l_ = st_ != 0u ? %s * st_ : %s; '
                   'uint64_t b_ = sbuf_xlate(%d, %s, %s); uint64_t d_ = (o_ < l_ && b_ != 0ul) ? b_ + uint64_t(o_) : 0ul; '
                   '%s }' % (soff, imm, w[1], w[2], w[2], node if node is not None else -1, w[0], w[1], loads))
@@ -1591,6 +1650,28 @@ class Translator:
             return 'v%d_%d' % (o.list[k], self.h)
         return self.reg(o, k)
 
+    def image_emit(self, heap, vec, e, results, srgb=False):
+        """the statement of an image read: e reads through var (HV_ for a heap image: Kyty's view lookup, then the
+        typed heap array of the slot's kind)"""
+        if srgb:
+            e = 'srgb_decode(%s)' % e
+        if heap is None:
+            self.emit('if (EX) { %s4 r_ = %s; %s }' % (vec, e, results))
+            return
+        rank, m = heap['rank'], heap['mapping']
+        # the table base Kyty's view uses: the user slot, dwords [64, 96) geometry stage, [96, 128) pixel stage, one
+        # uint64 per heap root (rank among the module's roots)
+        slot = (64 if self.stage != 'ps' else 96) + 2 * rank
+        chain = ' else '.join('if (k_ == %du) r_ = %s;' % (k, e.replace('HV_', 'HEAP_%d[nonuniformEXT(el_)]' % kind['index']))
+                              for k, kind in enumerate(heap['kinds']) if kind is not None)
+        self.emit('if (EX) { UserTable ut_ = UserTable(pc.user_slot); '
+                  'uint64_t hb_ = packUint2x32(uvec2(ut_.v[%du], ut_.v[%du])); uint key_ = uint(TADDR_%x + %dul - hb_); '
+                  'uint cnt_ = fsrt.w[%du]; uint64_t sl_ = packUint2x32(uvec2(fsrt.w[%du], fsrt.w[%du])); '
+                  'uint e_ = (hb_ == 0ul || sl_ == 0ul) ? 0xffffffffu : W32(sl_ + uint64_t(min(key_ >> 2, cnt_)) * 4ul).v; '
+                  'uint k_ = e_ >> 20; uint el_ = e_ & 0xfffffu; %s4 r_ = %s4(0); %s %s }' % (
+                      slot, slot + 1, heap['load_pc'], 4 * heap['dword'], m, m + 1, m + 2, vec, vec, chain, results))
+        self.heap_addrs.add(heap['load_pc'])
+
     def op_image(self, inst):
         m = self.images.map.get(inst.off) if getattr(self, 'images', None) is not None else None
         if m is None:
@@ -1606,9 +1687,15 @@ class Translator:
         if dim not in images.GUEST_DIM:
             raise images.Unsupported('%s: dimension %s' % (inst, dim))
         ncoord, layered = images.GUEST_DIM[dim]
-        if img.get('conversion', 0) or img.get('srgb', 0):
+        srgb = False
+        if img.get('srgb', 0) and not img.get('conversion', 0) and self.gfx is not None:
+            # Kyty's in-shader decode (when its module has it): the texel through the sRGB curve
+            if self.gfx.srgb_decode:
+                srgb = True
+        elif img.get('conversion', 0) or img.get('srgb', 0):
             raise images.Unsupported('%s: image %d needs a format conversion' % (inst, img['index']))
-        var = 'IMG%d[%d]' % (img['binding'], img['element'])
+        heap = self.images.heap.get(inst.off)
+        var = 'HV_' if heap is not None else 'IMG%d[%d]' % (img['binding'], img['element'])
         numeric = img['numeric']
         vec = {images.NUMERIC_FLOAT: 'vec', images.NUMERIC_UINT: 'uvec', images.NUMERIC_SINT: 'ivec'}[numeric]
         fam = images.family(b)
@@ -1662,7 +1749,7 @@ class Translator:
                 e = 'texelFetch(%s, %s, 0)' % (var, coord)
             else:
                 e = 'imageLoad(%s, %s)' % (var, coord)
-            self.emit('if (EX) { %s4 r_ = %s; %s }' % (vec, e, results('r_')))
+            self.image_emit(heap, vec, e, results('r_'), srgb)
             return
         if fam == 'store':
             if b != 'image_store' or d16:
@@ -1689,6 +1776,8 @@ class Translator:
                  images.DIM_3D: 3}.get(kdim)
             if n is None:
                 raise images.Unsupported('%s: dimension %d' % (inst, kdim))
+            if heap is not None:
+                raise images.Unsupported('%s: size of a heap image' % inst)
             size = 'textureSize(%s, int(%s))' % (var, self.img_addr(vaddr, 0))
             vals = ['uint(sz_)' if n == 1 else 'uint(sz_.%s)' % 'xyz'[c] for c in range(n)]
             while len(vals) < 3:
@@ -1698,52 +1787,86 @@ class Translator:
                 '%s = %s;' % (self.reg(vdata, k), vals[c]) for k, c in enumerate(comps))))
             return
         if fam == 'sample':
-            if b not in ('image_sample_lz', 'image_sample_l', 'image_gather4_lz', 'image_sample_c_lz', 'image_sample',
-                         'image_sample_b', 'image_sample_d'):
+            # gfx10 address order: offset (_o), bias (_b), z compare (_c), derivatives (_d), coordinates, lod (_l)
+            offs = b.endswith('_o')
+            core = b[:-2] if offs else b
+            if core not in ('image_sample_lz', 'image_sample_l', 'image_gather4_lz', 'image_sample_c_lz',
+                            'image_sample', 'image_sample_b', 'image_sample_d', 'image_get_lod'):
                 raise images.Unsupported('%s' % inst)
             if img['class'] != images.CLASS_SAMPLED:
                 raise images.Unsupported('%s: sampling a storage image' % inst)
             k = 0
+            offset = None
             ref = None
             bias = None
             grads = None
-            if b == 'image_sample_c_lz':
-                ref = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, 0)
+            if offs:
+                # texel offsets: 6-bit signed fields at bits 0, 8, 16 (non-constant: Kyty's Offset operand, allowed
+                # by the plug-in's validator and maintenance8)
+                o_ = self.img_addr(vaddr, 0)
+                nofs = 3 if img['dim'] == images.DIM_3D else (1 if img['dim'] in images.ONE_DIMENSIONAL else 2)
+                fields = ['bitfieldExtract(int(%s), %d, 6)' % (o_, 8 * j) for j in range(nofs)]
+                if img['dim'] in images.ONE_DIMENSIONAL:
+                    fields.append('0')
+                    nofs = 2
+                offset = fields[0] if nofs == 1 else 'ivec%d(%s)' % (nofs, ', '.join(fields))
                 k = 1
-            if b == 'image_sample_b':
-                # address: bias, coordinates
-                bias = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, 0)
-                k = 1
-            if b == 'image_sample_d':
-                # address: derivatives (x: ds/dh, dt/dh, y: ds/dv, dt/dv for 2D), coordinates
+            if core == 'image_sample_c_lz':
+                ref = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, k)
+                k += 1
+            if core == 'image_sample_b':
+                bias = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, k)
+                k += 1
+            if core == 'image_sample_d':
+                # derivatives (x: ds/dh, dt/dh, y: ds/dv, dt/dv for 2D), then the coordinates
                 if img['dim'] not in (images.DIM_2D, images.DIM_2D_ARRAY) or ncoord - (1 if layered else 0) != 2:
                     raise images.Unsupported('%s: gradients of a non-2D image' % inst)
-                g_ = ['uintBitsToFloat(%s)' % self.img_addr(vaddr, j) for j in range(4)]
+                g_ = ['uintBitsToFloat(%s)' % self.img_addr(vaddr, k + j) for j in range(4)]
                 grads = ('vec2(%s, %s)' % (g_[0], g_[1]), 'vec2(%s, %s)' % (g_[2], g_[3]))
-                k = 4
-            implicit = b in ('image_sample', 'image_sample_b')
+                k += 4
+            implicit = core in ('image_sample', 'image_sample_b', 'image_get_lod')
             if implicit and self.stage != 'ps':
                 raise images.Unsupported('%s: implicit derivatives outside the pixel stage' % inst)
-            lod = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, k + ncoord) if b == 'image_sample_l' else '0.0'
+            lod = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, k + ncoord) if core == 'image_sample_l' else '0.0'
             kdim = images.DIM_SUFFIX[img['dim']]
             pre = {images.NUMERIC_FLOAT: '', images.NUMERIC_UINT: 'u', images.NUMERIC_SINT: 'i'}[numeric]
             smpvar = 'SMP[%d]' % smp['index']
             if ref is not None:
                 raise images.Unsupported('%s: depth compare' % inst)
+            if offset is not None and img.get('cube'):
+                raise images.Unsupported('%s: offsets on a cube' % inst)
             comb = '%ssampler%s(%s, %s)' % (pre, kdim, var, smpvar)
             coord = coords('uintBitsToFloat(%s)', 'vec', k, sample=True)
-            if b == 'image_gather4_lz':
+            if offset is not None:
+                self.needs_offset_ext = True
+            if core == 'image_get_lod':
+                # Kyty: OpImageQueryLod, its two components as the first two results
+                if offset is not None or numeric != images.NUMERIC_FLOAT:
+                    raise images.Unsupported('%s' % inst)
+                e = 'vec4(textureQueryLod(%s, %s), 0.0, 0.0)' % (comb, coord)
+                comps = [c for c in range(4) if (dmask >> c) & 1]
+                self.image_emit(heap, vec, e, results('r_'))
+                return
+            if core == 'image_gather4_lz':
                 if len(comps) != 1:
                     raise images.Unsupported('%s: gather of %d components' % (inst, len(comps)))
-                e = 'textureGather(%s, %s, %d)' % (comb, coord, comps[0])
+                if offset is not None:
+                    e = 'textureGatherOffset(%s, %s, %s, %d)' % (comb, coord, offset, comps[0])
+                else:
+                    e = 'textureGather(%s, %s, %d)' % (comb, coord, comps[0])
                 comps = [0, 1, 2, 3]
             elif grads is not None:
-                e = 'textureGrad(%s, %s, %s, %s)' % (comb, coord, grads[0], grads[1])
+                e = ('textureGradOffset(%s, %s, %s, %s, %s)' % (comb, coord, grads[0], grads[1], offset)
+                     if offset is not None else 'textureGrad(%s, %s, %s, %s)' % (comb, coord, grads[0], grads[1]))
             elif implicit:
-                e = 'texture(%s, %s%s)' % (comb, coord, ', ' + bias if bias else '')
+                if offset is not None:
+                    e = 'textureOffset(%s, %s, %s%s)' % (comb, coord, offset, ', ' + bias if bias else '')
+                else:
+                    e = 'texture(%s, %s%s)' % (comb, coord, ', ' + bias if bias else '')
             else:
-                e = 'textureLod(%s, %s, %s)' % (comb, coord, lod)
-            self.emit('if (EX) { %s4 r_ = %s; %s }' % (vec, e, results('r_')))
+                e = ('textureLodOffset(%s, %s, %s, %s)' % (comb, coord, lod, offset) if offset is not None
+                     else 'textureLod(%s, %s, %s)' % (comb, coord, lod))
+            self.image_emit(heap, vec, e, results('r_'), srgb)
             return
         raise images.Unsupported('%s' % inst)
 
@@ -2803,12 +2926,13 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
         user_sgprs = gfx_if.user_data_base + user_sgprs
         lds_bytes = 4
     tr = Translator(insts, threads, lds_bytes, user_sgprs, tgid_sgpr)
+    tr.vgpr_limit = max([o.first + o.count for i in insts for o in i.ops if o.kind == 'reg' and o.file == 'v'] + [1])
     if stage != 'cs':
         tr.stage, tr.halves, tr.gfx = stage, (0,), gfx_if
     res = images.load_resources(resources) if resources else None
     if res is None and gfx_if is not None and (gfx_if.images or gfx_if.samplers):
         res = images.load_resources_gres(gfx_if.path)
-    tr.images = images.ImageMap(insts, res, all_sgpr_defs, user_sgprs) if res else None
+    tr.images = images.ImageMap(insts, res, all_sgpr_defs, user_sgprs, heap_ok=gfx_if is not None) if res else None
     install_reversed(tr)
     tr.wave_points, tr.lds_points, tr.lds_reads, tr.lds_writes = set(), set(), set(), set()
     tr.ballot_index = set()
@@ -3145,6 +3269,8 @@ def graphics_shader(tr, stage, g, flags_decl, body, nvgpr, user_end):
     lines = [prelude.prelude(64, 1, nvgpr, False, stage)]
     if tr.images is not None:
         lines.append(tr.images.declarations())
+        for off in sorted(tr.images.heap_loads):
+            lines.append('uint64_t TADDR_%x = 0ul;   // the guest address of a heap image\'s T# (s_load at %05x)' % (off, off))
     for decl in getattr(tr, 'tables_decl', {}).values():
         lines.append(decl)
     base = g.user_data_base
