@@ -19,6 +19,8 @@ class Interface:
         self.builtins_in = set()
         self.indirect_draw = False
         self.indirect_offsets = (255, 255)
+        self.fetch = {}            # the 'fetch' line (attrib_reg, buffer_reg, dynamic_fetch, ...)
+        self.fetch_resources = []  # the 'fetch_resource' lines: attr, count, vsharp words
         self.pixel = {}            # the 'pixel' line (key -> value)
         self.target_output_mode = []
         self.interpolators = []
@@ -183,8 +185,17 @@ def load(gres_path, spv_path=None):
             d = _kv(w[2:])
             d['n'] = int(w[1])
             g.inputs.append(d)
+        elif w[0] == 'fetch_resource':
+            d = _kv(w[2:])
+            try:
+                k = w.index('vsharp')
+                d['vsharp'] = [int(x, 16) for x in w[k + 1:k + 5]]
+            except (ValueError, IndexError):
+                d['vsharp'] = None
+            g.fetch_resources.append(d)
         elif w[0] == 'fetch':
             d = _kv(w[1:])
+            g.fetch = d
             g.indirect_draw = d.get('indirect_draw') == '1'
             try:
                 k = w.index('indirect_offsets')

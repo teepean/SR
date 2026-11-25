@@ -62,6 +62,8 @@ class Translator:
         self.ps_outputs = {}     # pixel stage: MRT -> Kyty's output (interface info) the program writes
         self.ps_depth = False
         self.heap_addrs = set()  # s_load offsets whose T# address a heap image lookup reads (TADDR_<off>)
+        self.fetch_map = {}      # vertex stage: embedded fetch instruction offset -> attribute (embedded_fetches)
+        self.vs_inputs = {}      # vertex stage: attribute -> (location, interface info) of Kyty's vertex inputs read
         self.vgpr_limit = 1      # one past the highest VGPR the program names (relative accesses stay below it)
         self.images = None
 
@@ -1216,6 +1218,50 @@ class Translator:
                   'default: break; } }' % (a.first, reads, d.first, writes))
         self.used_s.add(124)
 
+    def vertex_input(self, inst, d):
+        """an embedded vertex fetch as Kyty's vertex input (Translate TranslateEmbeddedFetch): component c of the result
+        is the attribute's component (dst_sel - 4) % the format's components, or 0 / 1 for dst_sel 0 / 1 (the V# Kyty
+        built the pipeline with, from the record's fetch_resource line); False when the record does not cover it"""
+        a = self.fetch_map[inst.off]
+        g = self.gfx
+        res = next((r for r in g.fetch_resources if r.get('attr') == str(a) and r.get('vsharp')), None)
+        inp = next((x for x in g.inputs if x.get('name') == 'in_attr_%d' % a), None)
+        if res is None or inp is None or inst.mods.get('d16'):
+            return False
+        loc = int(inp['location'])
+        info = g.interface.get(('in', loc, 0))
+        if info is None or info['array'] is not None:
+            return False
+        w3 = res['vsharp'][3]
+        fmt = (w3 >> 12) & 0x7f
+        entry = prelude.format_table()[fmt] if fmt < len(prelude.format_table()) else 0
+        ncomp = (entry & 7) if entry else (3 if 30 <= fmt <= 43 else (4 if 44 <= fmt <= 55 else 0))
+        ftype = (entry >> 9) if entry else (0 if fmt in (36, 43) else ((fmt - 30) % 7 + 1 if fmt <= 43 else
+                                                                     (fmt - 44) % 6 + 1))
+        integer = ftype in (5, 6)
+        if ncomp == 0:
+            return False
+        comps = len(inst.base.rsplit('_', 1)[1])
+        writes = []
+        for c in range(comps):
+            sel = (w3 >> (3 * c)) & 7
+            if sel == 0:
+                e = '0u'
+            elif sel == 1:
+                e = '1u' if integer else '0x3f800000u'
+            elif 4 <= sel <= 7:
+                m = (sel - 4) % ncomp
+                if m >= info['n']:
+                    return False
+                comp = 'ATTR%d' % a if info['n'] == 1 else 'ATTR%d.%s' % (a, 'xyzw'[m])
+                e = 'floatBitsToUint(%s)' % comp if info['type'] == 'float' else 'uint(%s)' % comp
+            else:
+                return False
+            writes.append('%s = %s;' % (self.reg(d, c), e))
+        self.vs_inputs[a] = (loc, info)
+        self.emit('if (EX) { %s }' % ' '.join(writes))
+        return True
+
     def op_v_bfrev_b32(self, inst):
         d, a = inst.ops[:2]
         self.write_v_u32(inst, d, 'bitfieldReverse(%s)' % self.src_int(a, inst, 0))
@@ -1538,8 +1584,14 @@ class Translator:
         idx = self.reg(vaddr, 0) if inst.mods.get('idxen') else '0u'
         voff = self.reg(vaddr, 1 if inst.mods.get('idxen') else 0) if inst.mods.get('offen') else '0u'
         so = '0u' if soff.kind in ('const', 'null') and soff.value == 0 else self.src_u32(soff)
-        return '%s, %s, %s, %s, %s, %s + %s + %du' % (
-            self.reg(vs, 0), self.reg(vs, 1), self.reg(vs, 2), self.reg(vs, 3), idx, voff, so, imm)
+        w = [self.reg(vs, k) for k in range(4)]
+        if self.stage != 'cs':
+            # graphics: the V# and the scalar offset are the same in every invocation of the subgroup (op_sload); the
+            # descriptor's translation through the page table becomes a uniform load
+            w = ['subgroupBroadcastFirst(%s)' % x for x in w]
+            if soff.kind == 'reg':
+                so = 'subgroupBroadcastFirst(%s)' % so
+        return '%s, %s, %s, %s, %s, %s + %s + %du' % (w[0], w[1], w[2], w[3], idx, voff, so, imm)
 
     def op_bufload(self, inst):
         d, vaddr, vs, soff = inst.ops
@@ -1561,6 +1613,8 @@ class Translator:
             load = 'buf_load32_glc' if inst.mods.get('glc') or inst.mods.get('dlc') else 'buf_load32'
             self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); %s }' % (a, ' '.join(
                 '%s = %s(ba_, %d);' % (self.reg(d, k), load, 4 * k) for k in range(d.count))))
+        elif b.startswith('buffer_load_format_') and inst.off in self.fetch_map and self.vertex_input(inst, d):
+            pass
         elif b.startswith('buffer_load_format_'):
             comps = len(b.rsplit('_', 1)[1])
             self.emit('if (EX) { vec4 f_ = buf_load_format(buf_addr(%s)); %s }' % (a, ' '.join(
@@ -2929,6 +2983,8 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     tr.vgpr_limit = max([o.first + o.count for i in insts for o in i.ops if o.kind == 'reg' and o.file == 'v'] + [1])
     if stage != 'cs':
         tr.stage, tr.halves, tr.gfx = stage, (0,), gfx_if
+        if stage == 'vs' and not __import__('os').environ.get('SHADER_SR_NO_VERTEX_INPUT'):
+            tr.fetch_map = embedded_fetches(insts, gfx_if)
     res = images.load_resources(resources) if resources else None
     if res is None and gfx_if is not None and (gfx_if.images or gfx_if.samplers):
         res = images.load_resources_gres(gfx_if.path)
@@ -3263,6 +3319,68 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     return '\n'.join(lines) + '\n', tr
 
 
+def embedded_fetches(insts, g):
+    """Kyty's embedded vertex fetch (ShaderRecompiler.cpp DetectEmbeddedVertexFetch): the attribute table pointer is
+    in s[attrib_reg + 8]; an s_load from it at byte offset R gives attribute (R + 4 k) / 16 for its dword k; the
+    buffer_load_format whose V# depends on one attribute's dwords (program order, through scalar instructions and
+    SCC) is that attribute's fetch, which Kyty turns into its vertex input. Returns {instruction offset: attribute}."""
+    if g is None or g.fetch.get('dynamic_fetch') != '1':
+        return {}
+    ar = int(g.fetch.get('attrib_reg', '-1'))
+    if ar < 0:
+        return {}
+    tbl = g.user_data_base + ar
+    taint, redefined, out = {}, set(), {}
+    scc = frozenset()
+
+    def regs_taint(o):
+        t = set()
+        if o.kind == 'reg' and o.file == 's':
+            for k in range(o.count):
+                t |= taint.get(o.first + k, frozenset())
+        return t
+    for i in insts:
+        b = i.base
+        if b.startswith('s_load_dword') and i.ops and i.ops[0].kind == 'reg':
+            d, base, off = i.ops
+            imm = int(i.mods.get('offset', '0'), 0)
+            if (base.kind == 'reg' and base.first == tbl and tbl not in redefined and tbl + 1 not in redefined and
+                    off.kind in ('const', 'null')):
+                r = imm + (off.value if off.kind == 'const' else 0)
+                for k in range(d.count):
+                    taint[d.first + k] = frozenset([(r + 4 * k) // 16])
+                    redefined.add(d.first + k)
+                continue
+            src = regs_taint(base) | regs_taint(off)
+            for k in range(d.count):
+                taint[d.first + k] = frozenset(src)
+                redefined.add(d.first + k)
+            continue
+        if b.startswith('buffer_load_format_'):
+            vs, soff = i.ops[2], i.ops[3]
+            src = regs_taint(vs) | regs_taint(soff)
+            if len(src) == 1:
+                out[i.off] = next(iter(src))
+            continue
+        if b.startswith('s_'):
+            src = set(scc) if b.startswith(('s_cselect', 's_addc', 's_subb', 's_cbranch_scc')) else set()
+            for o in i.ops[1:]:
+                src |= regs_taint(o)
+            if b.startswith(('s_cmp', 's_bitcmp')):
+                scc = frozenset(src | regs_taint(i.ops[0]) if i.ops else src)
+                continue
+            for r in all_sgpr_defs(i):
+                n = int(r[1:])
+                taint[n] = frozenset(src)
+                redefined.add(n)
+            continue
+        for r in all_sgpr_defs(i):
+            n = int(r[1:])
+            taint[n] = frozenset()
+            redefined.add(n)
+    return out
+
+
 def graphics_shader(tr, stage, g, flags_decl, body, nvgpr, user_end):
     """the GLSL of a graphics stage: Kyty's interface of the module (outputs, builtins), the initial registers as Kyty
     sets them (frontend/translate/Translate.cpp, the stage's entry), the body, and the exports"""
@@ -3279,6 +3397,10 @@ def graphics_shader(tr, stage, g, flags_decl, body, nvgpr, user_end):
         lines.append('out gl_PerVertex { vec4 gl_Position;%s };' % (' float gl_ClipDistance[1];' if clip else ''))
         for n, loc in sorted(tr.param_outputs):
             lines.append('layout(location = %d) out vec4 P%d;' % (loc, n))
+        for a, (loc, info) in sorted(tr.vs_inputs.items()):
+            t = {'float': 'vec', 'uint': 'uvec', 'int': 'ivec'}[info['type']]
+            lines.append('layout(location = %d) in %s ATTR%d;' % (
+                loc, t + str(info['n']) if info['n'] > 1 else {'vec': 'float', 'uvec': 'uint', 'ivec': 'int'}[t], a))
         # Kyty: a vertex at the origin (all four components 0, the guest's culled vertex) is clipped
         lines.append('void exp_pos0(uvec4 v) {\n    vec4 p = uintBitsToFloat(v);\n    gl_Position = p;%s\n}' % (
             '\n    gl_ClipDistance[0] = all(equal(p, vec4(0.0))) ? -1.0 : 0.0;' if clip else ''))
