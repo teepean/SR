@@ -71,3 +71,7 @@ loc_19C51D0,2,mov rax, [rel srh_spin_pause wrt ..gotpc]|cmp byte [rax], 0|je srh
 loc_19C5270,2,mov rax, [rel srh_spin_pause wrt ..gotpc]|cmp byte [rax], 0|je srh_spin_19C5270|pause|srh_spin_19C5270: rdtsc
 loc_1A35620,2,mov rax, [rel srh_spin_pause wrt ..gotpc]|cmp byte [rax], 0|je srh_spin_1A35620|pause|srh_spin_1A35620: rdtsc
 loc_1A35E80,2,mov rax, [rel srh_spin_pause wrt ..gotpc]|cmp byte [rax], 0|je srh_spin_1A35E80|pause|srh_spin_1A35E80: rdtsc
+loc_12A7598,4,call srh_wt_enter1 wrt ..plt|lea r15, [rbp - 0x80]
+loc_12A7644,4,call srh_wt_exit1 wrt ..plt|mov rdi, [rbp - 0x48]
+loc_FAF44A,5,call srh_wt_enter2 wrt ..plt|lea r12, [rdx + rsi + 4]
+loc_FAF511,4,call srh_wt_exit2 wrt ..plt|mov ecx, [r12]

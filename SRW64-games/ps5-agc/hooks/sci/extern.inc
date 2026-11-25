@@ -4,3 +4,7 @@ extern srh_particle_finalize
 extern srh_cloth_dispatch
 extern srh_particle_draw_start_stub
 extern srh_spin_pause
+extern srh_wt_enter1
+extern srh_wt_exit1
+extern srh_wt_enter2
+extern srh_wt_exit2

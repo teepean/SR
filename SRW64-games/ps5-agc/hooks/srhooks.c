@@ -773,6 +773,150 @@ __asm__(
 // is set (SRH_SPIN_PAUSE=1): less pressure on the other hardware thread of the core and less power while waiting.
 uint8_t srh_spin_pause;
 
+// ---------------------------------------------------------------------------------------------------------------
+// srh_wt_*: SRH_WAIT_TRACE=1 - when the game's two GPU-bound waits start and end, for lining them up with the
+// emulator's traces (CLOCK_MONOTONIC):
+//   site 1: the job wait PS5 sub_EA7570 (loc_12A7570) when it waits (*rsi == 0): from the waiting path (0x12A7598)
+//           to the done path (0x12A7644);
+//   site 2: the Ocean query label wait PS5 sub_BAF3E0 (loc_FAF3E0) when the label is not yet written: from 0xFAF44A to
+//           the loop exit (0xFAF4BE jumps to 0xFAF511, the only way there).
+// The SR build calls srh_wt_enter<site> / srh_wt_exit<site> there (instruction_replacements.sci); they keep all
+// registers and flags. A wait is keyed by the waiting function's frame pointer (waits nest: the job wait runs stolen
+// jobs, which can wait again). Each completed wait becomes a record (rdtsc at entry and exit, thread id); a writer
+// thread converts the times to CLOCK_MONOTONIC ns and appends "site tid entry_ns exit_ns" lines to
+// SRH_WAIT_TRACE_FILE (default srh-wait-trace.txt in the current directory) every 100 ms.
+__attribute__((used)) static uint8_t wt_on;
+#define WT_OPEN 4096                       // open waits (power of two)
+#define WT_RECORDS (1u << 18)              // completed waits not yet written (power of two)
+static struct { uint64_t key, enter; } wt_open[WT_OPEN];
+static struct { uint64_t seq, enter, exit; uint32_t tid, site; } wt_records[WT_RECORDS];
+static uint64_t wt_head, wt_table_full;
+
+__attribute__((visibility("hidden"), used, target("general-regs-only"))) void srh_wt_event(uint64_t site, uint64_t frame,
+                                                                                            uint64_t exit)
+{
+    uint64_t now = __builtin_ia32_rdtsc(), key = frame | site, k = (frame >> 4) * 0x9E3779B97F4A7C15ull >> 52, n;
+    if (!exit)
+    {
+        for (n = 0; n < WT_OPEN; n++, k = (k + 1) & (WT_OPEN - 1))
+        {
+            uint64_t expected = 0;
+            if (__atomic_compare_exchange_n(&wt_open[k].key, &expected, key, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
+            {
+                __atomic_store_n(&wt_open[k].enter, now, __ATOMIC_RELEASE);
+                return;
+            }
+        }
+        __atomic_add_fetch(&wt_table_full, 1, __ATOMIC_RELAXED);
+        return;
+    }
+    for (n = 0; n < WT_OPEN; n++, k = (k + 1) & (WT_OPEN - 1))
+    {
+        if (__atomic_load_n(&wt_open[k].key, __ATOMIC_ACQUIRE) != key) continue;
+        uint64_t enter = __atomic_load_n(&wt_open[k].enter, __ATOMIC_ACQUIRE), index, tid;
+        __atomic_store_n(&wt_open[k].key, 0, __ATOMIC_RELEASE);
+        __asm__ volatile("syscall" : "=a"(tid) : "a"(186ull) : "rcx", "r11", "memory");   // gettid
+        index = __atomic_fetch_add(&wt_head, 1, __ATOMIC_RELAXED);
+        n = index & (WT_RECORDS - 1);
+        __atomic_store_n(&wt_records[n].seq, 0, __ATOMIC_RELAXED);
+        __atomic_thread_fence(__ATOMIC_RELEASE);
+        wt_records[n].enter = enter;
+        wt_records[n].exit = now;
+        wt_records[n].tid = (uint32_t)tid;
+        wt_records[n].site = (uint32_t)site;
+        __atomic_store_n(&wt_records[n].seq, index + 1, __ATOMIC_RELEASE);
+        return;
+    }
+}
+
+// entry points: flags and all registers kept; only the general registers are used by srh_wt_event
+#define WT_ENTRY(name, site, exit) \
+    "\t.globl " name "\n\t.type " name ", @function\n" name ":\n" \
+    "\tpushfq\n\tcmpb $0, wt_on(%rip)\n\tjne 1f\n\tpopfq\n\tret\n" \
+    "1:\tpush %rdi\n\tpush %rsi\n\tpush %rdx\n\tmov $" #site ", %edi\n\tmov %rbp, %rsi\n\tmov $" #exit ", %edx\n" \
+    "\tjmp srh_wt_common\n\t.size " name ", . - " name "\n"
+__asm__(
+    "\t.text\n"
+    WT_ENTRY("srh_wt_enter1", 1, 0)
+    WT_ENTRY("srh_wt_exit1", 1, 1)
+    WT_ENTRY("srh_wt_enter2", 2, 0)
+    WT_ENTRY("srh_wt_exit2", 2, 1)
+    "srh_wt_common:\n"
+    "\tpush %rbp\n\tmov %rsp, %rbp\n"
+    "\tpush %rax\n\tpush %rcx\n\tpush %r8\n\tpush %r9\n\tpush %r10\n\tpush %r11\n"
+    "\tand $-16, %rsp\n"
+    "\tcall srh_wt_event\n"
+    "\tlea -48(%rbp), %rsp\n"
+    "\tpop %r11\n\tpop %r10\n\tpop %r9\n\tpop %r8\n\tpop %rcx\n\tpop %rax\n"
+    "\tpop %rbp\n\tpop %rdx\n\tpop %rsi\n\tpop %rdi\n\tpopfq\n"
+    "\tret\n"
+);
+
+static uint64_t wt_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+
+static void *wt_writer(void *argument)
+{
+    const char *path = (const char *)argument;
+    FILE *file = fopen(path, "w");
+    uint64_t tail = 0, tsc0, ns0, lost = 0, stalled = 0, reported_lost = 0;
+    if (file == NULL)
+    {
+        fprintf(stderr, "[srhooks] wait trace: cannot open %s\n", path);
+        return NULL;
+    }
+    tsc0 = __builtin_ia32_rdtsc();
+    ns0 = wt_ns();
+    fprintf(file, "# srhooks wait trace: site (1 job wait loc_12A7570, 2 Ocean label wait loc_FAF3E0) tid entry_ns exit_ns"
+            " (CLOCK_MONOTONIC)\n");
+    for (;;)
+    {
+        usleep(100000);
+        uint64_t tsc1 = __builtin_ia32_rdtsc(), ns1 = wt_ns(), head = __atomic_load_n(&wt_head, __ATOMIC_ACQUIRE);
+        long double scale = (long double)(ns1 - ns0) / (long double)(tsc1 - tsc0);
+        while (tail < head)
+        {
+            uint64_t n = tail & (WT_RECORDS - 1), seq = __atomic_load_n(&wt_records[n].seq, __ATOMIC_ACQUIRE);
+            if (seq < tail + 1)                // not written yet: wait a little, then give it up
+            {
+                if (++stalled < 5) break;
+                lost++, tail++, stalled = 0;
+                continue;
+            }
+            stalled = 0;
+            if (seq > tail + 1)                // overwritten by a newer wait (the writer fell behind)
+            {
+                lost++, tail++;
+                continue;
+            }
+            uint64_t enter = wt_records[n].enter, exit = wt_records[n].exit;
+            uint32_t tid = wt_records[n].tid, site = wt_records[n].site;
+            __atomic_thread_fence(__ATOMIC_ACQUIRE);
+            if (__atomic_load_n(&wt_records[n].seq, __ATOMIC_RELAXED) != seq)
+            {
+                lost++, tail++;
+                continue;
+            }
+            fprintf(file, "%u %u %llu %llu\n", site, tid,
+                    (unsigned long long)(ns0 + (int64_t)((long double)(int64_t)(enter - tsc0) * scale)),
+                    (unsigned long long)(ns0 + (int64_t)((long double)(int64_t)(exit - tsc0) * scale)));
+            tail++;
+        }
+        fflush(file);
+        if (lost != reported_lost || wt_table_full != 0)
+        {
+            fprintf(stderr, "[srhooks] wait trace: %llu waits lost, %llu not started (table full)\n", (unsigned long long)lost,
+                    (unsigned long long)wt_table_full);
+            reported_lost = lost;
+        }
+    }
+    return NULL;
+}
+
 static void *query_reporter(void *argument)
 {
     (void)argument;
@@ -837,6 +981,19 @@ __attribute__((constructor)) static void srhooks_init(void)
     {
         pthread_t thread;
         if (pthread_create(&thread, NULL, query_reporter, NULL) == 0) pthread_detach(thread);
+    }
+    env = getenv("SRH_WAIT_TRACE");
+    if (env != NULL && atoi(env) != 0)
+    {
+        const char *path = getenv("SRH_WAIT_TRACE_FILE");
+        pthread_t thread;
+        if (path == NULL) path = "srh-wait-trace.txt";
+        if (pthread_create(&thread, NULL, wt_writer, (void *)path) == 0)
+        {
+            pthread_detach(thread);
+            __atomic_store_n(&wt_on, 1, __ATOMIC_RELEASE);
+            fprintf(stderr, "[srhooks] wait trace on: %s\n", path);
+        }
     }
 }
 
