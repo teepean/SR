@@ -8,3 +8,9 @@ extern srh_wt_enter1
 extern srh_wt_exit1
 extern srh_wt_enter2
 extern srh_wt_exit2
+extern srh_wt_enter3
+extern srh_wt_exit3
+extern srh_wt_enter4
+extern srh_wt_exit4
+extern srh_wt_enter5
+extern srh_wt_exit5

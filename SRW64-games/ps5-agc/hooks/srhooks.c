@@ -780,6 +780,11 @@ uint8_t srh_spin_pause;
 //           to the done path (0x12A7644);
 //   site 2: the Ocean query label wait PS5 sub_BAF3E0 (loc_FAF3E0) when the label is not yet written: from 0xFAF44A to
 //           the loop exit (0xFAF4BE jumps to 0xFAF511, the only way there).
+//   site 3: the job group wait PS5 sub_EA73F0 (loc_12A73F0: all jobs of a group done, steals jobs meanwhile) when a job
+//           is not done: from 0x12A7473 to the two loop exits (0x12A74F5, 0x12A7514 -> 0x12A7450);
+//   site 4: a GPU label wait in the frame submit function loc_11E0FE0: label slot [obj+0xCC] >= value [obj+0xD8],
+//           from 0x11E3E81 to the loop exit 0x11E3EEB;
+//   site 5: the next label wait there: slot [0x4A6115C] >= value [0x4A61158], from 0x11E3F4B to the exit 0x11E3FBB.
 // The SR build calls srh_wt_enter<site> / srh_wt_exit<site> there (instruction_replacements.sci); they keep all
 // registers and flags. A wait is keyed by the waiting function's frame pointer (waits nest: the job wait runs stolen
 // jobs, which can wait again). Each completed wait becomes a record (rdtsc at entry and exit, thread id); a writer
@@ -841,6 +846,12 @@ __asm__(
     WT_ENTRY("srh_wt_exit1", 1, 1)
     WT_ENTRY("srh_wt_enter2", 2, 0)
     WT_ENTRY("srh_wt_exit2", 2, 1)
+    WT_ENTRY("srh_wt_enter3", 3, 0)
+    WT_ENTRY("srh_wt_exit3", 3, 1)
+    WT_ENTRY("srh_wt_enter4", 4, 0)
+    WT_ENTRY("srh_wt_exit4", 4, 1)
+    WT_ENTRY("srh_wt_enter5", 5, 0)
+    WT_ENTRY("srh_wt_exit5", 5, 1)
     "srh_wt_common:\n"
     "\tpush %rbp\n\tmov %rsp, %rbp\n"
     "\tpush %rax\n\tpush %rcx\n\tpush %r8\n\tpush %r9\n\tpush %r10\n\tpush %r11\n"
@@ -871,7 +882,7 @@ static void *wt_writer(void *argument)
     }
     tsc0 = __builtin_ia32_rdtsc();
     ns0 = wt_ns();
-    fprintf(file, "# srhooks wait trace: site (1 job wait loc_12A7570, 2 Ocean label wait loc_FAF3E0) tid entry_ns exit_ns"
+    fprintf(file, "# srhooks wait trace: site (1 job wait loc_12A7570, 2 Ocean label wait loc_FAF3E0, 3 job group wait loc_12A73F0, 4/5 label waits in loc_11E0FE0) tid entry_ns exit_ns"
             " (CLOCK_MONOTONIC)\n");
     for (;;)
     {

@@ -75,3 +75,10 @@ loc_12A7598,4,call srh_wt_enter1 wrt ..plt|lea r15, [rbp - 0x80]
 loc_12A7644,4,call srh_wt_exit1 wrt ..plt|mov rdi, [rbp - 0x48]
 loc_FAF44A,5,call srh_wt_enter2 wrt ..plt|lea r12, [rdx + rsi + 4]
 loc_FAF511,4,call srh_wt_exit2 wrt ..plt|mov ecx, [r12]
+loc_12A7473,4,call srh_wt_enter3 wrt ..plt|lea rax, [rcx + rcx*4]
+loc_12A74F5,6,jg srh_wt3_more|call srh_wt_exit3 wrt ..plt|jmp loc_12A7450|srh_wt3_more:
+loc_12A7514,5,call srh_wt_exit3 wrt ..plt|jmp loc_12A7450
+loc_11E3E81,10,call srh_wt_enter4 wrt ..plt|mov r12, 0x431bde82d7b634db
+loc_11E3EEB,2,call srh_wt_exit4 wrt ..plt|jmp loc_11E3F25
+loc_11E3F4B,10,call srh_wt_enter5 wrt ..plt|mov r12, 0x431bde82d7b634db
+loc_11E3FBB,2,call srh_wt_exit5 wrt ..plt|jmp loc_11E3FF5
