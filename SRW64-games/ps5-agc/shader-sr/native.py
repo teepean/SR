@@ -26,8 +26,10 @@ def main():
     # the runtime for a workgroup of a.threads host threads (prelude() halves its argument: lane pairs)
     text = prelude.prelude(2 * a.threads, 1, 1, False)
     # extensions the native bodies use beyond the translator's
-    text = text.replace('#version 460\n', '#version 460\n#extension GL_KHR_shader_subgroup_arithmetic : require\n', 1)
-    defines = ''.join('#define %s %s\n' % tuple((d.split('=', 1) + ['1'])[:2]) for d in a.D)
+    text = text.replace('#version 460\n', '#version 460\n#extension GL_KHR_shader_subgroup_arithmetic : require\n#extension GL_EXT_control_flow_attributes : require\n', 1)
+    # NT: the body's threads per workgroup (its loops stride by it), always the workgroup size built here
+    defines = '#define NT %du\n' % a.threads
+    defines += ''.join('#define %s %s\n' % tuple((d.split('=', 1) + ['1'])[:2]) for d in a.D if not d.startswith('NT='))
     body = open(a.body).read()
     work = os.path.join(os.path.dirname(os.path.abspath(a.out)) or '.', 'work')
     os.makedirs(work, exist_ok=True)

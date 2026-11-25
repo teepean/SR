@@ -11,6 +11,12 @@
 #ifndef NT
 #define NT 1024
 #endif
+#ifndef SHARED_STORAGE
+#define SHARED_STORAGE 0
+#endif
+#ifndef BEND_LIMIT
+#define BEND_LIMIT 0xffffffffu      // the 64- and 512-thread programs process only the first 64 / 512 bending constraints of a group
+#endif
 #ifndef STOP
 #define STOP 0                      // debugging: 1 after the prediction, 2 before the iterations, 3 after iteration 1
 #endif
@@ -98,13 +104,25 @@ float clamp01(float x) { return clamp(x, 0.0, 1.0); }
 bool finite3(vec3 p) { return cmp_class(-abs(p.z), 56u) && cmp_class(-abs(p.y), 56u) && cmp_class(-abs(p.x), 56u); }
 
 // ------------------------------------------------------------------------------------------- storage
-// anchors A[i] and positions X[i]: see the layout section below (cloth_storage_init)
+// anchors A[i] and positions X[i]. The 1024-thread program keeps them in memory: anchors in the global table's second
+// buffer at T[0xbc] + i, positions in T.V#(0x38). The smaller programs (SHARED_STORAGE, at most MAXV vertices) keep
+// both in shared memory and write the positions to T.V#(0x38) at the end; with one substep (the game's case) the
+// results are the same, the difference is where the intermediate values live.
 VB vbA, vbX;                        // per thread copies (uniform)
 uint offA, offX;                    // element offset of this instance's vertex 0
+#if SHARED_STORAGE
+shared float sAx[MAXV], sAy[MAXV], sAz[MAXV], sXx[MAXV], sXy[MAXV], sXz[MAXV];
+// out-of-range indices read 0 (the guest's LDS reads beyond its allocation do)
+vec3 A_get(int i) { return uint(i) < uint(MAXV) ? vec3(sAx[i], sAy[i], sAz[i]) : vec3(0.0); }
+vec3 X_get(int i) { return uint(i) < uint(MAXV) ? vec3(sXx[i], sXy[i], sXz[i]) : vec3(0.0); }
+void A_set(int i, vec3 p) { if (uint(i) < uint(MAXV)) { sAx[i] = p.x; sAy[i] = p.y; sAz[i] = p.z; } }
+void X_set(int i, vec3 p) { if (uint(i) < uint(MAXV)) { sXx[i] = p.x; sXy[i] = p.y; sXz[i] = p.z; } }
+#else
 vec3 A_get(int i) { return vb_f3(vbA, offA + uint(i), 0u); }
 vec3 X_get(int i) { return vb_f3(vbX, offX + uint(i), 0u); }
 void A_set(int i, vec3 p) { vb_store3(vbA, offA + uint(i), p); }
 void X_set(int i, vec3 p) { vb_store3(vbX, offX + uint(i), p); }
+#endif
 
 // ------------------------------------------------------------------------------------------- common descriptors
 VB vbPal;                           // bone palette (3 rows of float4 per bone)
@@ -569,7 +587,8 @@ void bending_constraint(uint j, bool formulaA, bool every) {
 // ------------------------------------------------------------------------------------------- colliders
 // collider set s: the qword T.V#(0x18)[s]; its record array: the V# at set + 0x88 (168-byte records)
 shared uint64_t sSetPtr[16];        // set pointers (byte offset 8*s, as the full paths read them)
-shared uint64_t sRecBase[16];       // record array base (guest address) per set
+shared uint64_t sRecBase[16];       // record array base (device address) per set, 0 when empty / not on the GPU
+shared uint sRecNum[16];            // size in bytes of the set's record V# (num_records, times the stride if any)
 shared uint64_t sMask[48];          // candidate masks: qword m = set m/3, records 64*(m%3) + bit
 uint nsets;
 // a record address is a DEVICE address (the set's record array translated once: one device buffer holds it), 0 when
@@ -578,6 +597,8 @@ float rec_f(uint64_t rec, uint off) { return rec == 0ul ? 0.0 : uintBitsToFloat(
 uint rec_u(uint64_t rec, uint off) { return rec == 0ul ? 0u : W32(rec + uint64_t(off)).v; }
 uint64_t rec_dev(uint64_t guest) { return guest == 0ul ? 0ul : xlate(guest); }
 uint64_t rec_at(uint64_t base, uint k) { return base == 0ul ? 0ul : base + uint64_t(168u * k); }
+// a record of set s as the full paths read it (s_buffer_load: 0 beyond the V#'s num_records)
+uint64_t rec_full(uint s, uint k) { return 168u * k + 168u <= sRecNum[s] ? rec_at(sRecBase[s], k) : 0ul; }
 vec3 rec_f3(uint64_t rec, uint off) { return vec3(rec_f(rec, off), rec_f(rec, off + 4u), rec_f(rec, off + 8u)); }
 vec4 rec_f4(uint64_t rec, uint off) { return vec4(rec_f(rec, off), rec_f(rec, off + 4u), rec_f(rec, off + 8u), rec_f(rec, off + 12u)); }
 
@@ -666,7 +687,7 @@ void edge_full(uint e, bool F4) {
             uint64_t mask = sMask[2u * s + j];
             while (mask != 0ul) {
                 uint k = uint(findLSB(mask));
-                uint64_t rec = rec_at(sRecBase[s], k);
+                uint64_t rec = rec_full(s, k);
                 uint ctype = rec_u(rec, 0u);
                 if (edge_vs_collider(rec, ctype, r, xa, xb)) hit = (s << 16) | (k & 0xffffu);
                 mask &= ~(1ul << k);
@@ -715,7 +736,7 @@ vec3 motion_dir(uint64_t rec, vec3 start, vec3 o) {
 }
 
 // full pass, one collider; returns true on a hit (the anchor-side one-sided pushes do not count)
-bool vertex_vs_collider(uint v, uint64_t rec, uint type, bool oneSided, bool collide, float f, float thick, inout vec3 p) {
+bool vertex_vs_collider(uint v, uint64_t rec, uint type, bool oneSided, bool collide, float f, float thick, vec3 o, inout vec3 p) {
     if (type == 4u) {
         vec3 n = rec_f3(rec, 0x10u), P0 = vec3(rec_f(rec, 0x1cu), rec_f(rec, 0x20u), rec_f(rec, 0x24u));
         vec3 Pt = vec3(thick * n.x + P0.x, thick * n.y + P0.y, thick * n.z + P0.z);
@@ -777,7 +798,6 @@ bool vertex_vs_collider(uint v, uint64_t rec, uint type, bool oneSided, bool col
         float dd = dot3(d, d);
         if (dd > Rt * Rt) return false;
         vec3 n = snorm(d);
-        vec3 o = cur_of(v);
         vec3 e = snorm(motion_dir(rec, vec3((rec_f(rec, 0x3cu) - c0.x) - dp.x, (rec_f(rec, 0x4cu) - c0.y) - dp.y,
                                             (rec_f(rec, 0x5cu) - c0.z) - dp.z), o));
         float ne = dot3(n, e);
@@ -835,7 +855,6 @@ bool vertex_vs_collider(uint v, uint64_t rec, uint type, bool oneSided, bool col
         float RR = R * R, dd = dot3(d, d);
         if (dd > RR) return false;
         vec3 n = snorm(d);
-        vec3 o = cur_of(v);
         vec3 e = snorm(motion_dir(rec, vec3(rec_f(rec, 0x3cu) - p.x, rec_f(rec, 0x4cu) - p.y, rec_f(rec, 0x5cu) - p.z), o));
         float ne = dot3(n, e);
         if (ne < 0.0) e = vec3(n.x * (-ne) + e.x, n.y * (-ne) + e.y, n.z * (-ne) + e.z);
@@ -865,7 +884,6 @@ bool vertex_vs_collider(uint v, uint64_t rec, uint type, bool oneSided, bool col
         float pp = dot3(pl, pl);
         if (pp > 1.0) return false;
         vec3 nl = snorm(pl);
-        vec3 o = cur_of(v);
         vec4 V0 = rec_f4(rec, 0x70u), V1 = rec_f4(rec, 0x80u), V2 = rec_f4(rec, 0x90u);
         float ux = V0.w - pl.x; ux = ux + V0.x * o.x; ux = ux + V0.y * o.y; ux = ux + V0.z * o.z;
         float uy = V1.w - pl.y; uy = uy + V1.x * o.x; uy = uy + V1.y * o.y; uy = uy + V1.z * o.z;
@@ -887,6 +905,7 @@ bool vertex_vs_collider(uint v, uint64_t rec, uint type, bool oneSided, bool col
 }
 
 vec3 vertex_full(uint v, vec3 p, bool F4) {
+    vec3 o = cur_of(v);
     float thick = Th(0xf6u);
     if ((P4 & 16u) != 0u) thick = vb_fmt(vbP88, v).x * thick;
     uint hitc = 0xffffffffu;
@@ -898,12 +917,12 @@ vec3 vertex_full(uint v, vec3 p, bool F4) {
             uint64_t mask = sMask[3u * s + w];
             while (mask != 0ul) {
                 uint k = uint(findLSB(mask));
-                uint64_t rec = rec_at(sRecBase[s], k);
+                uint64_t rec = rec_full(s, k);
                 uint type = rec_u(rec, 0u), flags = rec_u(rec, 4u);
                 bool oneSided = (flags & oneSideBits) != 0u && (T108 & 64u) == 0u;
                 bool collide = (flags & collideBit) != 0u;
                 float f = rec_f(rec, 0xcu);
-                if (vertex_vs_collider(v, rec, type, oneSided, collide, f, thick, p)) hitc = (s << 16) | (k & 0xffffu);
+                if (vertex_vs_collider(v, rec, type, oneSided, collide, f, thick, o, p)) hitc = (s << 16) | (k & 0xffffu);
                 mask &= ~(1ul << k);
             }
         }
@@ -1243,6 +1262,11 @@ uint64_t instance_table() {
 }
 
 void sync() { memoryBarrierBuffer(); memoryBarrierShared(); barrier(); }
+void stop_dump() {
+#if SHARED_STORAGE
+    for (uint v = gl_LocalInvocationIndex; v < uint(nverts); v += NT) vb_store3(vbT38, v, X_get(int(v)));
+#endif
+}
 
 void main() {
     if (pc.pages == 0ul) return;
@@ -1252,10 +1276,10 @@ void main() {
     uint tid = gl_LocalInvocationIndex;
     if (tid == 0u) sTaddr = instance_table();
     barrier();
-    if (tid < 76u) sT[tid] = gld32(sTaddr + 4ul * uint64_t(tid));
+    for (uint k = tid; k < 76u; k += NT) sT[k] = gld32(sTaddr + 4ul * uint64_t(k));
     barrier();
     uint64_t Pa = packUint2x32(uvec2(sT[2], sT[3]));
-    if (tid < 72u) sP[tid] = gld32(Pa + 4ul * uint64_t(tid));
+    for (uint k = tid; k < 72u; k += NT) sP[k] = gld32(Pa + 4ul * uint64_t(k));
     barrier();
     nverts = int(Pu(0u));
     P4 = Pu(4u);
@@ -1269,18 +1293,27 @@ void main() {
     vbP108 = vb_P(0x108u);
     uint64_t G = packUint2x32(uvec2(sT[0], sT[1]));
     vbG0 = vb_make(gld32(G), gld32(G + 4ul), gld32(G + 8ul), gld32(G + 12ul));
+#if SHARED_STORAGE
+    VB vbG1 = vbG0;                     // not used (anchors in shared memory)
+#else
     VB vbG1 = vb_make(gld32(G + 16ul), gld32(G + 20ul), gld32(G + 24ul), gld32(G + 28ul));
+#endif
     uint64_t C = packUint2x32(uvec2(vb_u32(vbT18, 0u, 0u), vb_u32(vbT18, 0u, 4u)));   // set 0 / palette holder
     vbPal = vb_make(gld32(C + 0x38ul), gld32(C + 0x3cul), gld32(C + 0x40ul), gld32(C + 0x44ul));
     // storage of the 1024-thread program: anchors in G1 at T[0xbc] + i, positions in T.V#(0x38)
     vbA = vbG1; offA = Tu(0xbcu);
     vbX = vbT38; offX = 0u;
     nsets = Tb(0xa4u);
-    if (tid < 16u && tid < nsets) {
-        uint64_t setp = gld64(packUint2x32(uvec2(sT[6], sT[7] & 0xffffu)) + 8ul * uint64_t(tid));
-        sSetPtr[tid] = setp;
+    for (uint k = tid; k < 16u && k < nsets; k += NT) {
+        uint64_t setp = gld64(packUint2x32(uvec2(sT[6], sT[7] & 0xffffu)) + 8ul * uint64_t(k));
+        sSetPtr[k] = setp;
         uint64_t V = gld64(setp + 0x88ul);
-        sRecBase[tid] = rec_dev(V & 0xfffffffffffful);
+        // the full paths read records with s_buffer_load through this V#: bounds-checked against its num_records
+        // (bytes); an empty V# (num_records 0, a dummy base) reads 0 and is never translated
+        uint num = gld32(setp + 0x90ul), st = (uint(V >> 32) >> 16) & 0x3fffu;
+        uint bytes = st != 0u ? num * st : num;            // as the translation bounds s_buffer_load
+        sRecNum[k] = bytes;
+        sRecBase[k] = bytes == 0u ? 0ul : rec_dev(V & 0xfffffffffffful);
     }
     if (tid == 0u) {
         sBoxU[0] = f2o(FLT_MAX); sBoxU[1] = f2o(FLT_MAX); sBoxU[2] = f2o(FLT_MAX);
@@ -1289,6 +1322,42 @@ void main() {
     // section A: anchors
     for (uint v = tid; v < uint(nverts); v += NT) A_set(int(v), anchor_of(v));
     sync();
+#if STOP == 4
+    for (uint v = tid; v < uint(nverts); v += NT) vb_store3(vbT38, v, A_get(int(v)));
+    return;
+#endif
+#if STOP == 5
+    for (uint v = tid; v < uint(nverts); v += NT) vb_store3(vbT38, v, anchor_of(v));
+    return;
+#endif
+#if STOP == 6
+    for (int v = nverts - 1 - int(tid); v >= 0; v -= NT) vb_store3(vbT38, uint(v), anchor_of(uint(v)));
+    return;
+#endif
+#if STOP == 7
+    [[dont_unroll]] for (uint v = tid; v < uint(nverts); v += NT) vb_store3(vbT38, v, anchor_of(v));
+    return;
+#endif
+#if STOP == 8
+    for (uint base = 0u; base < uint(nverts); base += NT) {
+        uint v = base + tid;
+        if (v < uint(nverts)) vb_store3(vbT38, v, anchor_of(v));
+        barrier();
+    }
+    return;
+#endif
+#if STOP == 9
+    {
+        VB outb = vb_T(0x38u);
+        for (uint v = tid; v < uint(nverts); v += NT) {
+            uint64_t a = outb.dev + uint64_t(outb.stride * v);
+            W32(a).v = floatBitsToUint(float(v));
+            W32(a + 4ul).v = floatBitsToUint(float(tid));
+            W32(a + 8ul).v = floatBitsToUint(1234.0);
+        }
+    }
+    return;
+#endif
     dt = Tf(0xccu);
     uint nsub = Tb(0xd8u);
     float h64 = Th(0x64u);
@@ -1310,6 +1379,7 @@ void main() {
 #if STOP == 1
             for (uint v = tid; v < uint(nverts); v += NT) X_set(int(v), predict(v));
             sync();
+            stop_dump();
             return;
 #endif
             for (uint v = tid; v < uint(nverts); v += NT) X_set(int(v), tethers(v, predict(v)));
@@ -1337,14 +1407,15 @@ void main() {
                 bmax = vec3(Tf(0xa8u), Tf(0xacu), Tf(0xb0u));
             }
             // broad phase -> candidate masks
-            if (tid < 96u) sMaskW[tid] = 0u;
+            for (uint k = tid; k < 96u; k += NT) sMaskW[k] = 0u;
             sync();
             for (uint i = tid; i < 192u * nsets; i += NT)
                 if (broad_item(i, bmin, bmax)) atomicOr(sMaskW[i >> 5], 1u << (i & 31u));
             sync();
-            if (tid < 48u) sMask[tid] = packUint2x32(uvec2(sMaskW[2u * tid], sMaskW[2u * tid + 1u]));
+            for (uint k = tid; k < 48u; k += NT) sMask[k] = packUint2x32(uvec2(sMaskW[2u * k], sMaskW[2u * k + 1u]));
             sync();
 #if STOP == 2
+            stop_dump();
             return;
 #endif
             // constraint iterations
@@ -1368,7 +1439,7 @@ void main() {
                     uint ng = Pu(0x14u);
                     for (uint g = 0u; g < ng; g++) {
                         uint first = vb_u32(vbPE8, 0u, g * 12u), count = vb_u32(vbPE8, 0u, g * 12u + 4u);
-                        for (uint c = tid; c < count; c += NT) bending_constraint(first + c, formulaA, bend_every);
+                        for (uint c = tid; c < min(count, BEND_LIMIT); c += NT) bending_constraint(first + c, formulaA, bend_every);
                         sync();
                     }
                 }
@@ -1405,6 +1476,7 @@ void main() {
                 }
                 sync();
 #if STOP == 3
+                stop_dump();
                 return;
 #endif
             }
@@ -1413,7 +1485,11 @@ void main() {
         // result: finite positions, else the anchor
         for (uint v = tid; v < uint(nverts); v += NT) {
             vec3 p = X_get(int(v));
+#if SHARED_STORAGE
+            vb_store3(vbT38, v, finite3(p) ? p : A_get(int(v)));
+#else
             if (!finite3(p)) vb_store3(vbT38, v, A_get(int(v)));
+#endif
         }
     }
     sync();

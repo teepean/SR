@@ -238,6 +238,23 @@ void buf_store32(BufAddr b, int extra, uint v) { if (b.ok) W32(b.dev + uint64_t(
 void buf_store16(BufAddr b, uint v) { if (b.ok) W16(b.dev).v = uint16_t(v); }
 void buf_store8(BufAddr b, uint v) { if (b.ok) W8(b.dev).v = uint8_t(v); }
 const uint FORMATS[78] = uint[78](FORMAT_TABLE);
+// UNORM / SNORM conversion, correctly rounded like the hardware's, from integer arithmetic only: the driver would
+// compile x / (2^n - 1) differently from shader to shader (reciprocal or division), and results would differ
+float div_exact(uint num, uint den) {
+    uint64_t n = uint64_t(num) << 40;
+    uint64_t q = n / uint64_t(den);
+    if (n - q * uint64_t(den) != 0ul) q |= 1ul;            // sticky bit: round-to-nearest of the true quotient
+    return float(q) * 9.094947017729282e-13;                // 2^-40, exact
+}
+float unorm_exact(uint raw, uint bits) {
+    if (bits == 32u) return float(raw) / 4294967295.0;
+    return div_exact(raw, (1u << bits) - 1u);
+}
+float snorm_exact(int sraw, uint bits) {
+    if (bits == 32u) return float(sraw) / 2147483647.0;
+    float m = div_exact(uint(abs(sraw)), (1u << (bits - 1u)) - 1u);
+    return sraw < 0 ? -m : m;
+}
 vec4 buf_load_format(BufAddr ba) {
     uint fmt = (ba.w3 >> 12) & 0x7fu;
     uint info = fmt < 78u ? FORMATS[fmt] : 0u;
@@ -252,8 +269,8 @@ vec4 buf_load_format(BufAddr ba) {
         float maxs = bits == 32u ? 2147483647.0 : float((1u << (bits - 1u)) - 1u);
         float v;
         if (type == 0u) v = bits == 32u ? uintBitsToFloat(raw) : unpackHalf2x16(raw).x;
-        else if (type == 1u) v = float(raw) / maxu;
-        else if (type == 2u) v = max(float(sraw) / maxs, -1.0);
+        else if (type == 1u) v = unorm_exact(raw, bits);
+        else if (type == 2u) v = max(snorm_exact(sraw, bits), -1.0);
         else if (type == 3u) v = float(raw);
         else if (type == 4u) v = float(sraw);
         else if (type == 5u) v = uintBitsToFloat(raw);
