@@ -52,6 +52,15 @@ class Translator:
         # translated once per half (h = 0/1: VGPR v<n>_<h>, exec bit EX -> EXB<h>, lane bit B = 1 << h), scalar ones
         # once (h = None: a lane mask is the thread's two bits, exec is EXM)
         self.h = None
+        # graphics stages (vs, ps): one guest lane per invocation (half 0 only, LMASK = 1u); the host subgroup is the
+        # wave for the cross-lane instructions
+        self.stage = 'cs'
+        self.halves = (0, 1)
+        self.gfx = None          # graphics: gfx.Interface of the module (Kyty's record)
+        self.param_outputs = set()  # graphics: (parameter, location) of the exported parameters
+        self.ps_inputs = {}      # pixel stage: spirv location -> Kyty's input (interface info) the program reads
+        self.ps_outputs = {}     # pixel stage: MRT -> Kyty's output (interface info) the program writes
+        self.ps_depth = False
 
     # ------------------------------------------------------------------------------------------------ operands
     def note_reg(self, o):
@@ -90,6 +99,8 @@ class Translator:
             return self.reg(o, i)
         if o.kind in ('null', 'off'):
             return '0u'
+        if o.kind == 'scc':
+            return '(SCC ? 1u : 0u)'
         raise ValueError(o)
 
     def src_f32(self, o, inst, idx=None):
@@ -185,7 +196,7 @@ class Translator:
         return e
 
     # ------------------------------------------------------------------------------------------------ instructions
-    LANE_PREFIXES = ('v_', 'buffer_', 'tbuffer_', 'global_', 'flat_', 'scratch_', 'ds_', 'image_')
+    LANE_PREFIXES = ('v_', 'buffer_', 'tbuffer_', 'global_', 'flat_', 'scratch_', 'ds_', 'image_', 'exp')
     CROSS_SCALAR = ('v_readlane_b32', 'v_readfirstlane_b32', 'v_writelane_b32')
 
     def translate(self, inst):
@@ -193,15 +204,15 @@ class Translator:
             self.mbcnt_ballot(inst)
         if inst.op.startswith(self.LANE_PREFIXES) and inst.base not in self.CROSS_SCALAR:
             halves = []
-            for h in (0, 1):
+            for h in self.halves:
                 self.h = h
                 saved, self.cur = self.cur, []
                 self.translate_one(inst)
                 halves.append(self.cur)
                 self.cur = saved
             self.h = None
-            for h in (0, 1):
-                for item in halves[h]:
+            for h, items in zip(self.halves, halves):
+                for item in items:
                     self.cur.append((item[0], item[1], h))
             self.trace(inst)
             return
@@ -231,7 +242,7 @@ class Translator:
             handler(inst)
             return
         for prefix, h in (('v_cmpx_', self.op_vcmpx), ('v_cmp_', self.op_vcmp), ('s_cmp_', self.op_scmp),
-                          ('s_load_', self.op_sload), ('s_buffer_load_', self.op_sbufload),
+                          ('s_cmpk_', self.op_scmpk), ('s_load_', self.op_sload), ('s_buffer_load_', self.op_sbufload),
                           ('buffer_load_', self.op_bufload), ('buffer_store_', self.op_bufstore),
                           ('buffer_atomic_', self.op_bufatomic), ('image_', self.op_image),
                           ('global_load_', self.op_globalload), ('ds_', self.op_ds)):
@@ -258,10 +269,198 @@ class Translator:
             d, a, c, e = ops[0], ops[1], ops[2], ops[3]
             self.write_v_u32(inst, d, f % (self.src_int(a, inst, 0), self.src_int(c, inst, 1), self.src_int(e, inst, 2)))
             return
-        if b in ('s_waitcnt', 's_nop', 's_inst_prefetch', 's_barrier'):   # s_barrier: barrier() in the emission
+        if b in ('s_waitcnt', 's_waitcnt_vscnt', 's_waitcnt_vmcnt', 's_waitcnt_expcnt', 's_waitcnt_lgkmcnt', 's_nop',
+                 's_inst_prefetch', 's_barrier'):   # s_barrier: barrier() in the emission
             return
         self.unknown[op] += 1
         self.emit('/* UNHANDLED %s */' % inst.text)
+
+    # --- graphics: exports and messages
+    def op_exp(self, inst):
+        tgt = inst.ops[0].text
+        srcs = inst.ops[1:5]
+        if tgt == 'prim':
+            return                   # NGG primitive export: the input assembler builds Vulkan's primitives
+        if self.stage == 'ps':
+            self.ps_export(inst, tgt)
+            return
+        if inst.mods.get('compr'):
+            self.unknown['exp compr'] += 1
+            return
+        comps = [None if o.kind in ('off', 'null') else self.src_u32(o) for o in srcs]
+        if tgt == 'pos0':
+            self.emit('if (EX) { exp_pos0(uvec4(%s)); }' % ', '.join(c or '0u' for c in comps), valu=True)
+            return
+        if tgt.startswith('param'):
+            n = int(tgt[5:])
+            loc = self.gfx.param_location(n) if self.gfx is not None else None
+            if loc is None:
+                return               # a parameter the pixel stage does not read (not in Kyty's interface)
+            self.param_outputs.add((n, loc))
+            writes = ' '.join('P%d.%s = uintBitsToFloat(%s);' % (n, 'xyzw'[k], c) for k, c in enumerate(comps) if c)
+            self.emit('if (EX) { %s }' % writes, valu=True)
+            return
+        self.unknown['exp ' + tgt] += 1
+
+    # --- pixel stage: interpolation (Kyty: v_interp_p1 nothing, p2 = the interpolated input, mov = the input's
+    # interpolation parameter), whole quad mode
+    def ps_input(self, attr):
+        """Kyty's pixel-stage input of guest attribute `attr`: (spirv location, interface info) or (None, None)"""
+        if self.gfx is None:
+            return None, None
+        for d in self.gfx.inputs:
+            if d.get('kind') == 'Parameter' and int(d.get('location', -1)) == attr:
+                sloc = int(d.get('spirv_location', d['location']))
+                return sloc, self.gfx.interface.get(('in', sloc, 0))
+        return None, None
+
+    def op_v_interp_p1_f32(self, inst):
+        pass
+
+    def op_v_interp_p2_f32(self, inst):
+        d, a = inst.ops[0], inst.ops[2]
+        sloc, info = self.ps_input(a.attr)
+        if info is None or info['type'] != 'float' or info['n'] <= a.chan:
+            self.unknown['v_interp_p2_f32 attr %d' % a.attr] += 1
+            return
+        c = 'xyzw'[a.chan]
+        if info['array'] is not None:
+            # a per-vertex input (Kyty: spirvEmitterFlow.cpp EmitPixelAttribute): flat -> the provoking vertex, else
+            # the barycentric sum over the three vertices
+            if 'PerVertex' not in info['decorations'] or info['array'] != 3:
+                self.unknown['v_interp_p2_f32 of an input array'] += 1
+                return
+            desc = next((x for x in self.gfx.inputs if x.get('kind') == 'Parameter' and int(x.get('location', -1)) ==
+                         a.attr), {})
+            self.ps_inputs[sloc] = info
+            if desc.get('flat') == '1':
+                vtx = 2 if self.gfx.pixel.get('parameter_mode') == '1' else 0
+                self.write_v_u32(inst, d, 'floatBitsToUint(IN%d[%d].%s)' % (sloc, vtx, c))
+                return
+            bary = 'gl_BaryCoordNoPerspEXT' if self.gfx.pixel.get('no_perspective') == '1' else 'gl_BaryCoordEXT'
+            self.write_v_u32(inst, d, 'floatBitsToUint(IN%d[0].%s * %s.x + IN%d[1].%s * %s.y + IN%d[2].%s * %s.z)' % (
+                sloc, c, bary, sloc, c, bary, sloc, c, bary))
+            return
+        self.ps_inputs[sloc] = info
+        self.write_v_u32(inst, d, 'floatBitsToUint(IN%d.%s)' % (sloc, c))
+
+    def op_v_interp_mov_f32(self, inst):
+        # Kyty (spirvEmitterFlow.cpp EmitInterpolationParameter): an input that is not per vertex gives its value for
+        # every mode; a per-vertex one gives vertex (mode + 1) % 3 (p10: 1, p20: 2, p0: 0, or the last vertex for a
+        # flat p0 when the parameter mode says so), minus vertex 0 for p10 / p20 unless the input is custom
+        d, p, a = inst.ops[0], inst.ops[1], inst.ops[2]
+        sloc, info = self.ps_input(a.attr)
+        mode = {'p10': 0, 'p20': 1, 'p0': 2}.get(p.text)
+        if info is None or info['n'] <= a.chan or mode is None or info['type'] != 'float':
+            self.unknown['v_interp_mov_f32 %s attr %d' % (p.text, a.attr)] += 1
+            return
+        self.ps_inputs[sloc] = info
+        c = 'xyzw'[a.chan]
+        if info['array'] is None:
+            self.write_v_u32(inst, d, 'floatBitsToUint(IN%d.%s)' % (sloc, c))
+            return
+        if 'PerVertex' not in info['decorations'] or info['array'] != 3:
+            self.unknown['v_interp_mov_f32 of an input array'] += 1
+            return
+        desc = next((x for x in self.gfx.inputs if x.get('kind') == 'Parameter' and int(x.get('location', -1)) ==
+                     a.attr), {})
+        custom = desc.get('custom') == '1'
+        flat = desc.get('flat') == '1'
+        vtx = (mode + 1) % 3
+        if mode == 2 and flat and self.gfx.pixel.get('parameter_mode') == '1':
+            vtx = 2
+        e = 'IN%d[%d].%s' % (sloc, vtx, c)
+        if not custom and mode < 2:
+            e = '(%s - IN%d[0].%s)' % (e, sloc, c)
+        self.write_v_u32(inst, d, 'floatBitsToUint(%s)' % e)
+
+    def wqm_expr(self, bits):
+        """whole quad mode of the thread's lane bit: set when any lane of the pixel quad has it"""
+        return 'quad_any(%s)' % bits
+
+    def op_s_wqm_b64(self, inst):
+        d, a = inst.ops
+        if self.stage != 'ps':
+            self.unknown['s_wqm_b64 outside the pixel stage'] += 1
+            return
+        e = self.wqm_expr(self.mask_val(a))
+        if d.first == 126:
+            self.emit('EXM = %s; SCC = EXM != 0u;' % e)
+            return
+        self.emit('%s = %s; %s = 0u; SCC = %s != 0u;' % (self.reg(d, 0), e, self.reg(d, 1), self.reg(d, 0)))
+        self.set_kind(d, 'mask')
+
+    def ps_export(self, inst, tgt):
+        """exp mrt<n> / mrtz / null: the color outputs as Kyty declares them, converted per the target's export
+        format (SPI_SHADER_COL_FORMAT); vm: the lane's exec bit is its pixel's valid mask"""
+        srcs = inst.ops[1:5]
+        compr = bool(inst.mods.get('compr'))
+        writes = ''
+        if tgt.startswith('mrt') and tgt != 'mrtz':
+            n = int(tgt[3:])
+            info = self.gfx.interface.get(('out', n, 0)) if self.gfx is not None else None
+            mode = self.gfx.target_output_mode[n] if self.gfx is not None and n < len(self.gfx.target_output_mode) \
+                else 0
+            # Kyty's per-target conversion flags (CB format classes); they matter for the 16-bit exports only (the
+            # 32-bit ones are raw bits into Kyty's output type)
+            special = compr and any((int(self.gfx.pixel.get(k, '0'), 0) >> n) & 1
+                                    for k in ('packed_unorm', 'uint', 'sint', 'round'))
+            if info is not None and mode != 0:
+                if special or info['array'] is not None or info['type'] not in ('float', 'uint'):
+                    self.unknown['exp %s: format mode %d special' % (tgt, mode)] += 1
+                    return
+                if compr:
+                    lo = self.src_u32(srcs[0]) if srcs[0].kind == 'reg' else '0u'
+                    hi = self.src_u32(srcs[2]) if srcs[2].kind == 'reg' else '0u'
+                    unpack = {4: 'unpackHalf2x16', 5: 'unpackUnorm2x16', 6: 'unpackSnorm2x16'}.get(mode)
+                    if info['type'] == 'float' and unpack:
+                        val = 'vec4(%s(%s), %s(%s))' % (unpack, lo, unpack, hi)
+                    elif info['type'] == 'uint' and mode == 7:
+                        val = 'uvec4(%s & 0xffffu, %s >> 16, %s & 0xffffu, %s >> 16)' % (lo, lo, hi, hi)
+                    else:
+                        self.unknown['exp %s: compressed mode %d into %s' % (tgt, mode, info['type'])] += 1
+                        return
+                else:
+                    comps = [self.src_u32(o) if o.kind == 'reg' else '0u' for o in srcs]
+                    if mode not in (1, 2, 9):
+                        self.unknown['exp %s: 32-bit export mode %d' % (tgt, mode)] += 1
+                        return
+                    if mode == 1:
+                        comps = [comps[0], '0u', '0u', '0u']
+                    elif mode == 2:
+                        comps = [comps[0], comps[1], '0u', '0u']
+                    val = 'uvec4(%s)' % ', '.join(comps)
+                    if info['type'] == 'float':
+                        val = 'uintBitsToFloat(%s)' % val
+                n_out = info['n']
+                sw = 'xyzw'[:n_out]
+                self.ps_outputs[n] = info
+                writes = 'OUT%d = (%s).%s;' % (n, val, sw) if n_out < 4 else 'OUT%d = %s;' % (n, val)
+        elif tgt == 'mrtz':
+            if srcs[0].kind != 'reg' or any(o.kind == 'reg' for o in srcs[1:]):
+                self.unknown['exp mrtz other than depth'] += 1
+                return
+            if self.gfx is None or self.gfx.pixel.get('depth_export') != '1':
+                self.unknown['exp mrtz without depth_export'] += 1
+                return
+            self.ps_depth = True
+            writes = 'gl_FragDepth = uintBitsToFloat(%s);' % self.src_u32(srcs[0])
+        elif tgt != 'null':
+            self.unknown['exp ' + tgt] += 1
+            return
+        text = ''
+        if writes:
+            text += 'if (EX) { %s } ' % writes
+        if inst.mods.get('vm'):
+            text += 'PS_VALID = EX; '
+        if text:
+            self.emit(text.strip())
+
+    def op_s_sendmsg(self, inst):
+        text = inst.ops[0].text if inst.ops else ''
+        if 'GS_ALLOC_REQ' in text or 'DEALLOC_VGPRS' in text:
+            return                   # NGG allocation: Vulkan's input assembler; VGPR release: nothing to do
+        self.unknown['s_sendmsg ' + text] += 1
 
     # --- VALU float
     def op_v_mac_f32(self, inst):
@@ -648,6 +847,28 @@ class Translator:
         d, a, c = inst.ops
         self.write_v_u32(inst, d, '(%s | %s)' % (self.src_int(a, inst, 0), self.src_int(c, inst, 1)))
 
+    def op_v_fmac_f32(self, inst):
+        d, a, c = inst.ops
+        self.write_v_f32(inst, d, 'fma(%s, %s, uintBitsToFloat(%s))' % (
+            self.src_f32(a, inst, 0), self.src_f32(c, inst, 1), self.reg(d)))
+
+    def op_v_cvt_rpi_i32_f32(self, inst):
+        d, a = inst.ops
+        self.write_v_u32(inst, d, 'uint(cvt_i32_f32(floor(%s + 0.5)))' % self.src_f32(a, inst, 0))
+
+    def op_v_cvt_off_f32_i4(self, inst):
+        d, a = inst.ops
+        self.write_v_f32(inst, d, '(float(bitfieldExtract(int(%s), 0, 4)) * 0.0625)' % self.src_u32(a))
+
+    def op_v_writelane_b32(self, inst):
+        """v_writelane_b32 d, s, lane: lane `lane` of d gets s (exec is ignored); lane pairs: lane l is invocation l & 31,
+        half l >> 5"""
+        d, a, lane = inst.ops
+        l = self.src_u32(lane)
+        self.emit('{ uint l_ = %s & 63u; if (gl_SubgroupInvocationID == (l_ & 31u)) { if (l_ < 32u) %s = %s; else %s = %s; } }'
+                  % (l, self.vname(d, 0, 0), self.src_u32(a), self.vname(d, 0, 1), self.src_u32(a)))
+        self.wave_points.add(inst.off)
+
     def op_v_fma_f32(self, inst):
         d, a, c, e = inst.ops
         self.write_v_f32(inst, d, 'fma(%s, %s, %s)' % (self.src_f32(a, inst), self.src_f32(c, inst),
@@ -704,12 +925,12 @@ class Translator:
         if o.kind == 'reg' and o.file == 's':
             if self.mask_kind.get(o.first) == 'value':
                 return 'lane_bits2(%s, %s)' % (self.reg(o, 0), self.reg(o, 1))
-            return '(%s & 3u)' % self.reg(o, 0)
+            return '(%s & LMASK)' % self.reg(o, 0)
         if o.kind == 'const':
             lo = o.value & 0xffffffff
             hi = 0xffffffff if o.text.startswith('-') else 0
             if lo == 0xffffffff and hi == 0xffffffff:
-                return '3u'
+                return 'LMASK'
             if lo == 0 and hi == 0:
                 return '0u'
             return 'lane_bits2(0x%08xu, 0x%08xu)' % (lo, hi)
@@ -824,9 +1045,9 @@ class Translator:
                 self.notes.append('%05x %s mixes a lane mask and a value' % (inst.off, inst.text))
             r = fn_mask(self.mask_val(a), self.mask_val(c))
             if d.first == 126:
-                self.emit('{ uint r_ = (%s) & 3u; EXM = r_; SCC = r_ != 0u; }' % r)
+                self.emit('{ uint r_ = (%s) & LMASK; EXM = r_; SCC = r_ != 0u; }' % r)
             else:
-                self.emit('{ uint r_ = (%s) & 3u; %s = r_; %s = 0u; SCC = r_ != 0u; }' % (r, self.reg(d, 0),
+                self.emit('{ uint r_ = (%s) & LMASK; %s = r_; %s = 0u; SCC = r_ != 0u; }' % (r, self.reg(d, 0),
                                                                                        self.reg(d, 1)))
                 self.set_kind(d, 'mask')
             self.scc_note(inst)
@@ -859,7 +1080,7 @@ class Translator:
     def op_s_not_b64(self, inst):
         d, a = inst.ops
         if a.kind == 'reg' and (a.first == 126 or self.mask_kind.get(a.first) == 'mask'):
-            self.emit('%s = ~%s & 3u; %s = 0u; SCC = %s != 0u;' % (self.reg(d, 0), self.mask_val(a),
+            self.emit('%s = ~%s & LMASK; %s = 0u; SCC = %s != 0u;' % (self.reg(d, 0), self.mask_val(a),
                                                                   self.reg(d, 1), self.reg(d, 0)))
             self.set_kind(d, 'mask')
             return
@@ -869,7 +1090,7 @@ class Translator:
 
     def saveexec(self, inst, fn):
         d, a = inst.ops
-        self.emit('{ uint old_ = EXM; %s = old_; %s = 0u; EXM = (%s) & 3u; SCC = EXM != 0u; }' % (
+        self.emit('{ uint old_ = EXM; %s = old_; %s = 0u; EXM = (%s) & LMASK; SCC = EXM != 0u; }' % (
             self.reg(d, 0), self.reg(d, 1), fn('old_', self.mask_val(a))))
         self.set_kind(d, 'mask')
 
@@ -940,6 +1161,50 @@ class Translator:
         self.emit('%s = %s ^ %s; SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
         self.set_kind(d, 'value')
 
+    def op_s_min_u32(self, inst):
+        self.salu2(inst, '(%s < %s ? %s : %s)' % ('%s', '%s', self.sval(inst.ops[1]), self.sval(inst.ops[2])),
+                   '%s < %s' % (self.sval(inst.ops[1]), self.sval(inst.ops[2])))
+
+    def op_s_max_u32(self, inst):
+        self.salu2(inst, '(%s > %s ? %s : %s)' % ('%s', '%s', self.sval(inst.ops[1]), self.sval(inst.ops[2])),
+                   '%s > %s' % (self.sval(inst.ops[1]), self.sval(inst.ops[2])))
+
+    def op_v_bfrev_b32(self, inst):
+        d, a = inst.ops[:2]
+        self.write_v_u32(inst, d, 'bitfieldReverse(%s)' % self.src_int(a, inst, 0))
+
+    def op_v_sad_u32(self, inst):
+        d, a, c, e = inst.ops[:4]
+        x, y = self.src_int(a, inst, 0), self.src_int(c, inst, 1)
+        self.write_v_u32(inst, d, '((max(%s, %s) - min(%s, %s)) + %s)' % (x, y, x, y, self.src_int(e, inst, 2)))
+
+    def op_s_not_b32(self, inst):
+        d, a = inst.ops
+        self.emit('%s = ~%s; SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_nor_b32(self, inst):
+        d, a, c = inst.ops
+        self.emit('%s = ~(%s | %s); SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_nand_b32(self, inst):
+        d, a, c = inst.ops
+        self.emit('%s = ~(%s & %s); SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_andn2_b32(self, inst):
+        d, a, c = inst.ops
+        self.emit('%s = %s & ~%s; SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_bfm_b64(self, inst):
+        """s_bfm_b64 d, a, c: d = ((1 << a[5:0]) - 1) << c[5:0] (64 bits)"""
+        d, a, c = inst.ops
+        self.emit('{ uint64_t m_ = ((1ul << uint64_t(%s & 63u)) - 1ul) << uint64_t(%s & 63u); %s = uint(m_); %s = uint(m_ >> 32); }'
+                  % (self.sval(a), self.sval(c), self.reg(d, 0), self.reg(d, 1)))
+        self.set_kind(d, 'value')
+
     def op_s_min_i32(self, inst):
         self.salu2(inst, '(int(%s) < int(%s) ? %s : %s)' % ('%s', '%s', self.sval(inst.ops[1]), self.sval(inst.ops[2])),
                    'int(%s) < int(%s)' % (self.sval(inst.ops[1]), self.sval(inst.ops[2])))
@@ -994,6 +1259,33 @@ class Translator:
                   'SCC = t_ != 0ul; }' % (lo, hi, self.sval(c), self.reg(d, 0), self.reg(d, 1)))
         self.set_kind(d, 'value')
 
+    def write_s64(self, d, expr64):
+        """a 64-bit scalar result (uint64_t expression); exec takes the thread's lane bits of it"""
+        if d.kind == 'reg' and d.first == 126:
+            self.emit('{ uint64_t t_ = %s; EXM = lane_bits2(uint(t_), uint(t_ >> 32)); SCC = t_ != 0ul; }' % expr64)
+            return
+        self.emit('{ uint64_t t_ = %s; %s = uint(t_); %s = uint(t_ >> 32); SCC = t_ != 0ul; }' % (
+            expr64, self.reg(d, 0), self.reg(d, 1)))
+        self.set_kind(d, 'value')
+
+    def s64(self, o):
+        """a 64-bit scalar source as uint64_t (inline constants sign-extend)"""
+        if o.kind == 'const':
+            hi = 0xffffffff if o.text.startswith('-') else 0
+            return '0x%08x%08xul' % (hi, o.value & 0xffffffff)
+        if o.kind == 'reg' and o.first == 126:
+            raise ValueError('exec as a 64-bit value source')
+        return 'packUint2x32(uvec2(%s, %s))' % (self.sval(o, 0), self.sval(o, 1))
+
+    def op_s_lshr_b64(self, inst):
+        d, a, c = inst.ops
+        self.write_s64(d, '(%s >> (%s & 63u))' % (self.s64(a), self.sval(c)))
+
+    def op_s_bfe_u64(self, inst):
+        d, a, c = inst.ops
+        # src1: offset [5:0], width [22:16]
+        self.write_s64(d, 'bfe_u64(%s, %s)' % (self.s64(a), self.sval(c)))
+
     def op_s_bfm_b32(self, inst):
         d, a, c = inst.ops
         self.emit('%s = ((1u << (%s & 31u)) - 1u) << (%s & 31u);' % (self.reg(d), self.sval(a), self.sval(c)))
@@ -1018,7 +1310,7 @@ class Translator:
         if even == 126:
             return 'EXM', o.first & 1
         if self.mask_kind.get(even) == 'mask':
-            return '(%s & 3u)' % ('s%d' % even), o.first & 1
+            return '(%s & LMASK)' % ('s%d' % even), o.first & 1
         return None
 
     def mbcnt_ballot(self, inst):
@@ -1120,6 +1412,22 @@ class Translator:
         rel = {'eq': '==', 'lg': '!=', 'lt': '<', 'le': '<=', 'gt': '>', 'ge': '>='}[m.group(1)]
         self.emit('SCC = %s %s %s;' % (x, rel, y))
 
+    def op_scmpk(self, inst):
+        """s_cmpk_<rel>_<type> s, simm16: SCC = s rel the 16-bit constant (sign-extended for i32, zero for u32)"""
+        m = re.match(r's_cmpk_(eq|lg|lt|le|gt|ge)_(u32|i32)$', inst.base)
+        if m is None:
+            self.unknown[inst.op] += 1
+            return
+        a, k = inst.ops
+        v = k.value & 0xffff
+        if m.group(2) == 'i32':
+            v = v - 0x10000 if v & 0x8000 else v
+            x, y = 'int(%s)' % self.sval(a), '%d' % v
+        else:
+            x, y = self.sval(a), '%du' % v
+        rel = {'eq': '==', 'lg': '!=', 'lt': '<', 'le': '<=', 'gt': '>', 'ge': '>='}[m.group(1)]
+        self.emit('SCC = %s %s %s;' % (x, rel, y))
+
     # --- scalar memory
     def op_sload(self, inst):
         d, base, off = inst.ops
@@ -1218,6 +1526,12 @@ class Translator:
         data, vaddr, vs, soff = inst.ops
         b = inst.base
         a = self.mubuf_addr(inst, vaddr, vs, soff)
+        if b.startswith('buffer_store_format_'):
+            comps = len(b.rsplit('_', 1)[1])
+            regs = [self.reg(data, k) if k < comps else '0u' for k in range(4)]
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); buf_store_format(ba_, uvec4(%s), %du); }' % (
+                a, ', '.join(regs), comps))
+            return
         if b.startswith('buffer_store_dword'):
             self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); %s }' % (a, ' '.join(
                 'buf_store32(ba_, %d, %s);' % (4 * k, self.reg(data, k)) for k in range(data.count))))
@@ -1244,6 +1558,17 @@ class Translator:
         fn = {'buffer_atomic_add': 'atomicAdd', 'buffer_atomic_sub': None, 'buffer_atomic_umin': 'atomicMin',
               'buffer_atomic_umax': 'atomicMax', 'buffer_atomic_and': 'atomicAnd', 'buffer_atomic_or': 'atomicOr',
               'buffer_atomic_xor': 'atomicXor', 'buffer_atomic_swap': 'atomicExchange'}.get(b)
+        if b in ('buffer_atomic_fmin', 'buffer_atomic_fmax') and data.count == 1:
+            # float min / max (IEEE minNum / maxNum: a NaN operand loses) by compare-swap; the first read may be stale,
+            # the swap then fails and returns the current value
+            a = self.mubuf_addr(inst, vaddr, vs, soff)
+            op = 'fmin_ieee' if b.endswith('fmin') else 'fmax_ieee'
+            ret = ('%s = o_; ' % self.reg(data)) if inst.mods.get('glc') else ''
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) { uint o_ = C32(ba_.dev).v; '
+                      'for (uint g_ = 0u; g_ < LOOP_LIMIT; g_++) { uint n_ = floatBitsToUint(%s(uintBitsToFloat(o_), '
+                      'uintBitsToFloat(%s))); uint p_ = atomicCompSwap(W32(ba_.dev).v, o_, n_); if (p_ == o_) break; o_ = p_; } '
+                      '%s} }' % (a, op, self.reg(data), ret))
+            return
         if b == 'buffer_atomic_cmpswap' and data.count == 2:
             # data[0]: the value to store, data[1]: the value to compare with; glc: the old value into data[0]
             a = self.mubuf_addr(inst, vaddr, vs, soff)
@@ -1373,15 +1698,32 @@ class Translator:
                 '%s = %s;' % (self.reg(vdata, k), vals[c]) for k, c in enumerate(comps))))
             return
         if fam == 'sample':
-            if b not in ('image_sample_lz', 'image_sample_l', 'image_gather4_lz', 'image_sample_c_lz'):
+            if b not in ('image_sample_lz', 'image_sample_l', 'image_gather4_lz', 'image_sample_c_lz', 'image_sample',
+                         'image_sample_b', 'image_sample_d'):
                 raise images.Unsupported('%s' % inst)
             if img['class'] != images.CLASS_SAMPLED:
                 raise images.Unsupported('%s: sampling a storage image' % inst)
             k = 0
             ref = None
+            bias = None
+            grads = None
             if b == 'image_sample_c_lz':
                 ref = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, 0)
                 k = 1
+            if b == 'image_sample_b':
+                # address: bias, coordinates
+                bias = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, 0)
+                k = 1
+            if b == 'image_sample_d':
+                # address: derivatives (x: ds/dh, dt/dh, y: ds/dv, dt/dv for 2D), coordinates
+                if img['dim'] not in (images.DIM_2D, images.DIM_2D_ARRAY) or ncoord - (1 if layered else 0) != 2:
+                    raise images.Unsupported('%s: gradients of a non-2D image' % inst)
+                g_ = ['uintBitsToFloat(%s)' % self.img_addr(vaddr, j) for j in range(4)]
+                grads = ('vec2(%s, %s)' % (g_[0], g_[1]), 'vec2(%s, %s)' % (g_[2], g_[3]))
+                k = 4
+            implicit = b in ('image_sample', 'image_sample_b')
+            if implicit and self.stage != 'ps':
+                raise images.Unsupported('%s: implicit derivatives outside the pixel stage' % inst)
             lod = 'uintBitsToFloat(%s)' % self.img_addr(vaddr, k + ncoord) if b == 'image_sample_l' else '0.0'
             kdim = images.DIM_SUFFIX[img['dim']]
             pre = {images.NUMERIC_FLOAT: '', images.NUMERIC_UINT: 'u', images.NUMERIC_SINT: 'i'}[numeric]
@@ -1395,6 +1737,10 @@ class Translator:
                     raise images.Unsupported('%s: gather of %d components' % (inst, len(comps)))
                 e = 'textureGather(%s, %s, %d)' % (comb, coord, comps[0])
                 comps = [0, 1, 2, 3]
+            elif grads is not None:
+                e = 'textureGrad(%s, %s, %s, %s)' % (comb, coord, grads[0], grads[1])
+            elif implicit:
+                e = 'texture(%s, %s%s)' % (comb, coord, ', ' + bias if bias else '')
             else:
                 e = 'textureLod(%s, %s, %s)' % (comb, coord, lod)
             self.emit('if (EX) { %s4 r_ = %s; %s }' % (vec, e, results('r_')))
@@ -1511,6 +1857,17 @@ class Translator:
             self.emit('if (EX) { uint a_ = %s >> 2; LDS[a_ + %du] = %s; LDS[a_ + %du] = %s; }' % (
                 self.reg(addr), o0 * scale, self.reg(d0), o1 * scale, self.reg(d1)))
             self.lds_writes.add(inst.off)
+        elif b.replace('_rtn', '') in LDS_ATOMICS or b in LDS_ATOMICS:
+            fn = LDS_ATOMICS.get(b.replace('_rtn', '')) or LDS_ATOMICS[b]
+            if '_rtn' in b:
+                d, addr, data = inst.ops
+                self.emit('if (EX) %s = %s(LDS[(%s + %du) >> 2], %s);' % (self.reg(d), fn, self.reg(addr), off,
+                                                                         self.reg(data)))
+                self.lds_reads.add(inst.off)
+            else:
+                addr, data = inst.ops
+                self.emit('if (EX) %s(LDS[(%s + %du) >> 2], %s);' % (fn, self.reg(addr), off, self.reg(data)))
+            self.lds_writes.add(inst.off)
         elif b in ('ds_min_f32', 'ds_max_f32'):
             addr, data = inst.ops
             self.emit('if (EX) lds_atomic_%s_f32((%s + %du) >> 2, %s);' % (b[3:6], self.reg(addr), off,
@@ -1520,6 +1877,10 @@ class Translator:
             self.unknown[inst.op] += 1
 
 
+# LDS atomics on the uint LDS array (signed min/max are not here: they would need the int view)
+LDS_ATOMICS = {'ds_add_u32': 'atomicAdd', 'ds_max_u32': 'atomicMax', 'ds_min_u32': 'atomicMin', 'ds_or_b32': 'atomicOr',
+               'ds_and_b32': 'atomicAnd', 'ds_xor_b32': 'atomicXor', 'ds_wrxchg_rtn_b32': 'atomicExchange'}
+
 FLOAT2 = {
     'v_add_f32': '(%s + %s)', 'v_sub_f32': '(%s - %s)', 'v_mul_f32': '(%s * %s)',
 }
@@ -1528,10 +1889,16 @@ FLOAT1 = {
     'v_sqrt_f32': 'sqrt(%s)', 'v_exp_f32': 'exp2(%s)', 'v_log_f32': 'log2(%s)',
     'v_sin_f32': 'sin_rev(%s)', 'v_cos_f32': 'cos_rev(%s)', 'v_fract_f32': 'fract_f32(%s)',
     'v_ceil_f32': 'ceil(%s)', 'v_floor_f32': 'floor(%s)', 'v_rndne_f32': 'roundEven(%s)',
+    'v_trunc_f32': 'trunc(%s)',
 }
 INT2 = {
     'v_add_nc_u32': '(%s + %s)', 'v_sub_nc_u32': '(%s - %s)', 'v_and_b32': '(%s & %s)',
-    'v_xor_b32': '(%s ^ %s)',
+    'v_xor_b32': '(%s ^ %s)', 'v_min_u32': 'min(%s, %s)', 'v_max_u32': 'max(%s, %s)',
+    'v_bcnt_u32_b32': '(uint(bitCount(%s)) + %s)',
+    'v_cvt_pk_u16_u32': '((%s & 0xffffu) | (%s << 16))',
+    'v_cvt_pknorm_u16_f32': 'packUnorm2x16(vec2(uintBitsToFloat(%s), uintBitsToFloat(%s)))',
+    'v_cvt_pknorm_i16_f32': 'packSnorm2x16(vec2(uintBitsToFloat(%s), uintBitsToFloat(%s)))',
+    'v_min_i32': 'uint(min(int(%s), int(%s)))',
     'v_mul_lo_u32': '(%s * %s)',
     'v_mul_u32_u24': '((%s & 0xffffffu) * (%s & 0xffffffu))', 'v_max_i32': 'uint(max(int(%s), int(%s)))',
     'v_mul_i32_i24': 'uint(bitfieldExtract(int(%s), 0, 24) * bitfieldExtract(int(%s), 0, 24))',
@@ -1540,6 +1907,9 @@ INT3 = {
     'v_add3_u32': '(%s + %s + %s)', 'v_lshl_add_u32': '((%s << (%s & 31u)) + %s)',
     'v_mad_u32_u24': '((%s & 0xffffffu) * (%s & 0xffffffu) + %s)',
     'v_lshl_or_b32': '((%s << (%s & 31u)) | %s)', 'v_and_or_b32': '((%s & %s) | %s)',
+    'v_or3_b32': '(%s | %s | %s)', 'v_add_lshl_u32': '((%s + %s) << (%s & 31u))',
+    'v_xad_u32': '((%s ^ %s) + %s)', 'v_med3_u32': 'med3_u32(%s, %s, %s)',
+    'v_med3_i32': 'uint(med3_i32(int(%s), int(%s), int(%s)))',
 }
 
 
@@ -1565,6 +1935,20 @@ def install_reversed(tr):
         d, a, c = inst.ops
         tr.write_v_u32(inst, d, 'uint(int(%s) >> (%s & 31u))' % (tr.src_int(c, inst, 1), tr.src_int(a, inst, 0)))
 
+    def shift16(fmt):
+        # 16-bit shifts (VOP2 / VOP3 without op_sel): the low half of src1 shifted by src0[3:0]; the result's high half
+        # is zero, as the other 16-bit results here
+        def op(inst):
+            d, a, c = inst.ops
+            if 'op_sel' in inst.text:
+                tr.unknown[inst.base + ' op_sel'] += 1
+                return
+            tr.write_v_u32(inst, d, fmt % (tr.src_int(c, inst, 1), tr.src_int(a, inst, 0)))
+        return op
+
+    tr.op_v_lshrrev_b16 = shift16('((%s & 0xffffu) >> (%s & 15u))')
+    tr.op_v_lshlrev_b16 = shift16('((%s << (%s & 15u)) & 0xffffu)')
+    tr.op_v_ashrrev_i16 = shift16('(uint(bitfieldExtract(int(%s), 0, 16) >> (%s & 15u)) & 0xffffu)')
     tr.op_v_subrev_f32 = subrev_f
     tr.op_v_subrev_nc_u32 = subrev_u
     tr.op_v_lshlrev_b32 = lshlrev
@@ -1672,6 +2056,7 @@ def scalar_reach(insts, user_sgprs, hints=None):
     emulator's ScalarTable has one entry per node, so a load finds its snapshot without a search)."""
     nodes = []
     holder = {}        # SGPR -> (node, byte offset) of the dword loaded into it
+    bound = {}         # SGPR -> the largest value it can hold (scalar_bound)
     redefined = set()
 
     def node_of(base):
@@ -1722,19 +2107,65 @@ def scalar_reach(insts, user_sgprs, hints=None):
                 hints[i.off] = n
             imm = int(i.mods.get('offset', '0'), 0)
             offset = imm if off.kind == 'null' else (off.value + imm if off.kind == 'const' else None)
+            reg_bound = bound.get(off.first) if off.kind == 'reg' and off.file == 's' and off.count == 1 else None
             for r in d.regs():
                 holder.pop(int(r[1:]), None)
+                bound.pop(int(r[1:]), None)
                 redefined.add(int(r[1:]))
+            if n is not None and offset is None and reg_bound is not None:
+                # an SGPR offset with a known bound (a masked table index): the extent up to the bound
+                nodes[n][3] = max(nodes[n][3], reg_bound + imm + 4 * d.count)
+                continue
             if n is None or offset is None:
                 continue
             nodes[n][3] = max(nodes[n][3], offset + 4 * d.count)
             for k in range(d.count):
                 holder[d.first + k] = (n, offset + 4 * k)
             continue
+        nb = scalar_bound(i, bound)
         for r in all_sgpr_defs(i):
             holder.pop(int(r[1:]), None)
+            bound.pop(int(r[1:]), None)
             redefined.add(int(r[1:]))
+        if nb is not None:
+            bound[nb[0]] = nb[1]
     return [tuple(n) for n in nodes]
+
+
+def scalar_bound(i, bound):
+    """(SGPR, the largest value it can hold) after a scalar instruction whose result has a bound (program order):
+    s_and_b32 with a constant, s_bfe_u32, s_lshl_b32 / s_lshr_b32 of a bounded value by a constant, s_mov_b32 of a
+    constant; None otherwise"""
+    b = i.base
+    if not i.ops or i.ops[0].kind != 'reg' or i.ops[0].file != 's' or i.ops[0].count != 1:
+        return None
+    d = i.ops[0].first
+
+    def val(o):
+        if o.kind == 'const':
+            return o.value
+        if o.kind == 'reg' and o.file == 's' and o.count == 1:
+            return bound.get(o.first)
+        return None
+    if b == 's_mov_b32' and i.ops[1].kind == 'const':
+        return d, i.ops[1].value
+    if b == 's_and_b32':
+        cands = [o.value for o in i.ops[1:3] if o.kind == 'const']
+        other = [val(o) for o in i.ops[1:3] if o.kind != 'const']
+        if cands:
+            return d, min(cands + [x for x in other if x is not None])
+        return None
+    if b == 's_bfe_u32' and i.ops[2].kind == 'const':
+        w = (i.ops[2].value >> 16) & 0x7f
+        return (d, (1 << min(w, 32)) - 1) if w < 32 else None
+    if b in ('s_lshl_b32', 's_lshr_b32') and i.ops[2].kind == 'const':
+        x = val(i.ops[1])
+        if x is None:
+            return None
+        sh = i.ops[2].value & 31
+        r = (x << sh) if b == 's_lshl_b32' else (x >> sh)
+        return (d, r) if r < (1 << 32) else None
+    return None
 
 
 def reaching_sgpr_defs(insts, user_sgprs):
@@ -2364,11 +2795,20 @@ def innermost_end_outer(stack):
 
 
 def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=False, resources=None, shape=None,
-                     tidig=0):
+                     tidig=0, stage='cs', gfx_if=None):
     insts = gcnisa.decode(path)
+    if stage != 'cs':
+        # graphics: the user SGPRs follow the stage's system SGPRs (s[base, base + count)); the analyses see them all
+        # as known at the start
+        user_sgprs = gfx_if.user_data_base + user_sgprs
+        lds_bytes = 4
     tr = Translator(insts, threads, lds_bytes, user_sgprs, tgid_sgpr)
-    tr.images = (images.ImageMap(insts, images.load_resources(resources), all_sgpr_defs, user_sgprs)
-                 if resources else None)
+    if stage != 'cs':
+        tr.stage, tr.halves, tr.gfx = stage, (0,), gfx_if
+    res = images.load_resources(resources) if resources else None
+    if res is None and gfx_if is not None and (gfx_if.images or gfx_if.samplers):
+        res = images.load_resources_gres(gfx_if.path)
+    tr.images = images.ImageMap(insts, res, all_sgpr_defs, user_sgprs) if res else None
     install_reversed(tr)
     tr.wave_points, tr.lds_points, tr.lds_reads, tr.lds_writes = set(), set(), set(), set()
     tr.ballot_index = set()
@@ -2450,7 +2890,7 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
                 if not lane:
                     e = '((s106 | s107) != 0u)'
                 else:
-                    e = 'wave_any((s106 & 3u) != 0u)' if w else '((s106 & 3u) != 0u)'
+                    e = 'wave_any((s106 & LMASK) != 0u)' if w else '((s106 & LMASK) != 0u)'
                 return ('!' + e) if i.op == 's_cbranch_vccz' else e
             raise ValueError(i)
 
@@ -2625,6 +3065,8 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     flags_decl = '\n'.join('    bool %s = false;' % flag(b) for b in sorted(used_flags))
     # loop watchdog (every back edge counts; a loop that would hang the GPU ends after LOOP_LIMIT iterations)
     flags_decl += ''.join('\n    uint LG_%x = 0u;' % off for off in sorted(loop_guards))
+    if stage != 'cs':
+        return graphics_shader(tr, stage, gfx_if, flags_decl, body, nvgpr, user_sgprs), tr
     lines = [prelude.prelude(threads, tr.lds_dwords, nvgpr, probes)]
     if tr.images is not None:
         lines.append(tr.images.declarations())
@@ -2672,7 +3114,12 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     for n in sorted(tr.used_v):
         for h in (0, 1):
             lines.append('    uint v%d_%d = %s;' % (n, h, tid(n, h) or '0u'))
-    lines.append('    EXM = 3u; SCC = false;')
+    if threads < 64:
+        # a workgroup smaller than a wave: one warp, the lanes from the workgroup size on are inactive (the
+        # hardware's initial exec)
+        lines.append('    EXM = (LANE0 < %du ? 1u : 0u) | (LANE1 < %du ? 2u : 0u); SCC = false;' % (threads, threads))
+    else:
+        lines.append('    EXM = LMASK; SCC = false;')
     lines.append(flags_decl)
     lines.append(body)
     lines.append('}')
@@ -2692,6 +3139,102 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     return '\n'.join(lines) + '\n', tr
 
 
+def graphics_shader(tr, stage, g, flags_decl, body, nvgpr, user_end):
+    """the GLSL of a graphics stage: Kyty's interface of the module (outputs, builtins), the initial registers as Kyty
+    sets them (frontend/translate/Translate.cpp, the stage's entry), the body, and the exports"""
+    lines = [prelude.prelude(64, 1, nvgpr, False, stage)]
+    if tr.images is not None:
+        lines.append(tr.images.declarations())
+    for decl in getattr(tr, 'tables_decl', {}).values():
+        lines.append(decl)
+    base = g.user_data_base
+    if stage == 'vs':
+        clip = 'ClipDistance' in g.builtins_out
+        lines.append('out gl_PerVertex { vec4 gl_Position;%s };' % (' float gl_ClipDistance[1];' if clip else ''))
+        for n, loc in sorted(tr.param_outputs):
+            lines.append('layout(location = %d) out vec4 P%d;' % (loc, n))
+        # Kyty: a vertex at the origin (all four components 0, the guest's culled vertex) is clipped
+        lines.append('void exp_pos0(uvec4 v) {\n    vec4 p = uintBitsToFloat(v);\n    gl_Position = p;%s\n}' % (
+            '\n    gl_ClipDistance[0] = all(equal(p, vec4(0.0))) ? -1.0 : 0.0;' if clip else ''))
+        user_count, user_inline, user_off = 'pc.geometry_user_count', 'pc.geometry_user', 0
+    elif stage == 'ps':
+        quals = {'Flat': 'flat', 'NoPerspective': 'noperspective', 'Centroid': 'centroid', 'Sample': 'sample'}
+        scalar = {'vec': 'float', 'uvec': 'uint', 'ivec': 'int'}
+        for sloc, info in sorted(tr.ps_inputs.items()):
+            q = ' '.join(quals[d] for d in sorted(info['decorations']) if d in quals)
+            t = {'float': 'vec', 'uint': 'uvec', 'int': 'ivec'}[info['type']]
+            if info['array'] is not None:
+                lines.append('layout(location = %d) pervertexEXT in %s IN%d[%d];' % (
+                    sloc, t + str(info['n']) if info['n'] > 1 else scalar[t], sloc, info['array']))
+                continue
+            lines.append('layout(location = %d) %sin %s IN%d;' % (sloc, q + ' ' if q else '',
+                                                                  t + str(info['n']) if info['n'] > 1 else scalar[t],
+                                                                  sloc))
+        for n, info in sorted(tr.ps_outputs.items()):
+            t = {'float': 'vec', 'uint': 'uvec', 'int': 'ivec'}[info['type']]
+            lines.append('layout(location = %d) out %s OUT%d;' % (n, t + str(info['n']) if info['n'] > 1 else
+                                                                  scalar[t], n))
+        lines.append('bool PS_VALID = true;    // the pixel valid mask (exp ... vm): the lane is killed when false')
+        lines.append('uint quad_any(uint b) {\n'
+                     '    return (b | subgroupQuadSwapHorizontal(b) | subgroupQuadSwapVertical(b) | '
+                     'subgroupQuadSwapDiagonal(b)) & LMASK;\n}')
+        user_count, user_inline, user_off = 'pc.pixel_user_count', 'pc.pixel_user', 32
+    else:
+        raise ValueError('stage %s' % stage)
+    # system SGPRs (NGG vertex shader: s2 = wave size << 12, s3 = merged wave info: every lane of the wave a vertex
+    # and a primitive (the guest computes its export masks from it), first wave of the group)
+    indirect_v, indirect_i = g.indirect_offsets if g.indirect_draw else (255, 255)
+    special = ''.join('\n        if (k == %du) return uint(%s);' % (slot, b) for slot, b in
+                      ((indirect_v, 'gl_BaseVertex'), (indirect_i, 'gl_BaseInstance')) if slot != 255)
+    lines.append('uint initial_sgpr(uint n) {\n'
+                 '    if (n >= %du && n - %du < %s) {\n'
+                 '        uint k = n - %du;%s\n'
+                 '        return k < %du ? %s[k] : UserTable(pc.user_slot).v[%du + k];\n'
+                 '    }\n'
+                 '%s'
+                 '    return 0u;\n'
+                 '}' % (base, base, user_count, base, special, 10 if stage == 'vs' else 8, user_inline, user_off,
+                        '    if (n == 2u) return 64u << 12;\n    if (n == 3u) return 64u | (1u << 28);\n'
+                        if stage == 'vs' else ''))
+    lines.append('void body() {')
+    lines.append('    LANE0 = gl_SubgroupInvocationID; LANE1 = LANE0 + 32u;')
+    for n in sorted(tr.used_s):
+        lines.append('    uint s%d = %s;' % (n, 'initial_sgpr(%du)' % n if n < max(user_end, 16) else '0u'))
+    vinit = {}
+    if stage == 'vs':
+        vinit[5] = 'uint(gl_VertexIndex - gl_BaseVertex)' if g.indirect_draw else 'uint(gl_VertexIndex)'
+        vinit[8] = 'uint(gl_InstanceIndex - gl_BaseInstance)' if g.indirect_draw else 'uint(gl_InstanceIndex)'
+    exm = 'LMASK'
+    if stage == 'ps':
+        # Translate.cpp: the barycentric pairs (only read by v_interp here, which reads the inputs instead), then from
+        # system_input_base: FragCoord x, y, z, 1 / FragCoord.w (the components the program enabled), front face,
+        # ancillary; exec starts as the live mask (no helper lanes)
+        px = g.pixel
+        reg = int(px.get('system_input_base', '0'))
+        for c in px.get('pos', ''):
+            vinit[reg] = {'x': 'floatBitsToUint(gl_FragCoord.x)', 'y': 'floatBitsToUint(gl_FragCoord.y)',
+                          'z': 'floatBitsToUint(gl_FragCoord.z)', 'w': 'floatBitsToUint(1.0 / gl_FragCoord.w)'}[c]
+            reg += 1
+        exm = '(gl_HelperInvocation ? 0u : 1u)'
+    for n in sorted(tr.used_v):
+        lines.append('    uint v%d_0 = %s;' % (n, vinit.get(n, '0u')))
+        lines.append('    uint v%d_1 = 0u;' % n)
+    lines.append('    EXM = %s; SCC = false;' % exm)
+    lines.append(flags_decl)
+    lines.append(body)
+    lines.append('}')
+    lines.append('void main() {')
+    lines.append('    FAULT_PAGE = NUM_PAGES;')
+    lines.append('    PROBE_N = 0u;')
+    lines.append('    SCALARS = %s;' % ('pc.geometry_scalars' if stage == 'vs' else 'pc.pixel_scalars'))
+    lines.append('    body();')
+    lines.append('    record_faults();')
+    if stage == 'ps':
+        lines.append('    if (!PS_VALID) discard;')
+    lines.append('}')
+    return '\n'.join(lines) + '\n'
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('code')
@@ -2708,15 +3251,34 @@ def main():
     ap.add_argument('--resources', help="Kyty's images and samplers of the program's specialisation (.res dump)")
     ap.add_argument('--shape', help='workgroup shape x,y,z (default: threads,1,1)')
     ap.add_argument('--tidig', type=int, default=0, help='thread id components in v0..v2 (TIDIG_COMP_CNT)')
+    ap.add_argument('--stage', default='cs', help='cs, vs or ps')
+    ap.add_argument('--gres', help="graphics: Kyty's module record (<STAGE>_<hash>_<id>.gres; its .spv beside it)")
     a = ap.parse_args()
     shape = tuple(int(x) for x in a.shape.split(',')) if a.shape else None
+    gfx_if = None
+    if a.stage != 'cs':
+        import gfx
+        spv = a.gres[:-5] + '.spv'
+        gfx_if = gfx.load(a.gres, spv if os.path.exists(spv) else None)
     glsl, tr = translate_shader(a.code, a.threads, a.lds_bytes, a.user_sgprs, a.tgid_sgpr, a.probes, a.resources,
-                                shape, a.tidig)
+                                shape, a.tidig, a.stage, gfx_if)
     open(a.out, 'w').write(glsl)
     if a.reach_out:
-        with open(a.reach_out, 'w') as f:
-            for kind, x, off, extent in tr.reach:
-                f.write('%s %d %d %d\n' % (kind, x, off, extent))
+        reach = tr.reach
+        if gfx_if is not None:
+            # graphics: the emulator resolves 'user' roots from the stage's user data (s[user_data_base] on)
+            base = gfx_if.user_data_base
+            if any(kind == 'user' and x < base for kind, x, off, extent in reach):
+                reach = None          # a chain from a system SGPR: no snapshot (the page table serves the loads)
+            else:
+                reach = [(kind, x - base if kind == 'user' else x, off, extent) for kind, x, off, extent in reach]
+        if reach is None:
+            if os.path.exists(a.reach_out):
+                os.remove(a.reach_out)
+        else:
+            with open(a.reach_out, 'w') as f:
+                for kind, x, off, extent in reach:
+                    f.write('%s %d %d %d\n' % (kind, x, off, extent))
     if a.bypass_out:
         insts = gcnisa.decode(a.code)
         stores = store_vsharps(insts, a.user_sgprs)

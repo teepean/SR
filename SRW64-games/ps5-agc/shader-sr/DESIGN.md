@@ -137,3 +137,26 @@ the memory afterwards. Two things limit an exact comparison and have switches:
 - the driver compiles `sin` differently per shader: `SHADER_SR_SOFT_SIN=1` builds both with the same software sin.
 With both, the native solver is bit-identical to the translation on a whole frame. `SHADER_SR_STOP_AT=<pc>` ends a
 translation at a barrier, to compare intermediate states.
+
+## Graphics stages
+
+gcn2glsl.py `--stage vs|ps --gres <STAGE>_<hash>_<id>.gres` translates a vertex or pixel program against one of the
+emulator's graphics modules (Kyty's graphics plug-in: KYTY_GRAPHICS_DUMP records the module's interface,
+KYTY_GRAPHICS_TRANSLATED swaps the module for `<STAGE>_<hash>_<id>.spv`). gfx.py reads the record and the module's
+SPIR-V (input/output locations, types, interpolation decorations, builtins).
+
+- One guest lane per invocation (no lane pairs, LMASK = 1u); the host subgroup is the wave for the cross-lane
+  instructions.
+- Memory as in the compute translations: guest addresses through the BDA page table, the user SGPRs from the push block
+  at byte 128 (geometry stage from s[user_data_base]), the s_load chains optionally from a per-draw ScalarTable
+  (`.reach` next to the .spv; push bytes 240 pixel / 248 geometry).
+- Vertex (NGG) programs: s2 / s3 as the emulator sets them (all lanes vertices and primitives), v5 / v8 = vertex /
+  instance index; the fetch is the guest's own (its V#s through the page table); exp prim is dropped, exp pos0 /
+  param<n> write gl_Position (with the emulator's clip distance for a vertex at the origin) and the module's outputs.
+- Pixel programs: v_interp_p2 reads the module's interpolated input (p1 nothing), v_interp_mov its interpolation
+  parameter (per-vertex inputs through gl_BaryCoordEXT, as the emulator does); exec starts as the live mask, s_wqm is a
+  quad OR; exp mrt<n> converts per the target's export format into the module's output type; the vm export's exec is
+  the pixel's valid mask (discard at the end); the kill block after the main s_endpgm is decoded.
+- Images bind as the module's (vk_binding per image, the stage's sampler binding).
+
+Validation: in-game screenshot comparison against the emulator's own modules (control-vs-control noise band).

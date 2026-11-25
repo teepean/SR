@@ -57,10 +57,14 @@ def main():
                 shape_args += ['--shape', ','.join(info['threads'][:3])]
             if 'tidig_comp_cnt' in info:
                 shape_args += ['--tidig', info['tidig_comp_cnt'][0]]
+            if 'user_sgpr' in info:
+                # the user data count: the scalar chains (snapshot nodes, bypass declarations) start at those SGPRs
+                shape_args += ['--user-sgprs', info['user_sgpr'][0], '--tgid-sgpr', info['user_sgpr'][0]]
+        user_sgprs = int(shape_args[shape_args.index('--user-sgprs') + 1]) if '--user-sgprs' in shape_args else 2
         insts = gcnisa.decode(code)
         end = insts[-1].off + insts[-1].size
         # constant tables in the code (gcn2glsl.code_tables) belong to the program: the emulator matches them too
-        for start, num in gcn2glsl.code_tables(insts, 2)[0].values():
+        for start, num in gcn2glsl.code_tables(insts, user_sgprs)[0].values():
             end = max(end, start + num)
         reach_new = os.path.join(out, name + '.reach.new')
         bypass_new = os.path.join(out, name + '.bypass.new')

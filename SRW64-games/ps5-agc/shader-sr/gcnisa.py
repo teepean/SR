@@ -50,6 +50,24 @@ class Operand:
         if t.startswith('sext(') and t.endswith(')'):
             self.sext = True
             t = t[5:-1]
+        if t == 'src_scc':
+            self.kind = 'scc'         # SCC as a 32-bit source (0 / 1)
+            return
+        if re.match(r'^(prim|pos\d|param\d+|mrt\d|mrtz)$', t):
+            self.kind = 'target'      # export target of exp (self.text: prim, pos0..3, param0..31, mrt0..7, mrtz)
+            return
+        m = re.match(r'^attr(\d+)\.([xyzw])$', t)
+        if m:
+            self.kind = 'attr'        # v_interp: attribute (self.attr) and component (self.chan 0..3)
+            self.attr, self.chan = int(m.group(1)), 'xyzw'.index(m.group(2))
+            return
+        if t in ('p10', 'p20', 'p0'):
+            self.kind = 'interp_param'   # v_interp_mov_f32: P10 / P20 / P0 (self.text)
+            return
+        if t.startswith(('sendmsg(', 'hwreg(')) and t.endswith(')'):
+            self.kind = 'const'       # s_sendmsg / s_getreg / s_setreg immediates: kept as text (self.text)
+            self.value = 0
+            return
         if t == 'off':
             self.kind = 'off'
             return
@@ -254,8 +272,27 @@ def fallback(raw, off):
 
 
 def decode(path):
+    """the program's instructions up to its first s_endpgm, then any block a branch jumps to past it (pixel
+    shaders put their kill-everything export after the main s_endpgm), until the next s_endpgm"""
     raw = open(path, 'rb').read()
-    insts, off = [], 0
+    insts = decode_from(raw, 0)
+    while insts:
+        end = insts[-1].off + insts[-1].size
+        targets = [i.target for i in insts if i.target is not None and i.target >= end and i.target < len(raw)]
+        if not targets or not insts[-1].text.startswith('s_endpgm'):
+            break
+        nxt = min(targets)
+        if nxt != end:
+            break          # a gap between the blocks: not decoded (unknown bytes)
+        more = decode_from(raw, end)
+        if not more:
+            break
+        insts += more
+    return insts
+
+
+def decode_from(raw, off):
+    insts = []
     while off < len(raw):
         lines, skipped = llvm_mc(raw[off:])
         stop = off + skipped[0] if skipped else None

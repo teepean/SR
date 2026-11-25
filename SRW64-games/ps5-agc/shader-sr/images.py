@@ -58,6 +58,33 @@ def load_resources(path):
     return res
 
 
+def load_resources_gres(path):
+    """a graphics module record (.gres, Kyty's graphics plug-in): the same image / sampler / pair lines as a .res, with
+    the stage's Vulkan binding of each image (vk_binding; graphics stages offset Kyty's descriptor kinds) and the
+    stage's sampler binding (the 'binding ... kind Samplers' line)"""
+    res = {'images': [], 'samplers': [], 'pairs': [], 'key': None, 'sampler_binding': None}
+    for line in open(path):
+        words = line.split()
+        if not words:
+            continue
+        if words[0] == 'binding' and 'kind' in words:
+            d = dict(zip(words[1::2], words[2::2]))
+            if d.get('kind') == 'Samplers':
+                res['sampler_binding'] = int(d['binding'])
+        elif words[0] in ('image', 'sampler'):
+            d = {'index': int(words[1])}
+            for k in range(2, len(words) - 1, 2):
+                v = words[k + 1]
+                d[words[k]] = int(v, 0) if re.match(r'^-?(0x[0-9a-fA-F]+|\d+)$', v) else v
+            if words[0] == 'image' and 'vk_binding' in d:
+                d['kind_binding'] = d['binding']
+                d['binding'] = d['vk_binding']
+            res[words[0] + 's'].append(d)
+        elif words[0] == 'pair':
+            res['pairs'].append((int(words[2]), int(words[4])))
+    return res
+
+
 def family(base):
     if base.startswith('image_sample') or base.startswith('image_gather'):
         return 'sample'
@@ -175,7 +202,8 @@ class ImageMap:
             lines.append('layout(set = 0, binding = %d) uniform %s IMG%d[%d];' % (b, t, b, n))
         nsmp = max((s['index'] + 1 for _, s in self.map.values() if s is not None), default=0)
         if nsmp:
-            lines.append('layout(set = 0, binding = 51) uniform sampler SMP[%d];' % nsmp)
+            sb = self.res.get('sampler_binding')
+            lines.append('layout(set = 0, binding = %d) uniform sampler SMP[%d];' % (51 if sb is None else sb, nsmp))
         return '\n'.join(lines)
 
 
