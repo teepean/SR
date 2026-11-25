@@ -785,10 +785,14 @@ uint8_t srh_spin_pause;
 //   site 4: a GPU label wait in the frame submit function loc_11E0FE0: label slot [obj+0xCC] >= value [obj+0xD8],
 //           from 0x11E3E81 to the loop exit 0x11E3EEB;
 //   site 5: the next label wait there: slot [0x4A6115C] >= value [0x4A61158], from 0x11E3F4B to the exit 0x11E3FBB.
+//   site 6: the GPU-completion relay thread loc_1637740 (it releases the job of site 1) blocked in sceKernelWaitEqueue
+//           (0x1637785 .. 0x1637791);
+//   site 7: that thread from the event to the release: label slot [ctx+0x164] >= value [ctx+0x160] (spin if not yet),
+//           0x1637791 .. 0x1637840 (the dependency at ctx+0x2D28 is released right after).
 // The SR build calls srh_wt_enter<site> / srh_wt_exit<site> there (instruction_replacements.sci); they keep all
 // registers and flags. A wait is keyed by the waiting function's frame pointer (waits nest: the job wait runs stolen
 // jobs, which can wait again). Each completed wait becomes a record (rdtsc at entry and exit, thread id); a writer
-// thread converts the times to CLOCK_MONOTONIC ns and appends "site tid entry_ns exit_ns [label value]" lines (sites 4, 5: the
+// thread converts the times to CLOCK_MONOTONIC ns and appends "site tid entry_ns exit_ns [label value]" lines (sites 4, 5, 7: the
 // label's address and the value waited for) to
 // SRH_WAIT_TRACE_FILE (default srh-wait-trace.txt in the current directory) every 100 ms.
 __attribute__((used)) static uint8_t wt_on;
@@ -797,9 +801,9 @@ __attribute__((used)) static uint8_t wt_on;
 static struct { uint64_t key, enter, label, value; } wt_open[WT_OPEN];
 static struct { uint64_t seq, enter, exit, label, value; uint32_t tid, site; } wt_records[WT_RECORDS];
 
-// sites 4 / 5: the label the wait is for (label table *0x4A4AFE8, 32 bytes per slot) and the value it waits for
-__attribute__((target("general-regs-only"))) static void wt_label(uint64_t site, uint64_t frame, uint64_t *label,
-                                                                 uint64_t *value)
+// sites 4 / 5 / 7: the label the wait is for (label table *0x4A4AFE8, 32 bytes per slot) and the value it waits for
+__attribute__((target("general-regs-only"))) static void wt_label(uint64_t site, uint64_t frame, uint64_t ctx,
+                                                                 uint64_t *label, uint64_t *value)
 {
     const uint64_t table = *(volatile const uint64_t *)(0x4A4AFE8ULL);
     if (site == 4) {
@@ -809,12 +813,15 @@ __attribute__((target("general-regs-only"))) static void wt_label(uint64_t site,
     } else if (site == 5) {
         *label = table + 32ull * (uint64_t)(int64_t)*(volatile const int32_t *)(0x4A6115CULL);
         *value = *(volatile const uint32_t *)(0x4A61158ULL);
+    } else if (site == 7) {
+        *label = table + 32ull * (uint64_t)(int64_t)*(volatile const int32_t *)(ctx + 0x164);
+        *value = *(volatile const uint32_t *)(ctx + 0x160);
     }
 }
 static uint64_t wt_head, wt_table_full;
 
 __attribute__((visibility("hidden"), used, target("general-regs-only"))) void srh_wt_event(uint64_t site, uint64_t frame,
-                                                                                            uint64_t exit)
+                                                                                            uint64_t exit, uint64_t ctx)
 {
     uint64_t now = __builtin_ia32_rdtsc(), key = frame | site, k = (frame >> 4) * 0x9E3779B97F4A7C15ull >> 52, n;
     if (!exit)
@@ -825,7 +832,7 @@ __attribute__((visibility("hidden"), used, target("general-regs-only"))) void sr
             if (__atomic_compare_exchange_n(&wt_open[k].key, &expected, key, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
             {
                 uint64_t label = 0, value = 0;
-                if (site >= 4) wt_label(site, frame, &label, &value);
+                if (site == 4 || site == 5 || site == 7) wt_label(site, frame, ctx, &label, &value);
                 wt_open[k].label = label;
                 wt_open[k].value = value;
                 __atomic_store_n(&wt_open[k].enter, now, __ATOMIC_RELEASE);
@@ -875,10 +882,15 @@ __asm__(
     WT_ENTRY("srh_wt_exit4", 4, 1)
     WT_ENTRY("srh_wt_enter5", 5, 0)
     WT_ENTRY("srh_wt_exit5", 5, 1)
+    WT_ENTRY("srh_wt_enter6", 6, 0)
+    WT_ENTRY("srh_wt_exit6", 6, 1)
+    WT_ENTRY("srh_wt_enter7", 7, 0)
+    WT_ENTRY("srh_wt_exit7", 7, 1)
     "srh_wt_common:\n"
     "\tpush %rbp\n\tmov %rsp, %rbp\n"
     "\tpush %rax\n\tpush %rcx\n\tpush %r8\n\tpush %r9\n\tpush %r10\n\tpush %r11\n"
     "\tand $-16, %rsp\n"
+    "\tmov %rbx, %rcx\n"                  // the waiting function's rbx (site 7: the relay context)
     "\tcall srh_wt_event\n"
     "\tlea -48(%rbp), %rsp\n"
     "\tpop %r11\n\tpop %r10\n\tpop %r9\n\tpop %r8\n\tpop %rcx\n\tpop %rax\n"
@@ -905,7 +917,7 @@ static void *wt_writer(void *argument)
     }
     tsc0 = __builtin_ia32_rdtsc();
     ns0 = wt_ns();
-    fprintf(file, "# srhooks wait trace: site (1 job wait loc_12A7570, 2 Ocean label wait loc_FAF3E0, 3 job group wait loc_12A73F0, 4/5 label waits in loc_11E0FE0) tid entry_ns exit_ns"
+    fprintf(file, "# srhooks wait trace: site (1 job wait loc_12A7570, 2 Ocean label wait loc_FAF3E0, 3 job group wait loc_12A73F0, 4/5 label waits in loc_11E0FE0, 6/7 relay thread loc_1637740: event wait / label to release) tid entry_ns exit_ns"
             " (CLOCK_MONOTONIC)\n");
     for (;;)
     {

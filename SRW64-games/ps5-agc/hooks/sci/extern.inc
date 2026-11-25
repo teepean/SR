@@ -14,3 +14,7 @@ extern srh_wt_enter4
 extern srh_wt_exit4
 extern srh_wt_enter5
 extern srh_wt_exit5
+extern srh_wt_enter6
+extern srh_wt_exit6
+extern srh_wt_enter7
+extern srh_wt_exit7

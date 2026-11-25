@@ -82,3 +82,6 @@ loc_11E3E81,10,call srh_wt_enter4 wrt ..plt|mov r12, 0x431bde82d7b634db
 loc_11E3EEB,2,call srh_wt_exit4 wrt ..plt|jmp loc_11E3F25
 loc_11E3F4B,10,call srh_wt_enter5 wrt ..plt|mov r12, 0x431bde82d7b634db
 loc_11E3FBB,2,call srh_wt_exit5 wrt ..plt|jmp loc_11E3FF5
+loc_1637785,7,call srh_wt_enter6 wrt ..plt|mov rdi, [rbx + 0x3028]
+loc_1637791,7,call srh_wt_exit6 wrt ..plt|call srh_wt_enter7 wrt ..plt|mov r13d, [rbx + 0x160]
+loc_1637840,3,call srh_wt_exit7 wrt ..plt|mfence
