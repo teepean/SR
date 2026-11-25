@@ -4,7 +4,8 @@
 # with Kyty's resource dumps (.res, programs with images) one <name>.<resource key>.spv per specialisation,
 # <name>.code (the guest code bytes the translation was made from, up to the last instruction; Kyty uses a
 # translation only for a dispatch whose code matches them), <name>.reach (the scalar load chains, see
-# gcn2glsl.scalar_reach), and compare.spv for the check mode.
+# gcn2glsl.scalar_reach), <name>.bypass for a program whose writes the emulator can follow (gcn2glsl.store_vsharps;
+# KYTY_TRANSLATED_BYPASS), and compare.spv for the check mode.
 import os
 import subprocess
 import sys
@@ -58,6 +59,7 @@ def main():
         insts = gcnisa.decode(code)
         end = insts[-1].off + insts[-1].size
         reach_new = os.path.join(out, name + '.reach.new')
+        bypass_new = os.path.join(out, name + '.bypass.new')
         variants = [(None, None)] if not resources else [(r, open(r).readline().split()[3]) for r in resources]
         built = 0
         for res, key in variants:
@@ -65,7 +67,7 @@ def main():
             comp = os.path.join(work, label + '.comp')
             try:
                 notes = run([sys.executable, os.path.join(HERE, 'gcn2glsl.py'), code, comp, '--threads', str(threads),
-                             '--lds-bytes', str(lds), '--reach-out', reach_new] +
+                             '--lds-bytes', str(lds), '--reach-out', reach_new, '--bypass-out', bypass_new] +
                             (['--resources', res] if res else []) + shape_args +
                             (['--probes'] if os.environ.get('SHADER_SR_PROBES') else [])).strip()
                 print(notes)
@@ -87,6 +89,11 @@ def main():
                 g.write(f.read()[:end])
             os.replace(code_new, os.path.join(out, name + '.code'))
             os.replace(reach_new, os.path.join(out, name + '.reach'))
+            # <name>.bypass (gcn2glsl.store_vsharps): only for a program whose stores all go through known V#s
+            if os.path.exists(bypass_new):
+                os.replace(bypass_new, os.path.join(out, name + '.bypass'))
+            elif os.path.exists(os.path.join(out, name + '.bypass')):
+                os.remove(os.path.join(out, name + '.bypass'))
     cmp_new = os.path.join(out, 'compare.spv.new')
     try:
         run(['glslc', '--target-env=vulkan1.3', '-O', '-o', cmp_new, os.path.join(HERE, 'compare.comp')])

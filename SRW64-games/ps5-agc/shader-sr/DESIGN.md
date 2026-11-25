@@ -71,6 +71,16 @@ the GPU), the table Kyty's own device address loads use.
   before it, every V# range of the dispatch is made readable through the page table (Kyty may bind a streamed copy).
 - The translated program's own push constants (112 of the layout's 128 bytes): page table, fault buffer, user SGPRs,
   workgroup id enables; or a table of user data per workgroup (one guest dispatch per workgroup, for batching).
+- Bypass (Kyty clone, `KYTY_TRANSLATED_BYPASS=1` with batch mode): a dispatch of a program with a `<name>.bypass` is
+  batched before any of Kyty's preparation (Kyty's execute thread is the frame's bottleneck, and its preparation of
+  a dispatch costs more than the dispatch). Kyty still has to learn what the batch writes, so the translator
+  declares it: `store_vsharps` follows every buffer store's and atomic's V# back to the user data through exact
+  chains (reaching definitions of the SGPRs: each SGPR of the V# reached by one `s_load` / `s_buffer_load` with a
+  constant offset, whose base is again such a chain), written as `write <sgpr> <o1> ... <on>` (p = the user pointer,
+  p = *(p + o) for each offset but the last, the V# at p + on); at the flush Kyty marks the V#s' ranges GPU-written
+  and syncs CPU-written buffers once for the batch (`sync full`). A program with a store through any other V# (built
+  in registers, loaded at a run-time offset, or from GPU-written tables) gets no `.bypass`. `bypass_decl.py` writes
+  the declaration of a guest program for its native replacement.
 
 LDS is a `shared` array of the guest LDS size.
 

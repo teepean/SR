@@ -18,7 +18,8 @@
 #define BEND_LIMIT 0xffffffffu      // the 64- and 512-thread programs process only the first 64 / 512 bending constraints of a group
 #endif
 #ifndef STOP
-#define STOP 0                      // debugging: 1 after the prediction, 2 before the iterations, 3 after iteration 1
+#define STOP 0                      // debugging: 1 after the prediction, 2 before the iterations, 3 after iteration 1,
+                                    // 4 the anchors (into the positions)
 #endif
 #define EPS4 uintBitsToFloat(0x38d1b717u)      // 1e-4
 #define EPS6 uintBitsToFloat(0x358637bdu)      // 1e-6
@@ -28,6 +29,8 @@
 // ------------------------------------------------------------------------------------------- instance data
 shared uint sT[76];                 // T, 304 bytes
 shared uint sP[72];                 // P header, 0x120 bytes
+shared uint sObj[13];                // object block *(T + 0x10): scale, 3x4 transform
+float objf(uint byte) { return uintBitsToFloat(sObj[byte >> 2]); }
 shared uint64_t sTaddr;
 uint Tu(uint byte) { return sT[byte >> 2]; }
 float Tf(uint byte) { return uintBitsToFloat(sT[byte >> 2]); }
@@ -89,10 +92,14 @@ vec4 vb_fmt(VB b, uint index) {
     a.w3 = b.w3;
     return buf_load_format(a);
 }
-// guest memory at an address (scalar loads, global loads)
-uint gld32(uint64_t a) { return ldd32(xlate(a)); }
+// guest memory at an address, read as the guest program reads it: its scalar loads (s_load) through the dispatch's
+// CPU snapshot when one holds the address (the emulator snapshots the ranges the s_load chains reach at execute time:
+// CPU-written data the cached buffers may not hold yet), else the page table; per-lane global loads through the page
+// table
+uint gld32(uint64_t a) { return ldd32(sxlate(a, 4u)); }
 float gldf(uint64_t a) { return uintBitsToFloat(gld32(a)); }
 uint64_t gld64(uint64_t a) { return packUint2x32(uvec2(gld32(a), gld32(a + 4ul))); }
+uint64_t vld64(uint64_t a) { return packUint2x32(uvec2(ldd32(xlate(a)), ldd32(xlate(a + 4ul)))); }
 
 // ------------------------------------------------------------------------------------------- float helpers
 float dot3(vec3 a, vec3 b) { float t = a.x * b.x; t = a.y * b.y + t; t = a.z * b.z + t; return t; }
@@ -181,9 +188,9 @@ vec3 anchor_of(uint v) {
         return p2;
     }
     // rigid: object matrix rows at +4, +0x14, +0x24
-    vec4 m0 = vec4(gldf(gObj + 4ul), gldf(gObj + 8ul), gldf(gObj + 12ul), gldf(gObj + 16ul));
-    vec4 m1 = vec4(gldf(gObj + 20ul), gldf(gObj + 24ul), gldf(gObj + 28ul), gldf(gObj + 32ul));
-    vec4 m2 = vec4(gldf(gObj + 36ul), gldf(gObj + 40ul), gldf(gObj + 44ul), gldf(gObj + 48ul));
+    vec4 m0 = vec4(objf(4u), objf(8u), objf(12u), objf(16u));
+    vec4 m1 = vec4(objf(20u), objf(24u), objf(28u), objf(32u));
+    vec4 m2 = vec4(objf(36u), objf(40u), objf(44u), objf(48u));
     return vec3(row_xf(m0, bp), row_xf(m1, bp), row_xf(m2, bp));
 }
 
@@ -229,9 +236,9 @@ vec3 skinned_normal(uint v, vec3 n) {
 
 vec3 rigid_normal(vec3 n) {
     if ((Tu(0x108u) & 0x400u) == 0u) return vec3(0.0);
-    vec3 m0 = vec3(gldf(gObj + 4ul), gldf(gObj + 8ul), gldf(gObj + 12ul));
-    vec3 m1 = vec3(gldf(gObj + 20ul), gldf(gObj + 24ul), gldf(gObj + 28ul));
-    vec3 m2 = vec3(gldf(gObj + 36ul), gldf(gObj + 40ul), gldf(gObj + 44ul));
+    vec3 m0 = vec3(objf(4u), objf(8u), objf(12u));
+    vec3 m1 = vec3(objf(20u), objf(24u), objf(28u));
+    vec3 m2 = vec3(objf(36u), objf(40u), objf(44u));
     return snorm(vec3(dot3(m0, n), dot3(m1, n), dot3(m2, n)));
 }
 
@@ -399,7 +406,7 @@ vec3 predict(uint v) {
                     c.z = m2 * wv[k] + c.z;
                 }
             }
-        } else c = vec3(gldf(gObj + 0xcul), gldf(gObj + 0x1cul), gldf(gObj + 0x2cul));
+        } else c = vec3(objf(12u), objf(28u), objf(44u));
         float gh = g * Th(0x86u);
         float r = rsq_f32(dot3(c, c));
         float u = clamp01(r * (-c.z) + 1.0);
@@ -710,7 +717,7 @@ void edge_cached(uint e) {
     if (cs < 0) return;
     int a = vb_i16(vbPD8, e, 0u), b = vb_i16(vbPD8, e, 2u);
     uint64_t setp = packUint2x32(uvec2(vb_u32(vbT18, uint(cs), 0u), vb_u32(vbT18, uint(cs), 4u)));
-    uint64_t vd = gld64(setp + 0x88ul);
+    uint64_t vd = vld64(setp + 0x88ul);
     uint64_t base = (vd & 0xfffffffful) | (uint64_t(int64_t(int16_t(uint16_t((vd >> 32) & 0xfffful)))) << 32);
     uint64_t rec = rec_at(rec_dev(base), uint(ck));
     vec3 xa = X_get(a), xb = X_get(b);
@@ -959,7 +966,7 @@ vec3 vertex_cached(uint v, vec3 p) {
     int set = int(int16_t(uint16_t(vb_u16(vbG0, gi, 0u)))), kk = int(int16_t(uint16_t(vb_u16(vbG0, gi, 2u))));
     if (set < 0) return p;
     uint64_t sp = packUint2x32(uvec2(vb_u32(vbT18, uint(set), 0u), vb_u32(vbT18, uint(set), 4u)));
-    uint64_t vd = gld64(sp + 136ul);
+    uint64_t vd = vld64(sp + 136ul);
     uint64_t base = (vd & 0xfffffffful) | (uint64_t(int64_t(int16_t(uint16_t((vd >> 32) & 0xfffful)))) << 32);
     uint64_t rec = rec_at(rec_dev(base), uint(kk));
     uint type = rec_u(rec, 0u);
@@ -1125,9 +1132,9 @@ void cloth_bone(uint v, VB Q, vec3 sh, VB Out) {
                 }
             }
         } else {
-            M0 = vec4(gldf(gObj + 4ul), gldf(gObj + 8ul), gldf(gObj + 12ul), gldf(gObj + 16ul));
-            M1 = vec4(gldf(gObj + 20ul), gldf(gObj + 24ul), gldf(gObj + 28ul), gldf(gObj + 32ul));
-            M2 = vec4(gldf(gObj + 36ul), gldf(gObj + 40ul), gldf(gObj + 44ul), gldf(gObj + 48ul));
+            M0 = vec4(objf(4u), objf(8u), objf(12u), objf(16u));
+            M1 = vec4(objf(20u), objf(24u), objf(28u), objf(32u));
+            M2 = vec4(objf(36u), objf(40u), objf(44u), objf(48u));
         }
         vec3 Qa = vb_f3(Q, uint(n4), 0u), Qb = vb_f3(Q, uint(n2), 0u), Qv = vb_f3(Q, v, 0u);
         vec3 Sa = vb_fmt(vbP18, uint(n4)).xyz, Sb = vb_fmt(vbP18, uint(n2)).xyz;
@@ -1272,7 +1279,11 @@ void main() {
     if (pc.pages == 0ul) return;
     FAULT_PAGE = NUM_PAGES;
     PROBE_N = 0u;
-    SCALARS = 0ul;
+    SCALARS = pc.scalars;
+    if (pc.user_table != 0ul) {
+        uint base_ = WgMap(pc.wg_map).v[gl_WorkGroupID.x] * 24u;
+        SCALARS = packUint2x32(uvec2(UserTable(pc.user_table).v[base_ + 20u], UserTable(pc.user_table).v[base_ + 21u]));
+    }
     uint tid = gl_LocalInvocationIndex;
     if (tid == 0u) sTaddr = instance_table();
     barrier();
@@ -1280,12 +1291,14 @@ void main() {
     barrier();
     uint64_t Pa = packUint2x32(uvec2(sT[2], sT[3]));
     for (uint k = tid; k < 72u; k += NT) sP[k] = gld32(Pa + 4ul * uint64_t(k));
+    uint64_t Oa = packUint2x32(uvec2(sT[4], sT[5]));
+    for (uint k = tid; k < 13u; k += NT) sObj[k] = gld32(Oa + 4ul * uint64_t(k));
     barrier();
     nverts = int(Pu(0u));
     P4 = Pu(4u);
     F = Tu(0xd4u);
     gObj = packUint2x32(uvec2(sT[4], sT[5]));
-    objscale = gldf(gObj);
+    objscale = objf(0u);
     vbT18 = vb_T(0x18u); vbT28 = vb_T(0x28u); vbT38 = vb_T(0x38u);
     vbP18 = vb_P(0x18u); vbP28 = vb_P(0x28u); vbP38 = vb_P(0x38u); vbP48 = vb_P(0x48u); vbP58 = vb_P(0x58u);
     vbP68 = vb_P(0x68u); vbP78 = vb_P(0x78u); vbP88 = vb_P(0x88u); vbP98 = vb_P(0x98u); vbPA8 = vb_P(0xa8u);
@@ -1324,38 +1337,6 @@ void main() {
     sync();
 #if STOP == 4
     for (uint v = tid; v < uint(nverts); v += NT) vb_store3(vbT38, v, A_get(int(v)));
-    return;
-#endif
-#if STOP == 5
-    for (uint v = tid; v < uint(nverts); v += NT) vb_store3(vbT38, v, anchor_of(v));
-    return;
-#endif
-#if STOP == 6
-    for (int v = nverts - 1 - int(tid); v >= 0; v -= NT) vb_store3(vbT38, uint(v), anchor_of(uint(v)));
-    return;
-#endif
-#if STOP == 7
-    [[dont_unroll]] for (uint v = tid; v < uint(nverts); v += NT) vb_store3(vbT38, v, anchor_of(v));
-    return;
-#endif
-#if STOP == 8
-    for (uint base = 0u; base < uint(nverts); base += NT) {
-        uint v = base + tid;
-        if (v < uint(nverts)) vb_store3(vbT38, v, anchor_of(v));
-        barrier();
-    }
-    return;
-#endif
-#if STOP == 9
-    {
-        VB outb = vb_T(0x38u);
-        for (uint v = tid; v < uint(nverts); v += NT) {
-            uint64_t a = outb.dev + uint64_t(outb.stride * v);
-            W32(a).v = floatBitsToUint(float(v));
-            W32(a + 4ul).v = floatBitsToUint(float(tid));
-            W32(a + 8ul).v = floatBitsToUint(1234.0);
-        }
-    }
     return;
 #endif
     dt = Tf(0xccu);

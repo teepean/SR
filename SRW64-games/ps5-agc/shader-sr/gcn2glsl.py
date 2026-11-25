@@ -1629,6 +1629,127 @@ def scalar_reach(insts, user_sgprs, hints=None):
     return [tuple(n) for n in nodes]
 
 
+def reaching_sgpr_defs(insts, user_sgprs):
+    """Reaching definitions of the SGPRs over the program's control flow: for each instruction, SGPR -> the set of
+    instructions whose write of it may reach the instruction (-1: the user data at entry, -2: undefined). None for a
+    program with indirect branches."""
+    n = len(insts)
+    index = {i.off: k for k, i in enumerate(insts)}
+    succ = []
+    for k, i in enumerate(insts):
+        b = i.base
+        if b.startswith(('s_setpc', 's_swappc', 's_rfe')):
+            return None
+        if b == 's_endpgm':
+            succ.append(())
+            continue
+        out = []
+        if i.target is not None:
+            t = index.get(i.target)
+            if t is not None:
+                out.append(t)
+            if b == 's_branch':
+                succ.append(tuple(out))
+                continue
+        if k + 1 < n:
+            out.append(k + 1)
+        succ.append(tuple(out))
+    writes = [tuple(set(int(r[1:]) for r in all_sgpr_defs(i))) for i in insts]
+    state_in = [None] * n
+    state_in[0] = tuple(frozenset([-1]) if r < user_sgprs else frozenset([-2]) for r in range(128))
+    work = [0]
+    while work:
+        k = work.pop()
+        out = list(state_in[k])
+        for r in writes[k]:
+            if r < 128:
+                out[r] = frozenset([k])
+        out = tuple(out)
+        for t in succ[k]:
+            cur = state_in[t]
+            if cur is None:
+                state_in[t] = out
+                work.append(t)
+                continue
+            if all(a <= c for a, c in zip(out, cur)):
+                continue
+            state_in[t] = tuple(a | c for a, c in zip(out, cur))
+            work.append(t)
+    return state_in
+
+
+def store_vsharps(insts, user_sgprs):
+    """For the emulator's bypass (<name>.bypass: a dispatch batched without the emulator's own preparation, which must
+    still learn what the dispatch writes): where the V# of each buffer store and atomic comes from, as a chain from
+    the user data (sgpr, o1, ..., on): p = the pointer in s[sgpr:sgpr+1]; p = *(p + o) & (2^48 - 1) for o1..o(n-1)
+    (pointers, and V# bases: a V#'s first qword holds its base); the V# is at p + on. Exact chains only: at the store
+    each SGPR of the V# is reached by one definition, the same s_load / s_buffer_load with a constant offset, whose
+    base is again such a chain (down to user SGPRs no instruction wrote before). Returns [(instruction offset, chain
+    or None)]; None: the program may write where the emulator could not tell (no bypass)."""
+    state = reaching_sgpr_defs(insts, user_sgprs)
+
+    def single(k, regs):
+        if state is None or state[k] is None:
+            return None
+        ds = set()
+        for r in regs:
+            d = state[k][r]
+            if len(d) != 1:
+                return None
+            ds |= d
+        return next(iter(ds)) if len(ds) == 1 else None
+
+    def const_offset(x, off):
+        imm = int(x.mods.get('offset', '0'), 0)
+        if off.kind == 'null':
+            return imm
+        return off.value + imm if off.kind == 'const' else None
+
+    def loaded_from(k, first, count, depth):
+        """the chain to the address s[first:first+count) was loaded from (before instruction k): (chain of the
+        base pointer, byte offset), or None"""
+        d = single(k, range(first, first + count))
+        if d is None or d < 0 or depth > 8:
+            return None
+        x = insts[d]
+        if x.base.startswith('s_load_dword'):
+            dst, base, off = x.ops
+            offset = const_offset(x, off)
+            if offset is None or base.kind != 'reg' or base.file != 's' or base.count < 2:
+                return None
+            chain = pointer(d, base.first, depth + 1)
+        elif x.base.startswith('s_buffer_load_dword'):
+            dst, vs, off = x.ops
+            offset = const_offset(x, off)
+            if offset is None or vs.kind != 'reg' or vs.file != 's' or vs.count != 4:
+                return None
+            at = loaded_from(d, vs.first, 4, depth + 1)          # the V#; its base is the buffer's address
+            chain = None if at is None else at[0] + (at[1],)
+        else:
+            return None
+        return None if chain is None else (chain, offset + 4 * (first - dst.first))
+
+    def pointer(k, first, depth=0):
+        """the chain of the pointer in s[first:first+1] before instruction k"""
+        if single(k, (first, first + 1)) == -1:
+            return (first,) if first + 1 < user_sgprs else None
+        at = loaded_from(k, first, 2, depth)
+        return None if at is None else at[0] + (at[1],)
+
+    out = []
+    for k, i in enumerate(insts):
+        b = i.base
+        if b.startswith(('buffer_store', 'buffer_atomic', 'tbuffer_store')):
+            rsrc = i.ops[2]
+            at = (loaded_from(k, rsrc.first, 4, 0) if rsrc.kind == 'reg' and rsrc.file == 's' and rsrc.count == 4
+                  else None)
+            out.append((i.off, None if at is None else at[0] + (at[1],)))
+        elif b.startswith(('global_store', 'global_atomic', 'flat_store', 'flat_atomic', 'scratch_store', 's_store',
+                           's_buffer_store', 'image_store', 'image_atomic')):
+            out.append((i.off, None))
+    return out
+
+
 def classify_lp(tr, st):
     """lane pairs: one guest wave is one warp, so every exec / lane mask branch is decided for the wave with a
     subgroup vote (the guest's own semantics); no branch or loop runs per lane"""
@@ -2373,6 +2494,8 @@ def main():
     ap.add_argument('--user-sgprs', type=int, default=2)
     ap.add_argument('--tgid-sgpr', type=int, default=2)
     ap.add_argument('--reach-out', help='write the scalar load chains (scalar_reach) to this file')
+    ap.add_argument('--bypass-out', help="write the emulator's bypass declaration (store_vsharps) to this file, or "
+                                         "remove it when the program may write where the emulator could not tell")
     ap.add_argument('--probes', action='store_true', help='compile the probes (pc.debug) in')
     ap.add_argument('--resources', help="Kyty's images and samplers of the program's specialisation (.res dump)")
     ap.add_argument('--shape', help='workgroup shape x,y,z (default: threads,1,1)')
@@ -2386,6 +2509,24 @@ def main():
         with open(a.reach_out, 'w') as f:
             for kind, x, off, extent in tr.reach:
                 f.write('%s %d %d %d\n' % (kind, x, off, extent))
+    if a.bypass_out:
+        stores = store_vsharps(gcnisa.decode(a.code), a.user_sgprs)
+        unknown = [off for off, chain in stores if chain is None]
+        if unknown or not stores:
+            if os.path.exists(a.bypass_out):
+                os.remove(a.bypass_out)
+            tr.notes.append('bypass: no (%s)' % ('no stores' if not stores else
+                                                 'stores through unknown V#s at ' + ', '.join(
+                                                     '0x%x' % off for off in unknown[:4])))
+        else:
+            chains = sorted(set(chain for off, chain in stores))
+            with open(a.bypass_out, 'w') as f:
+                f.write('sync full\n')
+                for chain in chains:
+                    f.write('write %s\n' % ' '.join(str(x) for x in chain))
+            tr.notes.append('bypass: %d stores through %d V#s: %s' % (
+                len(stores), len(chains), ', '.join('s%d%s' % (c[0], ''.join('->+0x%x' % o for o in c[1:]))
+                                                    for c in chains)))
     for n in tr.notes:
         print('note:', n)
     if tr.unknown:
