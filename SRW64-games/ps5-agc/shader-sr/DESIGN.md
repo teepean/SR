@@ -72,15 +72,17 @@ the GPU), the table Kyty's own device address loads use.
 - The translated program's own push constants (112 of the layout's 128 bytes): page table, fault buffer, user SGPRs,
   workgroup id enables; or a table of user data per workgroup (one guest dispatch per workgroup, for batching).
 - Bypass (Kyty clone, `KYTY_TRANSLATED_BYPASS=1` with batch mode): a dispatch of a program with a `<name>.bypass` is
-  batched before any of Kyty's preparation (Kyty's execute thread is the frame's bottleneck, and its preparation of
-  a dispatch costs more than the dispatch). Kyty still has to learn what the batch writes, so the translator
-  declares it: `store_vsharps` follows every buffer store's and atomic's V# back to the user data through exact
-  chains (reaching definitions of the SGPRs: each SGPR of the V# reached by one `s_load` / `s_buffer_load` with a
-  constant offset, whose base is again such a chain), written as `write <sgpr> <o1> ... <on>` (p = the user pointer,
-  p = *(p + o) for each offset but the last, the V# at p + on); at the flush Kyty marks the V#s' ranges GPU-written
-  and syncs CPU-written buffers once for the batch (`sync full`). A program with a store through any other V# (built
-  in registers, loaded at a run-time offset, or from GPU-written tables) gets no `.bypass`. `bypass_decl.py` writes
-  the declaration of a guest program for its native replacement.
+  batched before any of Kyty's preparation (Kyty's execute thread is the frame's bottleneck). The host then does
+  Kyty's memory work for the dispatch itself, at take time so that the bookkeeping keeps the guest order: every
+  range the dispatch reads is registered and synced, every range it writes too and is then marked GPU-written in
+  the open tick (marks at flush time, or a generation-gated full sync instead of per-dispatch syncs, broke the cloth;
+  marking a whole V# whose range also holds CPU-owned data the program does not write broke other rendering). The
+  ranges: `read` / `write <sgpr> <o1> ... <on>` (p = the user pointer, p = *(p + o) for each offset but the last,
+  the V# at p + on), derived by `store_vsharps` (reaching definitions of the SGPRs: each SGPR of the V# reached by one
+  `s_load` / `s_buffer_load` with a constant offset, whose base is again such a chain) for a program whose loads and
+  stores all have such chains; or `walker cloth 0|1`, the host's exact walker of the cloth solver (collider sets
+  reached at run-time offsets, palette writes only at the entries it writes). `build.py` writes the chains with
+  `SHADER_SR_BYPASS=1` (opt-in: whole-V# write marks), `bypass_decl.py` a declaration for a native replacement.
 
 LDS is a `shared` array of the guest LDS size.
 

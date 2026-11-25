@@ -4,8 +4,8 @@
 # with Kyty's resource dumps (.res, programs with images) one <name>.<resource key>.spv per specialisation,
 # <name>.code (the guest code bytes the translation was made from, up to the last instruction; Kyty uses a
 # translation only for a dispatch whose code matches them), <name>.reach (the scalar load chains, see
-# gcn2glsl.scalar_reach), <name>.bypass for a program whose writes the emulator can follow (gcn2glsl.store_vsharps;
-# KYTY_TRANSLATED_BYPASS), and compare.spv for the check mode.
+# gcn2glsl.scalar_reach), with SHADER_SR_BYPASS=1 <name>.bypass for a program whose memory the emulator can follow
+# (gcn2glsl.store_vsharps; KYTY_TRANSLATED_BYPASS), and compare.spv for the check mode.
 import os
 import subprocess
 import sys
@@ -67,7 +67,8 @@ def main():
             comp = os.path.join(work, label + '.comp')
             try:
                 notes = run([sys.executable, os.path.join(HERE, 'gcn2glsl.py'), code, comp, '--threads', str(threads),
-                             '--lds-bytes', str(lds), '--reach-out', reach_new, '--bypass-out', bypass_new] +
+                             '--lds-bytes', str(lds), '--reach-out', reach_new] +
+                            (['--bypass-out', bypass_new] if os.environ.get('SHADER_SR_BYPASS') else []) +
                             (['--resources', res] if res else []) + shape_args +
                             (['--probes'] if os.environ.get('SHADER_SR_PROBES') else [])).strip()
                 print(notes)
@@ -89,11 +90,11 @@ def main():
                 g.write(f.read()[:end])
             os.replace(code_new, os.path.join(out, name + '.code'))
             os.replace(reach_new, os.path.join(out, name + '.reach'))
-            # <name>.bypass (gcn2glsl.store_vsharps): only for a program whose stores all go through known V#s
+            # SHADER_SR_BYPASS=1: <name>.bypass (gcn2glsl.store_vsharps) for a program whose memory all goes through
+            # V#s with exact chains. Opt-in: a declared V# is marked GPU-written over its whole range, which is wrong
+            # where the range also holds CPU-owned data the program does not write (then use an exact walker)
             if os.path.exists(bypass_new):
                 os.replace(bypass_new, os.path.join(out, name + '.bypass'))
-            elif os.path.exists(os.path.join(out, name + '.bypass')):
-                os.remove(os.path.join(out, name + '.bypass'))
     cmp_new = os.path.join(out, 'compare.spv.new')
     try:
         run(['glslc', '--target-env=vulkan1.3', '-O', '-o', cmp_new, os.path.join(HERE, 'compare.comp')])

@@ -1678,14 +1678,15 @@ def reaching_sgpr_defs(insts, user_sgprs):
     return state_in
 
 
-def store_vsharps(insts, user_sgprs):
+def store_vsharps(insts, user_sgprs, loads=False):
     """For the emulator's bypass (<name>.bypass: a dispatch batched without the emulator's own preparation, which must
     still learn what the dispatch writes): where the V# of each buffer store and atomic comes from, as a chain from
     the user data (sgpr, o1, ..., on): p = the pointer in s[sgpr:sgpr+1]; p = *(p + o) & (2^48 - 1) for o1..o(n-1)
     (pointers, and V# bases: a V#'s first qword holds its base); the V# is at p + on. Exact chains only: at the store
     each SGPR of the V# is reached by one definition, the same s_load / s_buffer_load with a constant offset, whose
     base is again such a chain (down to user SGPRs no instruction wrote before). Returns [(instruction offset, chain
-    or None)]; None: the program may write where the emulator could not tell (no bypass)."""
+    or None)]; None: the program may write where the emulator could not tell (no bypass). loads: the same for the
+    V#s the program reads through (None: reads the emulator cannot sync ahead of the dispatch)."""
     state = reaching_sgpr_defs(insts, user_sgprs)
 
     def single(k, regs):
@@ -1736,14 +1737,26 @@ def store_vsharps(insts, user_sgprs):
         at = loaded_from(k, first, 2, depth)
         return None if at is None else at[0] + (at[1],)
 
+    def chain_of(k, rsrc):
+        at = (loaded_from(k, rsrc.first, 4, 0) if rsrc.kind == 'reg' and rsrc.file == 's' and rsrc.count == 4
+              else None)
+        return None if at is None else at[0] + (at[1],)
+
     out = []
     for k, i in enumerate(insts):
         b = i.base
+        if loads:
+            # what the program reads through the page table: buffer loads (and atomics) through V#s, global loads,
+            # and s_buffer_loads (their V#s' ranges; snapshotted when small, see scalar_reach)
+            if b.startswith(('buffer_load', 'tbuffer_load', 'buffer_atomic')):
+                out.append((i.off, chain_of(k, i.ops[2])))
+            elif b.startswith('s_buffer_load'):
+                out.append((i.off, chain_of(k, i.ops[1])))
+            elif b.startswith(('global_load', 'flat_load', 'global_atomic', 'flat_atomic', 'image_')):
+                out.append((i.off, None))
+            continue
         if b.startswith(('buffer_store', 'buffer_atomic', 'tbuffer_store')):
-            rsrc = i.ops[2]
-            at = (loaded_from(k, rsrc.first, 4, 0) if rsrc.kind == 'reg' and rsrc.file == 's' and rsrc.count == 4
-                  else None)
-            out.append((i.off, None if at is None else at[0] + (at[1],)))
+            out.append((i.off, chain_of(k, i.ops[2])))
         elif b.startswith(('global_store', 'global_atomic', 'flat_store', 'flat_atomic', 'scratch_store', 's_store',
                            's_buffer_store', 'image_store', 'image_atomic')):
             out.append((i.off, None))
@@ -2494,8 +2507,9 @@ def main():
     ap.add_argument('--user-sgprs', type=int, default=2)
     ap.add_argument('--tgid-sgpr', type=int, default=2)
     ap.add_argument('--reach-out', help='write the scalar load chains (scalar_reach) to this file')
-    ap.add_argument('--bypass-out', help="write the emulator's bypass declaration (store_vsharps) to this file, or "
-                                         "remove it when the program may write where the emulator could not tell")
+    ap.add_argument('--bypass-out', help="write the emulator's bypass declaration (store_vsharps: every V# the program "
+                                         "reads and writes through) to this file, or remove it when the program "
+                                         "reaches memory the emulator could not follow")
     ap.add_argument('--probes', action='store_true', help='compile the probes (pc.debug) in')
     ap.add_argument('--resources', help="Kyty's images and samplers of the program's specialisation (.res dump)")
     ap.add_argument('--shape', help='workgroup shape x,y,z (default: threads,1,1)')
@@ -2510,23 +2524,27 @@ def main():
             for kind, x, off, extent in tr.reach:
                 f.write('%s %d %d %d\n' % (kind, x, off, extent))
     if a.bypass_out:
-        stores = store_vsharps(gcnisa.decode(a.code), a.user_sgprs)
-        unknown = [off for off, chain in stores if chain is None]
+        insts = gcnisa.decode(a.code)
+        stores = store_vsharps(insts, a.user_sgprs)
+        loads = store_vsharps(insts, a.user_sgprs, loads=True)
+        unknown = [off for off, chain in stores + loads if chain is None]
         if unknown or not stores:
             if os.path.exists(a.bypass_out):
                 os.remove(a.bypass_out)
             tr.notes.append('bypass: no (%s)' % ('no stores' if not stores else
-                                                 'stores through unknown V#s at ' + ', '.join(
+                                                 'memory through unknown V#s at ' + ', '.join(
                                                      '0x%x' % off for off in unknown[:4])))
         else:
-            chains = sorted(set(chain for off, chain in stores))
+            writes = sorted(set(chain for off, chain in stores))
+            reads = sorted(set(chain for off, chain in loads))
             with open(a.bypass_out, 'w') as f:
-                f.write('sync full\n')
-                for chain in chains:
+                for chain in reads:
+                    f.write('read %s\n' % ' '.join(str(x) for x in chain))
+                for chain in writes:
                     f.write('write %s\n' % ' '.join(str(x) for x in chain))
-            tr.notes.append('bypass: %d stores through %d V#s: %s' % (
-                len(stores), len(chains), ', '.join('s%d%s' % (c[0], ''.join('->+0x%x' % o for o in c[1:]))
-                                                    for c in chains)))
+            tr.notes.append('bypass: reads through %d V#s, %d stores through %d V#s: %s' % (
+                len(reads), len(stores), len(writes),
+                ', '.join('s%d%s' % (c[0], ''.join('->+0x%x' % o for o in c[1:])) for c in writes)))
     for n in tr.notes:
         print('note:', n)
     if tr.unknown:
