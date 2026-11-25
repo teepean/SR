@@ -57,6 +57,8 @@ The hooks in `srhooks.c` (all off unless their environment variable is set):
 | `SRH_CLOTH_DUMP=<dir>` | once, at the first cloth job with work: the shader header (0x100 bytes) and code (up to 64 KB) of the 4 cloth pipelines, as `<dir>/cloth-slot<N>-header.bin` / `-code.bin` (`tools/disgcn.py` disassembles the code) |
 | `SRH_NATIVE=pdraw` | the particle draw code no longer reads a GPU-written value (an emitter's first particle index) on the CPU: a GPU copy into the draw's user data table is recorded instead (`sceAgcDcbDmaData`). Needed with `particles`: without the CPU read in the finalize recorder, this read would wait for the GPU. A small assembler stub replaces one load in the middle of the function and keeps all registers. |
 
+Profiling tools (`tools/`, numpy): `waitsum.py` sums the wait trace per site; `framechain.py` joins it with the emulator's label, queue and interrupt traces and execute timeline into the per-frame chain (frame-end submit, frame labels, which write released each main-thread wait and how long each leg took); `funcmap.py` builds the maps that `cpuprof.py` uses to attribute nsys CPU samples (SQLite export, DWARF backtraces) in the recompiled code to the original game functions, per thread.
+
 ## Native passes
 
 A native pass replaces the RDNA2 work of one engine function. The recompiled game records a marker in place of that work, on the same command buffer and in order with the rest:
