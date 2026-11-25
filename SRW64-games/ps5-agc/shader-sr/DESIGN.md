@@ -64,6 +64,12 @@ the GPU), the table Kyty's own device address loads use.
   offset) are read through the page table, as the emulator's own program reads them.
 - V# accesses: one translation of the descriptor's base per instruction (Kyty keeps a V# range in one cached
   buffer); `global_*`: each lane translates its own address and marks the page as used.
+- `glc` / `dlc` buffer loads go through a `coherent volatile` reference: spin and compare-swap retry loops reread
+  what other waves' atomics wrote (a plain load can be served stale from L1 or hoisted out of the loop: the wave
+  spins forever, a GPU hang).
+- Constant tables in the code: a V# built from `s_getpc_b64` + constants (`s_add_u32` / `s_addc_u32 0`, words 2-3
+  from `s_mov`) whose pair feeds nothing else (`code_tables`) becomes an embedded const array; `build.py` extends
+  `<name>.code` over the table, so the emulator's code match covers it.
 - A miss reads 0 / skips the store and records the page in Kyty's fault bitmap (one page per thread, at the end of
   the program), which Kyty turns into a cached buffer after the submit, as for its own programs.
 - Kyty prepares the memory: the translated pipeline is built with the pipeline layout of Kyty's program for the same
@@ -83,6 +89,9 @@ the GPU), the table Kyty's own device address loads use.
   stores all have such chains; or `walker cloth 0|1`, the host's exact walker of the cloth solver (collider sets
   reached at run-time offsets, palette writes only at the entries it writes). `build.py` writes the chains with
   `SHADER_SR_BYPASS=1` (opt-in: whole-V# write marks), `bypass_decl.py` a declaration for a native replacement.
+
+Every translated loop counts its back edges and ends after `LOOP_LIMIT` (65,536) iterations: a translation that
+would spin gives wrong results instead of hanging the GPU (Xid 109, context switch timeout).
 
 LDS is a `shared` array of the guest LDS size.
 

@@ -618,6 +618,41 @@ class Translator:
                   % (self.src_u32(a), shr, shr, self.reg(d), fn, self.src_u32(c)))
         self.wave_points.add(inst.off)
 
+    def code_table_name(self, start, num):
+        """a module-scope const array of the code's dwords [start, start + num) (code_tables)"""
+        if not hasattr(self, 'tables_decl'):
+            self.tables_decl = {}
+        name = 'CT_%x' % start
+        if name not in self.tables_decl:
+            words = struct.unpack('<%dI' % ((num + 3) // 4), self.code_bytes[start:start + ((num + 3) // 4) * 4].ljust(
+                ((num + 3) // 4) * 4, b'\0'))
+            self.tables_decl[name] = 'const uint %s[%d] = uint[](%s);' % (name, len(words), ', '.join(
+                '0x%xu' % w for w in words))
+        return name
+
+    def op_dpp_int(self, inst, op):
+        """v_op_dpp d, a, b row_shr:n with an integer op: lane i combines a from lane i-n of its 16-lane row with b of
+        lane i; lanes whose source is outside the row keep d (bound_ctrl off)"""
+        d, a, c = inst.ops
+        shr = int(inst.mods.get('row_shr', '0'))
+        if (not shr or inst.mods.get('row_mask', '0xf') != '0xf' or inst.mods.get('bank_mask', '0xf') != '0xf' or
+                inst.mods.get('bound_ctrl')):
+            self.unknown['dpp form %s' % inst.text] += 1
+        self.emit('{ uint src_ = subgroupShuffleUp(%s, %du); bool ok_ = (gl_SubgroupInvocationID & 15u) >= %du; '
+                  'if (EX && ok_) %s = src_ %s %s; }' % (self.src_u32(a), shr, shr, self.reg(d), op, self.src_u32(c)))
+        self.wave_points.add(inst.off)
+
+    def op_v_or_b32(self, inst):
+        if inst.encoding == 'dpp':
+            return self.op_dpp_int(inst, '|')
+        d, a, c = inst.ops
+        self.write_v_u32(inst, d, '(%s | %s)' % (self.src_int(a, inst, 0), self.src_int(c, inst, 1)))
+
+    def op_v_fma_f32(self, inst):
+        d, a, c, e = inst.ops
+        self.write_v_f32(inst, d, 'fma(%s, %s, %s)' % (self.src_f32(a, inst), self.src_f32(c, inst),
+                                                       self.src_f32(e, inst)))
+
     def op_v_min_f32(self, inst):
         if inst.encoding == 'dpp':
             return self.op_dpp(inst, 'min')
@@ -895,6 +930,57 @@ class Translator:
         self.emit('%s = %s & %s; SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
         self.set_kind(d, 'value')
 
+    def op_s_or_b32(self, inst):
+        d, a, c = inst.ops
+        self.emit('%s = %s | %s; SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_xor_b32(self, inst):
+        d, a, c = inst.ops
+        self.emit('%s = %s ^ %s; SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_min_i32(self, inst):
+        self.salu2(inst, '(int(%s) < int(%s) ? %s : %s)' % ('%s', '%s', self.sval(inst.ops[1]), self.sval(inst.ops[2])),
+                   'int(%s) < int(%s)' % (self.sval(inst.ops[1]), self.sval(inst.ops[2])))
+
+    def op_s_max_i32(self, inst):
+        self.salu2(inst, '(int(%s) > int(%s) ? %s : %s)' % ('%s', '%s', self.sval(inst.ops[1]), self.sval(inst.ops[2])),
+                   'int(%s) > int(%s)' % (self.sval(inst.ops[1]), self.sval(inst.ops[2])))
+
+    def op_s_abs_i32(self, inst):
+        d, a = inst.ops
+        self.emit('%s = uint(abs(int(%s))); SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def lshl_add(self, inst, n):
+        """s_lshl<n>_add_u32: d = (a << n) + c, SCC = the carry out of 32 bits"""
+        d, a, c = inst.ops
+        self.emit('{ uint64_t r_ = (uint64_t(%s) << %dul) + uint64_t(%s); SCC = (r_ >> 32) != 0ul; %s = uint(r_); }' % (
+            self.sval(a), n, self.sval(c), self.reg(d)))
+        self.set_kind(d, 'value')
+
+    def op_s_lshl1_add_u32(self, inst):
+        self.lshl_add(inst, 1)
+
+    def op_s_lshl2_add_u32(self, inst):
+        self.lshl_add(inst, 2)
+
+    def op_s_lshl3_add_u32(self, inst):
+        self.lshl_add(inst, 3)
+
+    def op_s_lshl4_add_u32(self, inst):
+        self.lshl_add(inst, 4)
+
+    def op_s_getpc_b64(self, inst):
+        """the program counter: only as the base of constant tables in the code, which the translation embeds
+        (code_tables); the pair itself is never read otherwise"""
+        d = inst.ops[0]
+        if inst.off not in getattr(self, 'getpc_ok', set()):
+            self.unknown['s_getpc_b64 (other than constant tables)'] += 1
+        self.emit('%s = 0u; %s = 0u;' % (self.reg(d, 0), self.reg(d, 1)))
+        self.set_kind(d, 'value')
+
     def op_s_lshl_b32(self, inst):
         d, a, c = inst.ops
         self.emit('%s = %s << (%s & 31u); SCC = %s != 0u;' % (self.reg(d), self.sval(a), self.sval(c), self.reg(d)))
@@ -1091,10 +1177,23 @@ class Translator:
     def op_bufload(self, inst):
         d, vaddr, vs, soff = inst.ops
         b = inst.base
+        table = getattr(self, 'code_tables', {}).get(inst.off)
+        if table is not None:
+            # a constant table in the code (code_tables): embedded, bounds as the raw buffer's (stride 0)
+            start, num = table
+            name = self.code_table_name(start, num)
+            imm = int(inst.mods.get('offset', '0'), 0)
+            voff = self.reg(vaddr, 0) if inst.mods.get('offen') else '0u'
+            so = '0u' if soff.kind in ('const', 'null') and soff.value == 0 else self.src_u32(soff)
+            self.emit('if (EX) { uint o_ = %s + %s + %du; %s }' % (voff, so, imm, ' '.join(
+                '%s = o_ + %du < %du ? %s[(o_ >> 2) + %du] : 0u;' % (self.reg(d, k), 4 * k + 3, num, name, k)
+                for k in range(d.count))))
+            return
         a = self.mubuf_addr(inst, vaddr, vs, soff)
         if b.startswith('buffer_load_dword'):
+            load = 'buf_load32_glc' if inst.mods.get('glc') or inst.mods.get('dlc') else 'buf_load32'
             self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); %s }' % (a, ' '.join(
-                '%s = buf_load32(ba_, %d);' % (self.reg(d, k), 4 * k) for k in range(d.count))))
+                '%s = %s(ba_, %d);' % (self.reg(d, k), load, 4 * k) for k in range(d.count))))
         elif b.startswith('buffer_load_format_'):
             comps = len(b.rsplit('_', 1)[1])
             self.emit('if (EX) { vec4 f_ = buf_load_format(buf_addr(%s)); %s }' % (a, ' '.join(
@@ -1145,6 +1244,13 @@ class Translator:
         fn = {'buffer_atomic_add': 'atomicAdd', 'buffer_atomic_sub': None, 'buffer_atomic_umin': 'atomicMin',
               'buffer_atomic_umax': 'atomicMax', 'buffer_atomic_and': 'atomicAnd', 'buffer_atomic_or': 'atomicOr',
               'buffer_atomic_xor': 'atomicXor', 'buffer_atomic_swap': 'atomicExchange'}.get(b)
+        if b == 'buffer_atomic_cmpswap' and data.count == 2:
+            # data[0]: the value to store, data[1]: the value to compare with; glc: the old value into data[0]
+            a = self.mubuf_addr(inst, vaddr, vs, soff)
+            old = '%s = ' % self.reg(data, 0) if inst.mods.get('glc') else ''
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) %satomicCompSwap(W32(ba_.dev).v, '
+                      '%s, %s); }' % (a, old, self.reg(data, 1), self.reg(data, 0)))
+            return
         if fn is None or data.count != 1:
             self.unknown[inst.op] += 1
             self.emit('/* UNHANDLED %s */' % inst.text)
@@ -1420,10 +1526,12 @@ FLOAT2 = {
 FLOAT1 = {
     'v_rcp_f32': 'rcp_f32(%s)', 'v_rcp_iflag_f32': 'rcp_f32(%s)', 'v_rsq_f32': 'rsq_f32(%s)',
     'v_sqrt_f32': 'sqrt(%s)', 'v_exp_f32': 'exp2(%s)', 'v_log_f32': 'log2(%s)',
-    'v_sin_f32': 'sin_rev(%s)', 'v_fract_f32': 'fract_f32(%s)',
+    'v_sin_f32': 'sin_rev(%s)', 'v_cos_f32': 'cos_rev(%s)', 'v_fract_f32': 'fract_f32(%s)',
+    'v_ceil_f32': 'ceil(%s)', 'v_floor_f32': 'floor(%s)', 'v_rndne_f32': 'roundEven(%s)',
 }
 INT2 = {
     'v_add_nc_u32': '(%s + %s)', 'v_sub_nc_u32': '(%s - %s)', 'v_and_b32': '(%s & %s)',
+    'v_xor_b32': '(%s ^ %s)',
     'v_mul_lo_u32': '(%s * %s)',
     'v_mul_u32_u24': '((%s & 0xffffffu) * (%s & 0xffffffu))', 'v_max_i32': 'uint(max(int(%s), int(%s)))',
     'v_mul_i32_i24': 'uint(bitfieldExtract(int(%s), 0, 24) * bitfieldExtract(int(%s), 0, 24))',
@@ -1676,6 +1784,82 @@ def reaching_sgpr_defs(insts, user_sgprs):
             state_in[t] = tuple(a | c for a, c in zip(out, cur))
             work.append(t)
     return state_in
+
+
+def code_tables(insts, user_sgprs, code=None):
+    """Constant tables in the program's code: buffer loads through a V# built from s_getpc_b64 (base = the address
+    after the s_getpc + a constant: s_add_u32 / s_addc_u32 0) and constant words 2-3 (s_mov). Returns
+    ({load offset: (table byte offset in the code, num_records)}, {s_getpc offsets whose pair only feeds them}); the
+    translation embeds the tables (the code bytes the emulator matches cover them)."""
+    state = reaching_sgpr_defs(insts, user_sgprs)
+    if state is None:
+        return {}, set()
+    index = {id(i): k for k, i in enumerate(insts)}
+
+    def single(k, r):
+        d = state[k][r]
+        return next(iter(d)) if len(d) == 1 else None
+
+    def const_of(k, r):
+        """the constant a single s_mov / s_movk wrote into s[r] before instruction k"""
+        d = single(k, r)
+        if d is None or d < 0:
+            return None
+        x = insts[d]
+        if x.base in ('s_mov_b32', 's_movk_i32') and x.ops[1].kind == 'const':
+            v = x.ops[1].value
+            if x.base == 's_movk_i32':
+                v = v - 0x10000 if v & 0x8000 else v
+            return v & 0xffffffff
+        return None
+
+    tables, feeding, other = {}, {}, set()
+    for k, i in enumerate(insts):
+        if not i.base.startswith('buffer_load_dword'):
+            continue
+        rsrc = i.ops[2]
+        if rsrc.kind != 'reg' or rsrc.file != 's' or rsrc.count != 4:
+            continue
+        lo, hi = single(k, rsrc.first), single(k, rsrc.first + 1)
+        if lo is None or hi is None or lo < 0 or hi < 0:
+            continue
+        add, addc = insts[lo], insts[hi]
+        if add.base != 's_add_u32' or addc.base != 's_addc_u32':
+            continue
+        ca = [o for o in add.ops[1:] if o.kind == 'const']
+        ra = [o for o in add.ops[1:] if o.kind == 'reg' and o.file == 's']
+        cc = [o for o in addc.ops[1:] if o.kind == 'const']
+        rc = [o for o in addc.ops[1:] if o.kind == 'reg' and o.file == 's']
+        if len(ca) != 1 or len(ra) != 1 or len(cc) != 1 or cc[0].value != 0 or len(rc) != 1:
+            continue
+        g_lo, g_hi = single(lo, ra[0].first), single(hi, rc[0].first)
+        if g_lo is None or g_lo != g_hi or g_lo < 0 or insts[g_lo].base != 's_getpc_b64':
+            continue
+        g = insts[g_lo]
+        if ra[0].first != g.ops[0].first or rc[0].first != g.ops[0].first + 1:
+            continue
+        num, w3 = const_of(k, rsrc.first + 2), const_of(k, rsrc.first + 3)
+        if num is None or w3 is None or (w3 >> 23) & 1:        # ADD_TID: not a plain table
+            continue
+        tables[i.off] = (g.off + 4 + ca[0].value, num)
+        feeding.setdefault(g.off, set()).update((add.off, addc.off, i.off))
+    # an s_getpc whose pair (or the add / addc results) is read anywhere else is not handled
+    users = {}
+    for k, i in enumerate(insts):
+        for o in i.ops[1:] if i.ops else []:
+            if o.kind != 'reg' or o.file != 's':
+                continue
+            for r in range(o.first, o.first + o.count):
+                for d in state[k][r]:
+                    if d >= 0 and insts[d].base in ('s_getpc_b64', 's_add_u32', 's_addc_u32'):
+                        users.setdefault(insts[d].off, set()).add(i.off)
+    ok = set()
+    for g_off, allowed in feeding.items():
+        chain = [o for o in allowed if any(x.off == o and x.base in ('s_add_u32', 's_addc_u32') for x in insts)]
+        if users.get(g_off, set()) <= allowed and all(users.get(c, set()) <= allowed for c in chain):
+            ok.add(g_off)
+    tables = {off: t for off, t in tables.items() if any(off in feeding[g] and g in ok for g in feeding)}
+    return tables, ok
 
 
 def store_vsharps(insts, user_sgprs, loads=False):
@@ -2192,6 +2376,8 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     st = Structure(insts)
     tr.sload_node = {}
     tr.reach = scalar_reach(insts, user_sgprs, tr.sload_node)
+    tr.code_tables, tr.getpc_ok = code_tables(insts, user_sgprs)
+    tr.code_bytes = open(path, 'rb').read()
     # pass 1: translate every instruction (statements per instruction, kinds of lane masks in program order)
     per_inst = []
     for k, i in enumerate(insts):
@@ -2272,6 +2458,7 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
         n = len(insts)
         out = []
         used_flags = set()
+        loop_guards = set()
         for h, j in st.loops.items():
             used_flags.update(b for b in st.fwd if h <= b <= j)
 
@@ -2334,6 +2521,8 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
             # loop headers (outermost first)
             for h, j in sorted(((h, j) for h, j in st.loops.items() if h == k), key=lambda x: -x[1]):
                 per_lane = h in per_lane_loops
+                put('LG_%x = 0u;' % insts[h].off)
+                loop_guards.add(insts[h].off)
                 put('for (;;) {  // loop %05x..%05x%s' % (insts[h].off, insts[j].off, ' (per lane)' if per_lane else ''))
                 stack.append(Blk('loop', j, per_lane, header=h))
                 inner = [b for b in st.fwd if h <= b <= j]
@@ -2405,7 +2594,8 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
                         put('if (!%s) {' % flag(k))
                         stack.append(Blk('guard', end, is_lane(k), flag=k))
             elif k in st.latches:
-                put('if (%s) continue;  // -> %05x' % (cond(k), insts[st.latches[k]].off))
+                put('if ((%s) && ++LG_%x < LOOP_LIMIT) continue;  // -> %05x' % (
+                    cond(k), insts[st.latches[k]].off, insts[st.latches[k]].off))
             elif i.op == 's_endpgm':
                 put('return;')
             # loop ends (close inner guards first)
@@ -2433,9 +2623,13 @@ def translate_shader(path, threads, lds_bytes, user_sgprs, tgid_sgpr, probes=Fal
     nvgpr = max(tr.max_v, 1)
     body = '\n'.join(out)
     flags_decl = '\n'.join('    bool %s = false;' % flag(b) for b in sorted(used_flags))
+    # loop watchdog (every back edge counts; a loop that would hang the GPU ends after LOOP_LIMIT iterations)
+    flags_decl += ''.join('\n    uint LG_%x = 0u;' % off for off in sorted(loop_guards))
     lines = [prelude.prelude(threads, tr.lds_dwords, nvgpr, probes)]
     if tr.images is not None:
         lines.append(tr.images.declarations())
+    for decl in getattr(tr, 'tables_decl', {}).values():
+        lines.append(decl)
     # initial SGPRs as the hardware sets them: user data s[0..user_count), then the enabled workgroup ids; one guest
     # dispatch per workgroup when the user data comes from a table (its workgroup ids are 0)
     lines.append('''uint initial_sgpr(uint n) {

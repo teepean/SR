@@ -67,6 +67,9 @@ layout(buffer_reference, std430, buffer_reference_align = 1) buffer W8 { uint8_t
 // scalar loads (s_load, s_buffer_load): read-only for the dispatch, as on the GPU, where the scalar cache does not see
 // the dispatch's own vector stores; lets the compiler reuse and hoist descriptor/table loads
 layout(buffer_reference, std430, buffer_reference_align = 4) readonly restrict buffer RO32 { uint v; };
+// glc / dlc loads (the guest bypasses the non-coherent caches: spin and compare-swap loops read what other waves'
+// atomics wrote): coherent, and volatile so the compiler neither hoists nor merges them
+layout(buffer_reference, std430, buffer_reference_align = 4) coherent volatile buffer C32 { uint v; };
 layout(buffer_reference, std430, buffer_reference_align = 4) buffer Counters { uint v[]; };
 layout(buffer_reference, std430, buffer_reference_align = 8) readonly restrict buffer BdaTable { uint64_t e[]; };
 layout(buffer_reference, std430, buffer_reference_align = 4) coherent buffer Bitmap { uint w[]; };
@@ -231,6 +234,8 @@ BufAddr buf_addr(uint w0, uint w1, uint w2, uint w3, uint index, uint offset) {
     return r;
 }
 uint buf_load32(BufAddr b, int extra) { return b.ok ? W32(b.dev + uint64_t(extra)).v : 0u; }
+const uint LOOP_LIMIT = 65536u;     // translated loops end after this many iterations (no GPU hang)
+uint buf_load32_glc(BufAddr b, int extra) { return b.ok ? C32(b.dev + uint64_t(extra)).v : 0u; }
 uint buf_load16(BufAddr b) { return b.ok ? uint(W16(b.dev).v) : 0u; }
 uint buf_load16_at(BufAddr b, int extra) { return b.ok ? uint(W16(b.dev + uint64_t(extra)).v) : 0u; }
 uint buf_load8_at(BufAddr b, int extra) { return b.ok ? uint(W8(b.dev + uint64_t(extra)).v) : 0u; }
@@ -308,8 +313,10 @@ float sin_rev(float x) {
     p = p * a2 - 1.6666666e-01;
     return a + a * (a2 * p);
 }
+float cos_rev(float x) { return sin_rev(x + 0.25); }
 #else
 float sin_rev(float x) { return sin(x * 6.28318530717958647692); }
+float cos_rev(float x) { return cos(x * 6.28318530717958647692); }
 #endif
 float fract_f32(float x) { return isinf(x) ? 0.0 : min(x - floor(x), uintBitsToFloat(0x3f7fffffu)); }
 uint cvt_u32_f32(float x) { return isnan(x) ? 0u : (x >= 4294967296.0 ? 0xffffffffu : (x <= 0.0 ? 0u : uint(x))); }

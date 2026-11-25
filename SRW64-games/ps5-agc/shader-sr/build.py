@@ -12,6 +12,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import gcn2glsl  # noqa: E402
 import gcnisa  # noqa: E402
 
 
@@ -58,6 +59,9 @@ def main():
                 shape_args += ['--tidig', info['tidig_comp_cnt'][0]]
         insts = gcnisa.decode(code)
         end = insts[-1].off + insts[-1].size
+        # constant tables in the code (gcn2glsl.code_tables) belong to the program: the emulator matches them too
+        for start, num in gcn2glsl.code_tables(insts, 2)[0].values():
+            end = max(end, start + num)
         reach_new = os.path.join(out, name + '.reach.new')
         bypass_new = os.path.join(out, name + '.bypass.new')
         variants = [(None, None)] if not resources else [(r, open(r).readline().split()[3]) for r in resources]
