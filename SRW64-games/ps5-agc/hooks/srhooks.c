@@ -138,8 +138,57 @@ static void query_trace_record(uint8_t *object, uint64_t start)
     __atomic_store_n(&qt_head, head + 1, __ATOMIC_RELEASE);
 }
 
+// SRH_TUNABLE_DUMP=<file>: once, at the first frame's query record, the game's runtime tunable table (pointer at
+// 0x51E2FA0, count at 0x51E2FA8, 32-byte entries: +0 value, +0x10 id; the quality code multiplies e.g. id 4, 0x125 and
+// 0x126 into view distances) as "index id value(float) value(hex) raw qwords" lines, plus any printable string that a
+// qword of the entry points to
+static const char *tunable_dump_path;
+
+static int printable_string(uint64_t p, char *out, size_t size)
+{
+    if (p < 0x400000ULL || p >= 0x2400000ULL) return 0;          // the game image's code and read-only data only
+    const unsigned char *s = (const unsigned char *)(uintptr_t)p;
+    size_t n = 0;
+    while (n + 1 < size && s[n] >= 32 && s[n] < 127) { out[n] = (char)s[n]; n++; }
+    out[n] = 0;
+    return n >= 4 && s[n] == 0;
+}
+
+static void tunable_dump(void)
+{
+    FILE *f = fopen(tunable_dump_path, "w");
+    if (f == NULL) return;
+    const uint8_t *base = *(const uint8_t *const *)(0x51E2FA0ULL);
+    int32_t count = *(const int32_t *)(0x51E2FA8ULL);
+    fprintf(f, "# tunable table %p, %d entries: index id value raw[0..3]\n", (const void *)base, count);
+    for (int32_t i = 0; base != NULL && i < count && i < 100000; i++)
+    {
+        const uint8_t *e = base + 32 * (size_t)i;
+        uint64_t q[4];
+        memcpy(q, e, sizeof(q));
+        float value;
+        memcpy(&value, e, sizeof(value));
+        fprintf(f, "%d %u %g 0x%08x %016llx %016llx %016llx %016llx", i, *(const uint32_t *)(e + 0x10), value,
+                *(const uint32_t *)e, (unsigned long long)q[0], (unsigned long long)q[1], (unsigned long long)q[2],
+                (unsigned long long)q[3]);
+        for (int k = 0; k < 4; k++)
+        {
+            char text[96];
+            if (printable_string(q[k], text, sizeof(text))) fprintf(f, " q%d=\"%s\"", k, text);
+        }
+        fputc('\n', f);
+    }
+    fclose(f);
+    fprintf(stderr, "[srhooks] tunable table (%d entries) written to %s\n", count, tunable_dump_path);
+}
+
 void srh_query_record(uint8_t *object)
 {
+    if (tunable_dump_path != NULL)
+    {
+        static int dumped;
+        if (!dumped) { dumped = 1; tunable_dump(); }
+    }
     int32_t *slot_field = (int32_t *)(object + 436);
     uint32_t *value_field = (uint32_t *)(object + 440);
     uint8_t **results_field = (uint8_t **)(object + 480);
@@ -1031,6 +1080,7 @@ __attribute__((constructor)) static void srhooks_init(void)
         pthread_t thread;
         if (pthread_create(&thread, NULL, query_reporter, NULL) == 0) pthread_detach(thread);
     }
+    tunable_dump_path = getenv("SRH_TUNABLE_DUMP");
     env = getenv("SRH_WAIT_TRACE");
     if (env != NULL && atoi(env) != 0)
     {
