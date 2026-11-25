@@ -788,13 +788,29 @@ uint8_t srh_spin_pause;
 // The SR build calls srh_wt_enter<site> / srh_wt_exit<site> there (instruction_replacements.sci); they keep all
 // registers and flags. A wait is keyed by the waiting function's frame pointer (waits nest: the job wait runs stolen
 // jobs, which can wait again). Each completed wait becomes a record (rdtsc at entry and exit, thread id); a writer
-// thread converts the times to CLOCK_MONOTONIC ns and appends "site tid entry_ns exit_ns" lines to
+// thread converts the times to CLOCK_MONOTONIC ns and appends "site tid entry_ns exit_ns [label value]" lines (sites 4, 5: the
+// label's address and the value waited for) to
 // SRH_WAIT_TRACE_FILE (default srh-wait-trace.txt in the current directory) every 100 ms.
 __attribute__((used)) static uint8_t wt_on;
 #define WT_OPEN 4096                       // open waits (power of two)
 #define WT_RECORDS (1u << 18)              // completed waits not yet written (power of two)
-static struct { uint64_t key, enter; } wt_open[WT_OPEN];
-static struct { uint64_t seq, enter, exit; uint32_t tid, site; } wt_records[WT_RECORDS];
+static struct { uint64_t key, enter, label, value; } wt_open[WT_OPEN];
+static struct { uint64_t seq, enter, exit, label, value; uint32_t tid, site; } wt_records[WT_RECORDS];
+
+// sites 4 / 5: the label the wait is for (label table *0x4A4AFE8, 32 bytes per slot) and the value it waits for
+__attribute__((target("general-regs-only"))) static void wt_label(uint64_t site, uint64_t frame, uint64_t *label,
+                                                                 uint64_t *value)
+{
+    const uint64_t table = *(volatile const uint64_t *)(0x4A4AFE8ULL);
+    if (site == 4) {
+        const uint8_t *obj = *(const uint8_t *const *)(frame - 0x1890);
+        *label = table + 32ull * (uint64_t)(int64_t)*(const int32_t *)(obj + 0xCC);
+        *value = *(const uint64_t *)(obj + 0xD8);
+    } else if (site == 5) {
+        *label = table + 32ull * (uint64_t)(int64_t)*(volatile const int32_t *)(0x4A6115CULL);
+        *value = *(volatile const uint32_t *)(0x4A61158ULL);
+    }
+}
 static uint64_t wt_head, wt_table_full;
 
 __attribute__((visibility("hidden"), used, target("general-regs-only"))) void srh_wt_event(uint64_t site, uint64_t frame,
@@ -808,6 +824,10 @@ __attribute__((visibility("hidden"), used, target("general-regs-only"))) void sr
             uint64_t expected = 0;
             if (__atomic_compare_exchange_n(&wt_open[k].key, &expected, key, 0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED))
             {
+                uint64_t label = 0, value = 0;
+                if (site >= 4) wt_label(site, frame, &label, &value);
+                wt_open[k].label = label;
+                wt_open[k].value = value;
                 __atomic_store_n(&wt_open[k].enter, now, __ATOMIC_RELEASE);
                 return;
             }
@@ -819,6 +839,7 @@ __attribute__((visibility("hidden"), used, target("general-regs-only"))) void sr
     {
         if (__atomic_load_n(&wt_open[k].key, __ATOMIC_ACQUIRE) != key) continue;
         uint64_t enter = __atomic_load_n(&wt_open[k].enter, __ATOMIC_ACQUIRE), index, tid;
+        uint64_t label = wt_open[k].label, value = wt_open[k].value;
         __atomic_store_n(&wt_open[k].key, 0, __ATOMIC_RELEASE);
         __asm__ volatile("syscall" : "=a"(tid) : "a"(186ull) : "rcx", "r11", "memory");   // gettid
         index = __atomic_fetch_add(&wt_head, 1, __ATOMIC_RELAXED);
@@ -829,6 +850,8 @@ __attribute__((visibility("hidden"), used, target("general-regs-only"))) void sr
         wt_records[n].exit = now;
         wt_records[n].tid = (uint32_t)tid;
         wt_records[n].site = (uint32_t)site;
+        wt_records[n].label = label;
+        wt_records[n].value = value;
         __atomic_store_n(&wt_records[n].seq, index + 1, __ATOMIC_RELEASE);
         return;
     }
@@ -906,15 +929,18 @@ static void *wt_writer(void *argument)
             }
             uint64_t enter = wt_records[n].enter, exit = wt_records[n].exit;
             uint32_t tid = wt_records[n].tid, site = wt_records[n].site;
+            uint64_t label = wt_records[n].label, value = wt_records[n].value;
             __atomic_thread_fence(__ATOMIC_ACQUIRE);
             if (__atomic_load_n(&wt_records[n].seq, __ATOMIC_RELAXED) != seq)
             {
                 lost++, tail++;
                 continue;
             }
-            fprintf(file, "%u %u %llu %llu\n", site, tid,
+            fprintf(file, "%u %u %llu %llu", site, tid,
                     (unsigned long long)(ns0 + (int64_t)((long double)(int64_t)(enter - tsc0) * scale)),
                     (unsigned long long)(ns0 + (int64_t)((long double)(int64_t)(exit - tsc0) * scale)));
+            if (label != 0) fprintf(file, " %#llx %llu", (unsigned long long)label, (unsigned long long)value);
+            fputc('\n', file);
             tail++;
         }
         fflush(file);
