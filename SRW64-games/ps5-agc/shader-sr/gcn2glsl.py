@@ -1677,26 +1677,34 @@ class Translator:
             a = self.mubuf_addr(inst, vaddr, vs, soff)
             op = 'fmin_ieee' if b.endswith('fmin') else 'fmax_ieee'
             ret = ('%s = o_; ' % self.reg(data)) if inst.mods.get('glc') else ''
-            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) { uint o_ = C32(ba_.dev).v; '
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); uint o_ = 0u; if (ba_.ok) { o_ = C32(ba_.dev).v; '
                       'for (uint g_ = 0u; g_ < LOOP_LIMIT; g_++) { uint n_ = floatBitsToUint(%s(uintBitsToFloat(o_), '
                       'uintBitsToFloat(%s))); uint p_ = atomicCompSwap(W32(ba_.dev).v, o_, n_); if (p_ == o_) break; o_ = p_; } '
-                      '%s} }' % (a, op, self.reg(data), ret))
+                      '} %s}' % (a, op, self.reg(data), ret))
             return
         if b == 'buffer_atomic_cmpswap' and data.count == 2:
             # data[0]: the value to store, data[1]: the value to compare with; glc: the old value into data[0]
             a = self.mubuf_addr(inst, vaddr, vs, soff)
-            old = '%s = ' % self.reg(data, 0) if inst.mods.get('glc') else ''
-            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) %satomicCompSwap(W32(ba_.dev).v, '
-                      '%s, %s); }' % (a, old, self.reg(data, 1), self.reg(data, 0)))
+            # out of range (or a page the cache does not hold): no swap, and glc returns 0 as the hardware does - a
+            # compare-swap retry loop then sees 0 == its 0 load and ends instead of spinning to LOOP_LIMIT
+            if inst.mods.get('glc'):
+                self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); %s = ba_.ok ? atomicCompSwap(W32(ba_.dev).v, '
+                          '%s, %s) : 0u; }' % (a, self.reg(data, 0), self.reg(data, 1), self.reg(data, 0)))
+            else:
+                self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) atomicCompSwap(W32(ba_.dev).v, '
+                          '%s, %s); }' % (a, self.reg(data, 1), self.reg(data, 0)))
             return
         if fn is None or data.count != 1:
             self.unknown[inst.op] += 1
             self.emit('/* UNHANDLED %s */' % inst.text)
             return
         a = self.mubuf_addr(inst, vaddr, vs, soff)
-        old = '%s = ' % self.reg(data) if inst.mods.get('glc') else ''
-        self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) %s%s(W32(ba_.dev).v, %s); }' % (
-            a, old, fn, self.reg(data)))
+        if inst.mods.get('glc'):     # out of range: no operation, glc returns 0
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); %s = ba_.ok ? %s(W32(ba_.dev).v, %s) : 0u; }' % (
+                a, self.reg(data), fn, self.reg(data)))
+        else:
+            self.emit('if (EX) { BufAddr ba_ = buf_addr(%s); probe_store(ba_); if (ba_.ok) %s(W32(ba_.dev).v, %s); }' % (
+                a, fn, self.reg(data)))
 
     # --- images (against the images Kyty binds for the program's specialisation, see images.py)
     def img_addr(self, o, k):
